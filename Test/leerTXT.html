@@ -13,20 +13,7 @@
                 var TXT_URL = $("#input-url").val();
 
 
-
-
-                const xhr = new XMLHttpRequest();
-
-                xhr.onreadystatechange = () => {
-                    if (xhr.readyState === 4) {
-                        alert(xhr.response);
-                    }
-                }
-
-                xhr.open('GET', TXT_URL, true);
-                xhr.send('');
-
-                /*$.ajax
+                $.ajax
                     (
                         {
                             type: "get",
@@ -40,8 +27,7 @@
                             }
                         }
                     );
-                    */
-                   
+
             });
         });
 
