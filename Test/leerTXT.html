@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+
+
+<head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+
+    <script>
+
+        $(function () {
+            $("#button").click(function () {
+                //  var TXT_URL = 'https://meteojose.000webhostapp.com/datos/datos.txt';
+                var TXT_URL = $("#input-url").val();
+
+
+
+
+                const xhr = new XMLHttpRequest();
+
+                xhr.onreadystatechange = () => {
+                    if (xhr.readyState === 4) {
+                        alert(xhr.response);
+                    }
+                }
+
+                xhr.open('GET', TXT_URL, true);
+                xhr.send('');
+
+                /*$.ajax
+                    (
+                        {
+                            type: "get",
+                            url: TXT_URL,
+                            dataType: "text",
+                            success: function (data) {
+                                $(".text").html("<pre>" + data + "</pre>");
+                            }, error: function (request, status, error) {
+                                var val = request.responseText;
+                                alert("error" + val);
+                            }
+                        }
+                    );
+                    */
+                   
+            });
+        });
+
+    </script>
+
+</head>
+
+
+Ingrese una url válida:<input type="text" id="input-url" size="50"
+    value="https://www.mozilla.org/media/MPL/2.0/index.815ca599c9df.txt"></input>
+
+<input type="button" id="button" value="Ver .txt"></input>
+<div class="text">
+    <hr />
+    <h2>Texto:</h2>
+</div>
