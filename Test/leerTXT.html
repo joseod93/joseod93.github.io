@@ -3,7 +3,7 @@
 
 
 <head>
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
     <script>
 
@@ -13,21 +13,9 @@
                 var TXT_URL = $("#input-url").val();
 
 
-                $.ajax
-                    (
-                        {
-                            type: "get",
-                            url: TXT_URL,
-                            dataType: "text",
-                            success: function (data) {
-                                $(".text").html("<pre>" + data + "</pre>");
-                            }, error: function (request, status, error) {
-                                var val = request.responseText;
-                                alert("error" + val);
-                            }
-                        }
-                    );
-
+                $.get(TXT_URL, function (html) {
+                    alert(html);
+                });
             });
         });
 
@@ -37,7 +25,7 @@
 
 
 Ingrese una url válida:<input type="text" id="input-url" size="50"
-    value="https://www.mozilla.org/media/MPL/2.0/index.815ca599c9df.txt"></input>
+    value="https://meteojose.000webhostapp.com/datos/datos.txt"></input>
 
 <input type="button" id="button" value="Ver .txt"></input>
 <div class="text">
