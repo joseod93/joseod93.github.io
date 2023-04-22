@@ -43,21 +43,33 @@
 
 
         <h3> Humedad </h3>
-
+        <div>
+            <canvas id="Humedad"></canvas>
+        </div>
 
 
         <h3> Luminosidad </h3>
-
+        <div>
+            <canvas id="Luminosidad"></canvas>
+        </div>
 
 
         <h3> Presión </h3>
-
+        <div>
+            <canvas id="Presion"></canvas>
+        </div>
 
 
 
         <script>
 
             const ctxTemperatura = document.getElementById('Temperatura');
+
+            const ctxHumedad = document.getElementById('Humedad');
+
+            const ctxLuminosidad = document.getElementById('Luminosidad');
+
+            const ctxPresion = document.getElementById('Presion');
 
             window.onload = function () {
 
@@ -91,13 +103,16 @@
 
 
 
-                    const labelsTemperaturaChart =  DatosEpoch;
+                    const labels = DatosEpoch;
                     for (let i = 0; i < DATA_COUNT; ++i) {
-                        labelsTemperaturaChart.push(i.toString());
+                        labels.push(i.toString());
                     }
-                    const datapointsTemperaturaChart = DatosTemperatura;//[0, 20, 20, 60, 60, 120, NaN, 180, 120, 125, 105, 110, 170];
+
+                    // ------
+
+                    const datapointsTemperaturaChart = DatosTemperatura;
                     const DatosTemperaturaChart = {
-                        labels: labelsTemperaturaChart,
+                        labels: labels,
                         datasets: [
                             {
                                 label: 'Cubic interpolation (monotone)',
@@ -111,11 +126,72 @@
                     };
 
 
+                    const datapointsHumedadChart = DatosHumedad;
+                    const DatosHumedadChart = {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Cubic interpolation (monotone)',
+                                data: datapointsHumedadChart,
+                                borderColor: 'rgb(255, 159, 64)',
+                                fill: false,
+                                cubicInterpolationMode: 'monotone',
+                                tension: 0.4
+                            }
+                        ]
+                    };
+
+                    const datapointsLuminosidadChart = DatosLuminosidad;
+                    const DatosLuminosidadChart = {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Cubic interpolation (monotone)',
+                                data: datapointsLuminosidadChart,
+                                borderColor: 'rgb(75, 192, 192)',
+                                fill: false,
+                                cubicInterpolationMode: 'monotone',
+                                tension: 0.4
+                            }
+                        ]
+                    };
+
+                    const datapointsPresionChart = DatosPresion;
+                    const DatosPresionChart = {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Cubic interpolation (monotone)',
+                                data: datapointsPresionChart,
+                                borderColor: 'rgb(54, 162, 235)',
+                                fill: false,
+                                cubicInterpolationMode: 'monotone',
+                                tension: 0.4
+                            }
+                        ]
+                    };
+
+
                     new Chart(ctxTemperatura, {
                         type: 'line',
                         data: DatosTemperaturaChart
                     });
 
+
+                    new Chart(ctxHumedad, {
+                        type: 'line',
+                        data: DatosHumedadChart
+                    });
+
+                    new Chart(ctxPresion, {
+                        type: 'line',
+                        data: DatosPresionChart
+                    });
+
+                    new Chart(ctxLuminosidad, {
+                        type: 'line',
+                        data: DatosLuminosidadChart
+                    });
 
 
                 });
