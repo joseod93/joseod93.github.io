@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+
+
+
+<html lang="es">
+
+<head>
+
+    <meta charset="utf-8" />
+
+    <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport' />
+
+    <meta name="viewport" content="width=device-width" />
+
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" rel="stylesheet" />
+
+    <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+
+    <title>MeteoJose</title>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+
+</head>
+
+
+<body>
+
+    <div>
+
+        <h1> MeteoJose </h1>
+
+        <p> Estación Meteorológica de José </p>
+
+
+        <h3> Temperatura </h3>
+        <div>
+            <canvas id="Temperatura"></canvas>
+        </div>
+
+
+        <h3> Humedad </h3>
+
+
+
+        <h3> Luminosidad </h3>
+
+
+
+        <h3> Presión </h3>
+
+
+
+
+        <script>
+
+            const ctxTemperatura = document.getElementById('Temperatura');
+
+            window.onload = function () {
+
+                var Datos = [];
+
+                var DatosEpoch = [];
+                var DatosTemperatura = [];
+                var DatosHumedad = [];
+                var DatosLuminosidad = [];
+                var DatosPresion = [];
+
+                const url1 = 'https://raw.githubusercontent.com/joseod93/joseod93.github.io/main/MeteoJose/datos.txt'
+
+
+
+                $.get(url1, function (data, status) {
+                    //alert("Data: " + data + "\nStatus: " + status);
+                    Datos = data.split('\n');
+
+                    Datos.forEach(dato => {
+                        DatosEpoch.push(new Date(parseInt(dato.split('_')[0])));
+                        DatosTemperatura.push(parseFloat(dato.split('_')[1]));
+                        DatosHumedad.push(parseFloat(dato.split('_')[2]));
+                        DatosLuminosidad.push(parseFloat(dato.split('_')[3]));
+                        DatosPresion.push(parseFloat(dato.split('_')[4]));
+                    });
+
+
+
+                    const DATA_COUNT = DatosEpoch.length;
+
+
+
+                    const labelsTemperaturaChart =  DatosEpoch;
+                    for (let i = 0; i < DATA_COUNT; ++i) {
+                        labelsTemperaturaChart.push(i.toString());
+                    }
+                    const datapointsTemperaturaChart = DatosTemperatura;//[0, 20, 20, 60, 60, 120, NaN, 180, 120, 125, 105, 110, 170];
+                    const DatosTemperaturaChart = {
+                        labels: labelsTemperaturaChart,
+                        datasets: [
+                            {
+                                label: 'Cubic interpolation (monotone)',
+                                data: datapointsTemperaturaChart,
+                                borderColor: 'rgb(255, 99, 132)',
+                                fill: false,
+                                cubicInterpolationMode: 'monotone',
+                                tension: 0.4
+                            }
+                        ]
+                    };
+
+
+                    new Chart(ctxTemperatura, {
+                        type: 'line',
+                        data: DatosTemperaturaChart
+                    });
+
+
+
+                });
+
+
+
+            }
+
+
+        </script>
+
+
+</body>
+
+</html>
