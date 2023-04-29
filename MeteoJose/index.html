@@ -37,34 +37,44 @@
 
         <hr size="8px" color="black" />
 
-        <h3> Temperatura </h3>
-        <div>
-            <canvas id="Temperatura" style="width: 100%; height: 100%;"></canvas>
+        <div id="mensajeEspera">
+            <h3> Cargando... Si no se genera vuelvelo a intentar en 3 minutos.  </h3> 
         </div>
 
-        <hr size="8px" color="black" />
 
-        <h3> Humedad </h3>
-        <div>
-            <canvas id="Humedad" style="width: 100%; height: 100%;"></canvas>
+        <div id="graficos">
+            <h3> Temperatura </h3>
+            <div>
+                <canvas id="Temperatura" style="width: 100%; height: 100%;"></canvas>
+            </div>
+
+            <hr size="8px" color="black" />
+
+            <h3> Humedad </h3>
+            <div>
+                <canvas id="Humedad" style="width: 100%; height: 100%;"></canvas>
+            </div>
+
+            <hr size="8px" color="black" />
+
+            <h3> Luminosidad </h3>
+            <div>
+                <canvas id="Luminosidad" style="width: 100%; height: 100%;"></canvas>
+            </div>
+
+            <hr size="8px" color="black" />
+
+            <h3> Presión </h3>
+            <div>
+                <canvas id="Presion" style="width: 100%; height: 100%;"></canvas>
+            </div>
+
         </div>
-
-        <hr size="8px" color="black" />
-
-        <h3> Luminosidad </h3>
-        <div>
-            <canvas id="Luminosidad" style="width: 100%; height: 100%;"></canvas>
-        </div>
-
-        <hr size="8px" color="black" />
-
-        <h3> Presión </h3>
-        <div>
-            <canvas id="Presion" style="width: 100%; height: 100%;"></canvas>
-        </div>
-
 
         <script>
+
+            document.getElementById("mensajeEspera").style.visibility = "hidden";
+            document.getElementById("graficos").style.visibility = "hidden";
 
             const ctxTemperatura = document.getElementById('Temperatura');
 
@@ -75,6 +85,9 @@
             const ctxPresion = document.getElementById('Presion');
 
             window.onload = function () {
+                
+                document.getElementById("mensajeEspera").style.visibility = "visible"; 
+                document.getElementById("graficos").style.visibility = "hidden";
 
                 var Datos = [];
 
@@ -101,6 +114,9 @@
 
 
                 function exitoFinalCallback(resultado) {
+ 
+                    document.getElementById("graficos").style.visibility = "visible";
+                    document.getElementById("mensajeEspera").style.visibility = "hidden";
 
                     console.log("Es: " + resultado);
                     // ------
@@ -229,18 +245,18 @@
                                         DatosPresion.push(parseFloat(dato.split('_')[4]));
                                     }
                                 });
-                            }).done( 
+                            }).done(
                             );
 
                             listaPromesas.push(prom);
 
                         });
 
-                        Promise.all(listaPromesas).then(values => { 
+                        Promise.all(listaPromesas).then(values => {
                             resolve('ok3');
                         });
 
-                    }).done( 
+                    }).done(
                     );
 
                 });
