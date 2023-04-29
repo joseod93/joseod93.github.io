@@ -35,31 +35,34 @@
 
         <p style="text-align: center;"> Estación Meteorológica de José </p>
 
-
+        <hr size="8px" color="black" />
+        
         <h3> Temperatura </h3>
         <div>
             <canvas id="Temperatura" style="width: 100%; height: 100%;"></canvas>
         </div>
 
-
+        <hr size="8px" color="black" />
+        
         <h3> Humedad </h3>
         <div>
             <canvas id="Humedad" style="width: 100%; height: 100%;"></canvas>
         </div>
 
-
+        <hr size="8px" color="black" />
+        
         <h3> Luminosidad </h3>
         <div>
             <canvas id="Luminosidad" style="width: 100%; height: 100%;"></canvas>
         </div>
 
+        <hr size="8px" color="black" />
 
         <h3> Presión </h3>
         <div>
             <canvas id="Presion" style="width: 100%; height: 100%;"></canvas>
         </div>
-
-
+ 
 
         <script>
 
@@ -90,24 +93,27 @@
                     Datos = data.split('\n');
 
                     Datos.forEach(dato => {
-                        DatosEpoch.push(new Date(parseInt(dato.split('_')[0])));
-                        DatosTemperatura.push(parseFloat(dato.split('_')[1]));
-                        DatosHumedad.push(parseFloat(dato.split('_')[2]));
-                        DatosLuminosidad.push(parseFloat(dato.split('_')[3]));
-                        DatosPresion.push(parseFloat(dato.split('_')[4]));
+
+                        var fechaGenerada = new Date(parseInt(dato.split('_')[0])*1000);
+
+                        if(isNaN(fechaGenerada)){ 
+                            var para = true;
+                        }
+
+                        if(!isNaN(fechaGenerada)){ 
+                            DatosEpoch.push(fechaGenerada.toLocaleString()); 
+                            DatosTemperatura.push(parseFloat(dato.split('_')[1]));
+                            DatosHumedad.push(parseFloat(dato.split('_')[2]));
+                            DatosLuminosidad.push(parseFloat(dato.split('_')[3]));
+                            DatosPresion.push(parseFloat(dato.split('_')[4]));
+                        }
+
                     });
 
-
-
-                    const DATA_COUNT = DatosEpoch.length;
-
-
+ 
 
                     const labels = DatosEpoch;
-                    for (let i = 0; i < DATA_COUNT; ++i) {
-                        labels.push(i.toString());
-                    }
-
+                     
                     // ------
 
                     const datapointsTemperaturaChart = DatosTemperatura;
@@ -115,7 +121,7 @@
                         labels: labels,
                         datasets: [
                             {
-                                label: 'Cubic interpolation (monotone)',
+                                label: 'Temperatura (ºC)',
                                 data: datapointsTemperaturaChart,
                                 borderColor: 'rgb(255, 99, 132)',
                                 fill: false,
@@ -131,7 +137,7 @@
                         labels: labels,
                         datasets: [
                             {
-                                label: 'Cubic interpolation (monotone)',
+                                label: 'Humedad (%)',
                                 data: datapointsHumedadChart,
                                 borderColor: 'rgb(255, 159, 64)',
                                 fill: false,
@@ -146,7 +152,7 @@
                         labels: labels,
                         datasets: [
                             {
-                                label: 'Cubic interpolation (monotone)',
+                                label: 'Luminosidad (Lux)',
                                 data: datapointsLuminosidadChart,
                                 borderColor: 'rgb(75, 192, 192)',
                                 fill: false,
@@ -161,7 +167,7 @@
                         labels: labels,
                         datasets: [
                             {
-                                label: 'Cubic interpolation (monotone)',
+                                label: 'Presion (Pascal)',
                                 data: datapointsPresionChart,
                                 borderColor: 'rgb(54, 162, 235)',
                                 fill: false,
