@@ -233,11 +233,8 @@
                             var prom = $.get(url2 + elementoTxT, function (data, status) {
                                 Datos = data.split('\n');
                                 Datos.forEach(dato => {
-                                    var fechaGenerada = new Date(parseInt(dato.split('_')[0]) * 1000);
-                                    if (isNaN(fechaGenerada)) {
-                                        var para = true;
-                                    }
-                                    if (!isNaN(fechaGenerada)) {
+                                    var fechaGenerada = new Date(parseInt(dato.split('_')[0]) * 1000); 
+                                    if (!isNaN(fechaGenerada) && fechaGenerada.getFullYear()>=2020) {
                                         DatosEpoch.push(fechaGenerada.toLocaleString());
                                         DatosTemperatura.push(parseFloat(dato.split('_')[1]));
                                         DatosHumedad.push(parseFloat(dato.split('_')[2]));
