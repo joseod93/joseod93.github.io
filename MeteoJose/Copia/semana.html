@@ -39,7 +39,7 @@
         <hr size="8px" color="black" />
 
         <div id="mensajeEspera">
-            <h3> Cargando... Si no se genera vuelvelo a intentar en 5 minutos. </h3>
+            <h3> Cargando... </h3>
         </div>
 
         <div id="graficos">
@@ -263,7 +263,9 @@
                                     var to   = new Date(d2[2], parseInt(d2[1])-1, d2[0]);
                                     var check = new Date(c[2], parseInt(c[1])-1, c[0]);
  
-                                    if (!isNaN(fechaGenerada) && fechaGenerada.getFullYear() >= 2020 && check >= from && check <= to) {
+                                    if (!isNaN(fechaGenerada) && fechaGenerada.getFullYear() >= 2020 &&
+                                     check >= from && check <= to 
+                                    && parseFloat(dato.split('_')[4]) >= 1000 ) {
                                         DatosEpoch.push(fechaGenerada.toLocaleString());
                                         DatosTemperatura.push(parseFloat(dato.split('_')[1]));
                                         DatosHumedad.push(parseFloat(dato.split('_')[2]));

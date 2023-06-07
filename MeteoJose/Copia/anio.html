@@ -39,7 +39,7 @@
         <hr size="8px" color="black" />
 
         <div id="mensajeEspera">
-            <h3> Cargando... Si no se genera vuelvelo a intentar en 5 minutos. </h3>
+            <h3> Cargando... </h3>
         </div>
 
         <div id="graficos">
@@ -241,7 +241,9 @@
                                 Datos = data.split('\n');
                                 Datos.forEach(dato => {
                                     var fechaGenerada = new Date(parseInt(dato.split('_')[0]) * 1000);
-                                    if (!isNaN(fechaGenerada) && fechaGenerada.getFullYear() >= 2020 && anioHoy == fechaGenerada.getFullYear()+"") {
+                                    if (!isNaN(fechaGenerada) && fechaGenerada.getFullYear() >= 2020 &&
+                                     anioHoy == fechaGenerada.getFullYear()+""
+                                    && parseFloat(dato.split('_')[4]) >= 1000 ) {
                                         DatosEpoch.push(fechaGenerada.toLocaleString());
                                         DatosTemperatura.push(parseFloat(dato.split('_')[1]));
                                         DatosHumedad.push(parseFloat(dato.split('_')[2]));
