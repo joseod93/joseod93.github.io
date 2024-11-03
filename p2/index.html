@@ -62,7 +62,11 @@
                     for (let x = 0; x < canvas.width; x++) {
                         // Obtener el valor de profundidad de cada píxel en el depth map
                         const depthPixelIndex = (y * canvas.width + x) * 4;
-                        const depth = ctx.getImageData(depthPixelIndex, 1, 1).data[0]; // Solo necesitamos el canal rojo
+
+                        const depthData = ctx.getImageData(x, y, 1, 1);
+                        const depth = depthData.data[0]; // Solo usamos el canal rojo para representar la profundidad
+
+                        //const depth = ctx.getImageData(depthPixelIndex, 1, 1).data[0]; // Solo necesitamos el canal rojo
 
                         // Calcular el desplazamiento en función del valor de profundidad
                         const parallaxX = offsetX * (depth / 255);
