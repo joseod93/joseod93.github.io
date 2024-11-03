@@ -76,7 +76,7 @@
       });
 
       const mapTexture = twgl.createTexture(gl, {
-        src: "https://joseod93.github.io/p3/a1-d.png",
+		src: "https://joseod93.github.io/p3/a1-d.png",
         crossOrigin: "",
       });
 
@@ -85,18 +85,29 @@
 
       const mouse = [0, 0];
       document.addEventListener("mousemove", (event) => {
-        mouse[0] = (event.clientX / gl.canvas.clientWidth  * 2 - 1) * -0.02;
-        mouse[1] = (event.clientY / gl.canvas.clientHeight * 2 - 1) * -0.02;
+        mouse[0] = (event.clientX / gl.canvas.clientWidth  * 2 - 1) * -0.05; // Aumentado el multiplicador
+        mouse[1] = (event.clientY / gl.canvas.clientHeight * 2 - 1) * -0.05; // Aumentado el multiplicador
       });
 
       document.addEventListener("touchmove", (event) => {
-        mouse[0] = (event.touches[0].clientX / gl.canvas.clientWidth  * 2 - 1) * -0.02;
-        mouse[1] = (event.touches[0].clientY / gl.canvas.clientHeight * 2 - 1) * -0.02;
+        mouse[0] = (event.touches[0].clientX / gl.canvas.clientWidth  * 2 - 1) * -0.05; // Aumentado el multiplicador
+        mouse[1] = (event.touches[0].clientY / gl.canvas.clientHeight * 2 - 1) * -0.05; // Aumentado el multiplicador
       });
 
       document.addEventListener("touchend", () => {
         mouse[0] = 0;
         mouse[1] = 0;
+      });
+
+      // Manejar la orientación del dispositivo
+      window.addEventListener('deviceorientation', (event) => {
+        const beta = event.beta; // Inclinación hacia adelante y atrás
+        const gamma = event.gamma; // Inclinación hacia los lados
+        const xMovement = (gamma / 90) * -0.1; // Aumentado el multiplicador
+        const yMovement = (beta / 90) * 0.1; // Aumentado el multiplicador
+
+        mouse[0] = xMovement;
+        mouse[1] = yMovement;
       });
 
       const nMouse = [0, 0];
