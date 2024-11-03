@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parallax con Depth Map</title>
+    <title>Parallax con Depth Map Mejorado</title>
     <style>
         #container {
             perspective: 1000px;
@@ -12,7 +12,7 @@
             height: 100vh;
             position: relative;
         }
-        canvas {
+        #parallaxCanvas {
             width: 100%;
             height: 100%;
         }
@@ -24,7 +24,7 @@
     </div>
 
     <script>
-        const depthFactor = 100; // Ajusta este valor para controlar el efecto de profundidad
+        const depthFactor = 100; // Incrementa este valor para un efecto más fuerte
 
         // Cargar ambas imágenes
         const loadImage = (src) => new Promise((resolve) => {
@@ -43,67 +43,25 @@
             const image = await loadImage('a1.jpg');
             const depthMap = await loadImage('a1-d.png');
 
-            // Dibuja la imagen en el canvas
+            // Dibujar la imagen en el canvas
             ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-
-         
-
 
             // Escucha el movimiento del dispositivo
             window.addEventListener('deviceorientation', (event) => {
-                console.log(`beta: ${event.beta}, gamma: ${event.gamma}`);
-
-                // Verificamos que beta y gamma no sean nulos
-                if (event.beta === null || event.gamma === null) {
-                    console.log("El dispositivo no está proporcionando datos de orientación.");
-                    return;
-                }
-
                 const { beta, gamma } = event;
 
-                // Calcular el desplazamiento en función de la orientación del dispositivo
+                if (beta === null || gamma === null) return;
+
+                // Aumenta el desplazamiento aplicando una escala adicional
                 const offsetX = (gamma / 90) * depthFactor;
                 const offsetY = (beta / 90) * depthFactor;
 
-                // Limpiar el canvas
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                // Aplicar desplazamiento usando el depth map
-                for (let y = 0; y < canvas.height; y++) {
-                    for (let x = 0; x < canvas.width; x++) {
-                        // Obtener el valor de profundidad de cada píxel en el depth map
-                        const depthPixelIndex = (y * canvas.width + x) * 4;
-
-                        const depthData = ctx.getImageData(x, y, 1, 1);
-                        const depth = depthData.data[0]; // Solo usamos el canal rojo para representar la profundidad
-
-                        //const depth = ctx.getImageData(depthPixelIndex, 1, 1).data[0]; // Solo necesitamos el canal rojo
-
-                        // Calcular el desplazamiento en función del valor de profundidad
-                        const parallaxX = offsetX * (depth / 255);
-                        const parallaxY = offsetY * (depth / 255);
-
-                        // Dibujar cada píxel con su desplazamiento correspondiente
-                        ctx.drawImage(image, x, y, 1, 1, x + parallaxX, y + parallaxY, 1, 1);
-                    }
-                }
+                // Aplicar el efecto de parallax al canvas completo
+                canvas.style.transform = `translate3d(${offsetX}px, ${offsetY}px, 0) scale(1.05)`;
             });
         }
 
-        if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                DeviceMotionEvent.requestPermission()
-                    .then(permissionState => {
-                        if (permissionState === 'granted') {
-                            // Inicia el efecto parallax aquí
-                            initParallax();
-                        }
-                    })
-                    .catch(console.error);
-            } else {
-                // Inicia el efecto parallax en dispositivos que no requieren permiso
-                initParallax();
-            } 
+        initParallax();
     </script>
 </body>
 </html>
