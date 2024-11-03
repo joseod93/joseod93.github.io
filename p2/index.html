@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Parallax con Depth Map Mejorado</title>
+    <title>Parallax con Depth Map</title>
     <style>
         #container {
             perspective: 1000px;
@@ -24,7 +24,7 @@
     </div>
 
     <script>
-        const depthFactor = 100; // Incrementa este valor para un efecto más fuerte
+        const depthFactor = 50; // Aumenta este valor para un mayor efecto de profundidad
 
         // Cargar ambas imágenes
         const loadImage = (src) => new Promise((resolve) => {
@@ -43,7 +43,17 @@
             const image = await loadImage('a1.jpg');
             const depthMap = await loadImage('a1-d.png');
 
-            // Dibujar la imagen en el canvas
+            // Dibujar ambas imágenes en un canvas temporal para obtener los datos de profundidad
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+
+            // Dibujar el depth map en el canvas temporal
+            tempCtx.drawImage(depthMap, 0, 0, canvas.width, canvas.height);
+            const depthData = tempCtx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+            // Dibuja la imagen en el canvas principal
             ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
             // Escucha el movimiento del dispositivo
@@ -52,12 +62,27 @@
 
                 if (beta === null || gamma === null) return;
 
-                // Aumenta el desplazamiento aplicando una escala adicional
                 const offsetX = (gamma / 90) * depthFactor;
                 const offsetY = (beta / 90) * depthFactor;
 
-                // Aplicar el efecto de parallax al canvas completo
-                canvas.style.transform = `translate3d(${offsetX}px, ${offsetY}px, 0) scale(1.05)`;
+                // Limpiar el canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Dibujar cada píxel de la imagen con desplazamiento según el depth map
+                for (let y = 0; y < canvas.height; y++) {
+                    for (let x = 0; x < canvas.width; x++) {
+                        // Índice de profundidad en el depth map
+                        const depthIndex = (y * canvas.width + x) * 4;
+                        const depth = depthData[depthIndex]; // Usamos solo el canal rojo como nivel de profundidad
+
+                        // Calcular el desplazamiento en función de la profundidad
+                        const parallaxX = offsetX * (depth / 255);
+                        const parallaxY = offsetY * (depth / 255);
+
+                        // Dibujar el píxel en su nueva posición
+                        ctx.drawImage(image, x, y, 1, 1, x + parallaxX, y + parallaxY, 1, 1);
+                    }
+                }
             });
         }
 
