@@ -85,13 +85,13 @@
 
       const mouse = [0, 0];
       document.addEventListener("mousemove", (event) => {
-        mouse[0] = (event.clientX / gl.canvas.clientWidth  * 2 - 1) * -0.05; // Aumentado el multiplicador
-        mouse[1] = (event.clientY / gl.canvas.clientHeight * 2 - 1) * -0.05; // Aumentado el multiplicador
+        mouse[0] = (event.clientX / gl.canvas.clientWidth  * 2 - 1) * -0.03; // Aumentado el multiplicador
+        mouse[1] = (event.clientY / gl.canvas.clientHeight * 2 - 1) * -0.03; // Aumentado el multiplicador
       });
 
       document.addEventListener("touchmove", (event) => {
-        mouse[0] = (event.touches[0].clientX / gl.canvas.clientWidth  * 2 - 1) * -0.05; // Aumentado el multiplicador
-        mouse[1] = (event.touches[0].clientY / gl.canvas.clientHeight * 2 - 1) * -0.05; // Aumentado el multiplicador
+        mouse[0] = (event.touches[0].clientX / gl.canvas.clientWidth  * 2 - 1) * -0.03; // Aumentado el multiplicador
+        mouse[1] = (event.touches[0].clientY / gl.canvas.clientHeight * 2 - 1) * -0.03; // Aumentado el multiplicador
       });
 
       document.addEventListener("touchend", () => {
