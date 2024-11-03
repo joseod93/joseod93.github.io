@@ -46,8 +46,20 @@
             // Dibuja la imagen en el canvas
             ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
+
+         
+
+
             // Escucha el movimiento del dispositivo
             window.addEventListener('deviceorientation', (event) => {
+                console.log(`beta: ${event.beta}, gamma: ${event.gamma}`);
+
+                // Verificamos que beta y gamma no sean nulos
+                if (event.beta === null || event.gamma === null) {
+                    console.log("El dispositivo no está proporcionando datos de orientación.");
+                    return;
+                }
+
                 const { beta, gamma } = event;
 
                 // Calcular el desplazamiento en función de la orientación del dispositivo
@@ -79,7 +91,19 @@
             });
         }
 
-        initParallax();
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                DeviceMotionEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            // Inicia el efecto parallax aquí
+                            initParallax();
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Inicia el efecto parallax en dispositivos que no requieren permiso
+                initParallax();
+            } 
     </script>
 </body>
 </html>
