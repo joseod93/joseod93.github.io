@@ -1,0 +1,19 @@
+{
+    "name": "Jose Ortega Donaire",
+    "short_name": "JOSE OD",
+    "start_url": "index.html",
+    "display": "standalone",
+    "background_color": "#040404",
+    "theme_color": "#040404",
+    "orientation": "portrait-primary",
+    "icons": [
+      {
+        "src": "/assets/img/apple-touch-icon.png",
+        "type": "image/png", "sizes": "180x180"
+      },
+      {
+        "src": "/assets/img/favicon.png",
+        "type": "image/png", "sizes": "32x32"
+      }
+    ]
+  }
