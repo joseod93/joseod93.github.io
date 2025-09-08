@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="theme-color" content="#0b0e12" />
+  <title>Luz y Sombra: El Alba de Hispania</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <style>
+    :root{
+      --bg:#0b0e12;--panel:#121721;--text:#e7edf7;--muted:#93a1b3;--accent:#f2a65a;--ok:#9ad06e;--warn:#ffcc66;--bad:#ff6b6b;--ink:#111827;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:radial-gradient(1200px 800px at 70% 10%,#162036 0%,#0b0e12 55%,#06080c 100%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;}
+    header{padding:16px 20px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #1c2433;background:#0e1420aa;backdrop-filter: blur(6px)}
+    header h1{font-size:1rem;margin:0;color:#dfe8ff;letter-spacing:.5px;font-weight:600}
+    header small{color:var(--muted)}
+
+    .wrap{display:grid;grid-template-columns: 340px 1fr;gap:16px;padding:16px;max-width:1100px;margin:0 auto}
+    @media (max-width:900px){
+      .wrap{grid-template-columns:1fr;padding:12px}
+      header h1{font-size:.95rem}
+      #log{height:260px}
+      button.action{padding:16px 16px;font-size:1rem}
+      .res b{font-size:1rem}
+    }
+
+    .card{background:linear-gradient(180deg,#111827 0%,#0e1522 100%);border:1px solid #1b2636;border-radius:16px;box-shadow:0 10px 30px #00000066}
+    .card h2{margin:0;padding:12px 16px;border-bottom:1px solid #1b2636;font-size:.95rem;color:#e6eefc;letter-spacing:.4px}
+    .card .body{padding:14px}
+
+    .resources{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+    .res{background:#0c1320;border:1px solid #1b2636;border-radius:12px;padding:10px}
+    .res b{display:block;font-size:.9rem}
+    .res small{color:var(--muted)}
+
+    .actions{display:grid;gap:8px}
+    button.action{width:100%;padding:12px 14px;border-radius:12px;border:1px solid #1e2940;background:linear-gradient(180deg,#182338,#0f1728);color:#e9f0ff;font-weight:600;letter-spacing:.2px;cursor:pointer}
+    button.action:disabled{opacity:.5;cursor:not-allowed}
+    button.action.cooldown{position:relative;overflow:hidden}
+    button.action.cooldown::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#f2a65a33,#ffe08a55);transform-origin:left center;transform:scaleX(var(--cd,0));pointer-events:none}
+    .inline{display:flex;gap:8px;flex-wrap:wrap}
+
+    #log{height:340px;overflow:auto;padding:12px;font-size:.95rem;line-height:1.35;background:repeating-linear-gradient(180deg,#0b1020,#0b1020 28px,#0c1526 29px);border-radius:12px;border:1px solid #1b2636}
+    #log p{margin:0 0 8px}
+    #log .dim{color:var(--muted)}
+    #log .good{color:var(--ok)}
+    #log .bad{color:var(--bad)}
+    #log .warn{color:var(--warn)}
+
+    .footer{padding:10px 16px;color:#90a3bf;font-size:.9rem;opacity:.8}
+    .tag{display:inline-flex;align-items:center;gap:6px;background:#0c1424;border:1px solid #1b2636;border-radius:999px;padding:6px 10px;font-size:.8rem}
+    .sep{height:1px;background:#1b2636;margin:10px 0}
+
+    .progress{height:8px;background:#0d1422;border-radius:999px;border:1px solid #1b2636;overflow:hidden}
+    .bar{height:100%;background:linear-gradient(90deg,#f2a65a,#ffe08a);width:0%}
+
+    .toast{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);padding:10px 14px;border-radius:12px;background:#0f1a2b;border:1px solid #1b2636;color:#e9f0ff;box-shadow:0 8px 24px #0009;opacity:0;transition:opacity .2s, transform .2s}
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+
+    .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#0b0e12cc,#0b0e12ee);z-index:10}
+    .overlay.hidden{display:none}
+    .overlay .panel{background:linear-gradient(180deg,#111827 0%,#0e1522 100%);border:1px solid #1b2636;border-radius:16px;max-width:720px;width:92%;padding:18px;box-shadow:0 10px 30px #00000066}
+    .overlay h2{margin:0 0 8px;font-size:1.1rem}
+    .overlay p{margin:8px 0;color:#c1cbe0}
+    .overlay ul{margin:8px 0 0 18px;color:#9fb0cd}
+
+    /* Achievements */
+    .achs{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+    .ach{display:flex;align-items:center;justify-content:center;height:44px;border:1px solid #1b2636;border-radius:10px;background:#0c1320;color:#e9f0ff}
+    .ach.locked{opacity:.4;filter:grayscale(1)}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔥 Luz y Sombra: El Alba de Hispania</h1>
+    <small id="saveInfo">Guardado automático</small>
+  </header>
+
+  <div class="wrap">
+    <section class="card">
+      <h2>Recursos</h2>
+      <div class="body resources" id="resources"></div>
+      <div class="footer">
+        <span class="tag">⏳ Ritmo idle activo</span>
+        <span class="tag" id="timeOfDay">🌙 Noche</span>
+      </div>
+    </section>
+
+    
+
+    <section class="card" style="grid-row:span 2;">
+      <h2>Diario</h2>
+      <div class="body">
+        <div id="log"></div>
+      </div>
+      <div class="footer" id="tipFooter"></div>
+    </section>
+
+    <section class="card">
+      <h2>Acciones</h2>
+      <div class="body actions" id="actions"></div>
+      <div class="footer">
+        <div class="inline">
+          <span class="tag" id="fireTag">🔥 Lumbre apagada</span>
+          <span class="tag" id="expeditionTag">🧭 Sin expedición</span>
+          <span class="tag" id="bossTag">👁️ Sin amenaza</span>
+          <span class="tag" id="hpTag">❤️ 100/100</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="max-width:1100px;margin:0 auto 16px;">
+    <h2>Logros</h2>
+    <div class="body achs" id="achievements"></div>
+    <div class="footer"></div>
+  </section>
+
+  <div class="toast" id="toast"></div>
+  <div id="fightOverlay" class="overlay hidden">
+    <div class="panel">
+      <h2 id="fightTitle">Combate</h2>
+      <p id="fightInfo">Prepárate...</p>
+      <pre id="fightAscii" style="background:#0b1020;padding:10px;border-radius:8px;border:1px solid #1b2636;max-height:260px;overflow:auto"></pre>
+      <div class="inline" style="margin-top:10px">
+        <button id="btnAttack" class="action">Atacar (A)</button>
+        <button id="btnDefend" class="action">Defender (D)</button>
+        <button id="btnHeal" class="action">Curarte (Medicina)</button>
+      </div>
+      <div class="footer" id="fightFooter"></div>
+    </div>
+  </div>
+  <div id="encounterOverlay" class="overlay hidden">
+    <div class="panel">
+      <h2 id="encounterTitle">Amenaza detectada</h2>
+      <p id="encounterInfo">Una presencia se aproxima...</p>
+      <div class="inline" style="margin-top:10px">
+        <button id="btnEncAccept" class="action">Aceptar</button>
+        <button id="btnEncDecline" class="action">Rechazar</button>
+      </div>
+      <div class="footer">Desaparece en <span id="encounterCountdown">10</span>s</div>
+    </div>
+  </div>
+  <div id="startOverlay" class="overlay">
+    <div class="panel">
+      <h2>🌘 Luz y Sombra: El Alba de Hispania</h2>
+      <p>Despiertas en una habitación fría y oscura en Andalucía. Enciende la fogata, sobrevive y haz crecer tu aldea.</p>
+      <ul>
+        <li>Enciende y mantiene la fogata para combatir el frío.</li>
+        <li>Recolecta leña, agua, hierbas y aceitunas.</li>
+        <li>Explora para ganar renombre, construir y desbloquear expediciones.</li>
+        <li>Vuelve cada cierto tiempo para reclamar expediciones y derrotar bosses temporales.</li>
+      </ul>
+      <div style="margin-top:12px" class="inline">
+        <button id="startBtn" class="action">Comenzar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js" defer></script>
+  <script>
+    if('serviceWorker' in navigator){
+      window.addEventListener('load', ()=>{
+        navigator.serviceWorker.register('sw.js').catch(()=>{});
+      });
+    }
+  </script>
+</body>
+</html>
