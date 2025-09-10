@@ -15,6 +15,7 @@
     body{margin:0;background:radial-gradient(1200px 800px at 70% 10%,#162036 0%,#0b0e12 55%,#06080c 100%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;}
     header{padding:16px 20px;display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #1c2433;background:#0e1420aa;backdrop-filter: blur(6px)}
     header h1{font-size:1rem;margin:0;color:#dfe8ff;letter-spacing:.5px;font-weight:600}
+    header .inline { display: flex; align-items: center; /* centra small y button */  gap: 10px; /* separación entre ellos */ }
     header small{color:var(--muted)}
 
     .wrap{display:grid;grid-template-columns: 340px 1fr;gap:16px;padding:16px;max-width:1100px;margin:0 auto}
@@ -75,7 +76,10 @@
 <body>
   <header>
     <h1>🔥 Luz y Sombra: El Alba de Hispania</h1>
-    <small id="saveInfo">Guardado automático</small>
+    <div class="inline">
+      <small id="saveInfo">Guardado automático</small>
+      <button id="audioBtn" class="action" style="width:auto;min-width:120px">🔈 Audio</button>
+    </div>
   </header>
 
   <div class="wrap">
@@ -90,12 +94,18 @@
 
     
 
-    <section class="card" style="grid-row:span 2;">
+    <section class="card"  >
       <h2>Diario</h2>
       <div class="body">
         <div id="log"></div>
       </div>
       <div class="footer" id="tipFooter"></div>
+    </section>
+
+    <section class="card">
+      <h2>Notas</h2>
+      <div class="body" id="notesBody"></div>
+      <div class="footer"></div>
     </section>
 
     <section class="card">
@@ -116,6 +126,14 @@
     <h2>Logros</h2>
     <div class="body achs" id="achievements"></div>
     <div class="footer"></div>
+  </section>
+
+  <section class="card" style="max-width:1100px;margin:0 auto 16px;">
+    <h2>Mapa</h2>
+    <div class="body" id="mapBody">
+      <div id="mapRegions" class="actions"></div>
+    </div>
+    <div class="footer" id="mapFooter"></div>
   </section>
 
   <div class="toast" id="toast"></div>

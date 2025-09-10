@@ -12,8 +12,14 @@
   const tipFooter = $('#tipFooter');
   const startOverlay = $('#startOverlay');
   const startBtn = $('#startBtn');
+  const audioBtn = document.querySelector('#audioBtn');
   const achEl = document.querySelector('#achievements');
   const hpTag = $('#hpTag');
+  const villagersTag = document.createElement('span');
+  villagersTag.className = 'tag';
+  const notesBody = document.querySelector('#notesBody');
+  const mapBody = document.querySelector('#mapBody');
+  const mapFooter = document.querySelector('#mapFooter');
   const fightOverlay = document.querySelector('#fightOverlay');
   const fightTitle = document.querySelector('#fightTitle');
   const fightInfo = document.querySelector('#fightInfo');
@@ -103,30 +109,50 @@
   const BUTTON_REFS = {};
   function setCooldown(btn, key, totalMs){
     S.cooldowns[key] = now()+totalMs;
-    BUTTON_REFS[key] = { btn, total: totalMs };
+    BUTTON_REFS[key] = { btn, total: totalMs, baseText: btn.textContent };
   }
 
   function updateCooldownVisuals(){
     const entries = Object.entries(BUTTON_REFS);
-    const t = now();
+   
     entries.forEach(([key, ref])=>{
+      let t = now();
       const remain = Math.max(0, (S.cooldowns[key]||0) - t);
       const ratio = Math.min(1, remain / ref.total);
       if(ref.btn){
         ref.btn.classList.add('cooldown');
         ref.btn.style.setProperty('--cd', String(ratio));
-        ref.btn.disabled = remain>0;
+        const shouldDisable = remain>0;
+        if(ref.btn.disabled !== shouldDisable){
+          ref.btn.disabled = shouldDisable;
+        }
+        if(remain>0){
+          const secs = Math.ceil(remain/1000);
+          const txt = ref.baseText || ref.btn.textContent.replace(/ \(.*\)$/,'');
+          ref.btn.textContent = `${txt} (${secs}s)`;
+        } else {
+          if(ref.baseText) ref.btn.textContent = ref.baseText;
+          ref.btn.classList.remove('cooldown');
+          ref.btn.style.removeProperty('--cd'); 
+        }  
       }
-      if(remain<=0){ delete BUTTON_REFS[key]; }
+      if(remain<=0){ delete BUTTON_REFS[key];  }
+       
     });
   }
 
   // Regiones andaluzas para expediciones/eventos
   const REGIONS = [
-    { name:'Sevilla', emoji:'🏰', loot:[{k:'piedra',n:[2,4]},{k:'hierro',n:[1,2]},{k:'renown',n:[1,2]}], events:['Cruzaste el Guadalquivir por un viejo puente.','Un mercader te enseña un truco de forja.'] },
-    { name:'Granada', emoji:'🕌', loot:[{k:'hierbas',n:[2,3]},{k:'agua',n:[1,2]},{k:'renown',n:[1,3]}], events:['El eco de la Alhambra susurra historias antiguas.','Las Alpujarras te ofrecen senderos y manantiales.'] },
-    { name:'Cádiz', emoji:'⚓', loot:[{k:'sal',n:[2,3]},{k:'piedra',n:[1,2]},{k:'renown',n:[1,2]}], events:['Las salinas brillan bajo el sol.','Los vientos de la costa te empujan hacia el oeste.'] },
-    { name:'Jaén', emoji:'🫒', loot:[{k:'aceitunas',n:[2,4]},{k:'hierbas',n:[1,2]},{k:'renown',n:[1,2]}], events:['Un mar de olivos se extiende hasta el horizonte.','Aprendes a podar para mejorar la cosecha.'] }
+    { name:'Sevilla', emoji:'🏰', unlockDay:1, loot:[{k:'piedra',n:[2,4]},{k:'hierro',n:[1,2]},{k:'renown',n:[1,2]}], events:['Cruzaste el Guadalquivir por un viejo puente.','Un mercader te enseña un truco de forja.'] },
+    { name:'Granada', emoji:'🕌', unlockDay:1, loot:[{k:'hierbas',n:[2,3]},{k:'agua',n:[1,2]},{k:'renown',n:[1,3]}], events:['El eco de la Alhambra susurra historias antiguas.','Las Alpujarras te ofrecen senderos y manantiales.'] },
+    { name:'Cádiz', emoji:'⚓', unlockDay:1, loot:[{k:'sal',n:[2,3]},{k:'piedra',n:[1,2]},{k:'renown',n:[1,2]}], events:['Las salinas brillan bajo el sol.','Los vientos de la costa te empujan hacia el oeste.'] },
+    { name:'Jaén', emoji:'🫒', unlockDay:1, loot:[{k:'aceitunas',n:[2,4]},{k:'hierbas',n:[1,2]},{k:'renown',n:[1,2]}], events:['Un mar de olivos se extiende hasta el horizonte.','Aprendes a podar para mejorar la cosecha.'] },
+    { name:'Málaga', emoji:'🏖️', unlockDay:3, loot:[{k:'sal',n:[1,2]},{k:'renown',n:[2,3]}], events:['El viento del levante refresca la costa.'] },
+    { name:'Córdoba', emoji:'🏛️', unlockDay:4, loot:[{k:'piedra',n:[2,3]},{k:'renown',n:[2,3]}], events:['Sombras bajo los arcos de la Mezquita.'] },
+    { name:'Huelva', emoji:'⛵', unlockDay:5, loot:[{k:'sal',n:[2,3]},{k:'agua',n:[1,2]}], events:['Marismas y esteros te guían.'] },
+    { name:'Almería', emoji:'🏜️', unlockDay:6, loot:[{k:'piedra',n:[3,4]},{k:'hierro',n:[1,2]}], events:['Tierras áridas, recursos duros.'] },
+    { name:'Toledo', emoji:'🗡️', unlockDay:8, loot:[{k:'hierro',n:[2,3]},{k:'renown',n:[2,3]}], events:['Forjas legendarias te inspiran.'] },
+    { name:'Madrid', emoji:'⭐', unlockDay:10, loot:[{k:'renown',n:[3,4]}], events:['Un cruce de caminos te abre oportunidades.'] }
   ];
 
   const BOSSES = [
@@ -253,6 +279,109 @@
     });
   }
 
+  function renderNotes(){
+    if(!notesBody) return;
+    const heat = Math.floor(S.fire.heat);
+    const villagers = S.people.villagers||0;
+    const lines = [];
+    lines.push(`👥 Aldeanos: aportan producción pasiva de trigo (más con calor). Actual: ${villagers}.`);
+    lines.push(`🔥 Fogata: calor ${heat}°. Con calor alto aumenta el ritmo de acequia/molino y la productividad.`);
+    lines.push(`🏚️ Molino: transforma trigo de forma pasiva y da renombre.`);
+    lines.push(`💧 Acequia: genera agua pasiva con probabilidad por tick.`);
+    lines.push(`⚒️ Fragua: pequeñas vetas de hierro pasivas y +1 daño al atacar.`);
+    lines.push(`🔥 Antorchas: +1 daño en ataque y se consumen al usar.`);
+    notesBody.innerHTML = '<ul style="margin:0;padding-left:18px">'+lines.map(t=>`<li>${t}</li>`).join('')+'</ul>';
+  }
+
+  const SCALE = 3.0; // 30% más separación
+  const OFFSET_X = -300; 
+  const OFFSET_Y = -310;
+  
+  const REGION_POS = {
+    'Sevilla':{x:120*SCALE+OFFSET_X, y:120*SCALE+OFFSET_Y}, 
+    'Cádiz':{x:90*SCALE+OFFSET_X, y:160*SCALE+OFFSET_Y}, 
+    'Huelva':{x:70*SCALE+OFFSET_X, y:130*SCALE+OFFSET_Y}, 
+    'Málaga':{x:160*SCALE+OFFSET_X, y:160*SCALE+OFFSET_Y}, 
+    'Córdoba':{x:150*SCALE+OFFSET_X, y:120*SCALE+OFFSET_Y}, 
+    'Jaén':{x:190*SCALE+OFFSET_X, y:120*SCALE+OFFSET_Y}, 
+    'Granada':{x:200*SCALE+OFFSET_X, y:150*SCALE+OFFSET_Y}, 
+    'Almería':{x:230*SCALE+OFFSET_X, y:150*SCALE+OFFSET_Y},
+    'Toledo':{x:170*SCALE+OFFSET_X, y:80*SCALE+OFFSET_Y}, 
+    'Madrid':{x:190*SCALE+OFFSET_X, y:60*SCALE+OFFSET_Y}
+  };
+
+  function getRandomPos(existing, minDist = 40) {
+    let x, y, ok = false;
+    while (!ok) {
+      x = 20 + Math.random() * 260;
+      y = 20 + Math.random() * 180;
+      ok = existing.every(p => Math.hypot(p.x - x, p.y - y) >= minDist);
+    }
+    return { x, y };
+  }
+
+  function renderMap(){
+    if(!mapBody) return;
+    const w=300,h=220;
+    const unlocked = REGIONS.filter(r=> (r.unlockDay||1) <= S.time.day);
+    const placed = [];
+    const nodes = unlocked.map(r=>{
+      const p = REGION_POS[r.name] || {x: 10+Math.random()*280, y: 10+Math.random()*200};
+      const active = (!S.expedition && S.unlocked.expedition);
+      const focused = (S.regionFocus===r.name);
+      const fill = focused? '#ffe08a' : (active? '#f2a65a' : '#6b7280');
+      const stroke = focused? '#f59e0b' : '#1b2636';
+      const radius = focused? 12 : 10;
+      return `<g data-region="${r.name}" cursor="pointer">
+        <circle cx="${p.x}" cy="${p.y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="2" />
+        <text x="${p.x+12}" y="${p.y+4}" fill="#e9f0ff" font-size="10" font-family="Segoe UI, Arial">${r.emoji} ${r.name}</text>
+      </g>`;
+    }).join('');
+    mapBody.innerHTML = `<svg id="mapSvg" viewBox="0 0 ${w} ${h}" width="100%" height="350px" style="background:#0b1020;border:1px solid #1b2636;border-radius:8px">
+      <rect x="0" y="0" width="${w}" height="${h}" fill="#0b1020"/>
+      ${nodes}
+    </svg>`;
+    const svg = document.querySelector('#mapSvg');
+    if(svg){
+      svg.querySelectorAll('g[data-region]').forEach(g=>{
+        g.addEventListener('click', ()=>{
+          const regionName = g.getAttribute('data-region');
+          const region = REGIONS.find(r=>r.name===regionName);
+          if(!region) return;
+          // Si hay expedición desbloqueada y libre, permitir organizar desde el mapa
+          if(S.unlocked.expedition && !S.expedition){
+            const dur = (3 + Math.floor(Math.random()*6)) * 60 * 1000;
+            S.expedition = { endsAt: now()+dur, startedAt: now(), region: region.name };
+            log(`${region.emoji} Expedición organizada hacia ${region.name} desde el mapa.`,'warn');
+            updateTags(); save(); renderActions(); renderMap(); renderNotes();
+          } else {
+            S.regionFocus = region.name; log(`Región enfocada: ${region.name}.`, 'dim'); save(); renderMap();
+          }
+        });
+      });
+    }
+    if(mapFooter){
+      if(S.unlocked.expedition && !S.expedition && S.regionFocus){
+        mapFooter.innerHTML = `<button id="mapExpBtn" class="action" style="width:auto">Organizar expedición a ${S.regionFocus}</button>`;
+        const btn = document.querySelector('#mapExpBtn');
+        if(btn){
+          btn.onclick = ()=>{
+            const region = REGIONS.find(r=>r.name===S.regionFocus) || regionPicker();
+            const dur = (3 + Math.floor(Math.random()*6)) * 60 * 1000;
+            S.expedition = { endsAt: now()+dur, startedAt: now(), region: region.name };
+            log(`${region.emoji} Expedición organizada hacia ${region.name}.`,'warn');
+            updateTags(); save(); renderActions(); renderMap();
+          };
+        }
+      } else if(S.expedition){
+        const remain = S.expedition.endsAt - now();
+        mapFooter.textContent = remain>0 ? `Expedición en curso: ${S.expedition.region} (${fmtMs(remain)})` : 'Expedición lista para reclamar en Acciones';
+      } else {
+        mapFooter.textContent = S.unlocked.expedition ? 'Selecciona una región para enviar una expedición.' : 'Desbloquea expediciones explorando.';
+      }
+    }
+  }
+
   // Combate por turnos con ASCII
   let combatState = null;
   function openCombat(){
@@ -274,7 +403,15 @@
   function enemyTurn(){
     if(!combatState) return;
     const base = 6 + Math.floor(Math.random()*4); // 6-9
-    const dmg = S.player.guard ? Math.max(1, Math.floor(base/2)) : base;
+    let dmg = base;
+    if(S.player.guard){
+      dmg = Math.max(0, Math.floor(base*0.3)); // 70% mitigación
+      // 30% de posibilidad de riposte por 1 de daño
+      if(Math.random()<0.3){
+        combatState.boss.hp = Math.max(0, combatState.boss.hp - 1);
+        log('Riposte oportuno: devuelves 1 de daño.', 'good');
+      }
+    }
     S.player.guard = false;
     S.player.hp = Math.max(0, S.player.hp - dmg);
     fightInfo.textContent = `El enemigo ataca y te hace ${dmg} de daño.`;
@@ -375,11 +512,16 @@
     S.discoveries[key] = true;
     const meta = RES_META[key];
     if(meta){ log(`Has descubierto ${meta.label.toLowerCase()}.`, 'dim'); }
+    renderActions();
   }
 
   function addRes(key, n){
     S.resources[key] = (S.resources[key]||0) + n;
     if(S.resources[key]>0) markDiscovery(key);
+    // Re-render para habilitar crafteo/otras acciones dependientes
+    renderResources();
+    tryUnlocks();
+    renderActions();
   }
 
   function fmtMs(ms){
@@ -413,6 +555,13 @@
     bossTag.textContent = S.threat ? `👁️ ${S.threat.name}` : '👁️ Sin amenaza';
     timeOfDay.textContent = timeLabel();
     if(hpTag) hpTag.textContent = `❤️ ${S.player.hp}/${S.player.maxHp}`;
+    // Contador de aldeanos en la barra
+    if(!villagersTag.parentElement){
+      const container = expeditionTag.parentElement || expeditionTag;
+      container.parentElement.appendChild(villagersTag);
+    }
+    villagersTag.textContent = `👥 ${S.people.villagers||0}`;
+    renderNotes();
   }
 
   function tryUnlocks(){
@@ -426,8 +575,9 @@
 
   function regionPicker(){
     // Pondera por renombre para abrir variedad
-    const idx = Math.min(REGIONS.length-1, Math.floor(S.stats.renown/5));
-    const slice = REGIONS.slice(0, Math.max(2, idx+2));
+    const unlocked = REGIONS.filter(r=> (r.unlockDay||1) <= S.time.day);
+    const idx = Math.min(unlocked.length-1, Math.floor(S.stats.renown/5));
+    const slice = unlocked.slice(0, Math.max(2, idx+2));
     return slice[Math.floor(Math.random()*slice.length)];
   }
 
@@ -448,7 +598,7 @@
         S.resources.lenia--; S.fire.fuel += 2; log('Avivas la lumbre.','dim');
       }
       setCd('stoke', 1500);
-      renderResources(); updateTags(); save();
+      renderResources(); updateTags(); save();  
     };
     actionsEl.appendChild(btnLight);
 
@@ -457,12 +607,12 @@
     btnWood.className='action';
     btnWood.textContent = can('cut') ? 'Cortar leña' : 'Cortar leña ('+fmtMs(S.cooldowns.cut-now())+')';
     btnWood.disabled = !can('cut');
-    btnWood.onclick = () => {
+    btnWood.onclick = () => { 
       const gained = 1 + (Math.random()<0.35?1:0);
       addRes('lenia', gained);
       log(`Recolectas ${gained} leña.`, '');
       setCooldown(btnWood, 'cut', 1800);
-      renderResources(); save();
+      renderResources(); save(); renderActions();
     };
     BUTTON_REFS['cut'] = { btn: btnWood, total: 1800 };
     actionsEl.appendChild(btnWood);
@@ -477,7 +627,7 @@
         addRes('agua', gained);
         log('Llenas un odre con agua fresca.', '');
         setCooldown(btnWater, 'fetch', 3000);
-        renderResources(); save();
+        renderResources(); save(); renderActions();
       };
       BUTTON_REFS['fetch'] = { btn: btnWater, total: 3000 };
       actionsEl.appendChild(btnWater);
@@ -493,7 +643,7 @@
         if(roll<0.6){ addRes('hierbas', 1); log('Recolectas hierbas aromáticas.', ''); }
         else { addRes('aceitunas', 1); log('Encuentras unas aceitunas maduras.', ''); }
         setCooldown(btnHerb, 'forage', 3500);
-        renderResources(); tryUnlocks(); save();
+        renderResources(); tryUnlocks(); save(); renderActions();
       };
       BUTTON_REFS['forage'] = { btn: btnHerb, total: 3500 };
       actionsEl.appendChild(btnHerb);
@@ -512,7 +662,7 @@
       else { S.stats.renown+=1; log('Ayudas a un viajero; se corre la voz. (+Renombre)','good'); }
       if(!S.threat && Math.random()<0.18){ spawnBoss(); }
       setCooldown(btnExplore, 'explore', 6000);
-      renderResources(); tryUnlocks(); updateTags(); save();
+      renderResources(); tryUnlocks(); updateTags(); save(); renderActions();
     };
     BUTTON_REFS['explore'] = { btn: btnExplore, total: 6000 };
     actionsEl.appendChild(btnExplore);
@@ -522,10 +672,10 @@
       const row = document.createElement('div'); row.className='inline';
       const b1 = document.createElement('button'); b1.className='action'; b1.textContent='Fabricar antorcha (-1 leña, -1 aceituna)';
       b1.disabled = !(S.resources.lenia>=1 && S.resources.aceitunas>=1) || !can('craft');
-      b1.onclick = ()=>{ craft('antorchas'); setCooldown(b1, 'craft', 800); renderActions(); save(); };
+      b1.onclick = ()=>{ craft('antorchas'); setCooldown(b1, 'craft', 800); renderActions(); save(); renderActions(); };
       const b2 = document.createElement('button'); b2.className='action'; b2.textContent='Preparar medicina (-2 hierbas, -1 agua)';
       b2.disabled = !(S.resources.hierbas>=2 && S.resources.agua>=1) || !can('craft');
-      b2.onclick = ()=>{ craft('medicina'); setCooldown(b2, 'craft', 800); renderActions(); save(); };
+      b2.onclick = ()=>{ craft('medicina'); setCooldown(b2, 'craft', 800); renderActions(); save();  renderActions();};
       row.appendChild(b1); row.appendChild(b2);
       actionsEl.appendChild(row);
     }
@@ -535,19 +685,19 @@
     if(S.discoveries && S.discoveries.piedra){
       const bm = document.createElement('button'); bm.className='action'; bm.textContent = 'Construir molino (-5 piedra)';
       bm.disabled = S.unlocked.molino || S.resources.piedra<5;
-      bm.onclick = ()=>{ build('molino'); renderActions(); save(); };
+      bm.onclick = ()=>{ build('molino'); renderActions(); save(); renderActions(); };
       buildWrap.appendChild(bm);
     }
     if(S.discoveries && S.discoveries.agua && S.discoveries.piedra){
       const ba = document.createElement('button'); ba.className='action'; ba.textContent = 'Construir acequia (-3 piedra, -2 agua)';
       ba.disabled = S.unlocked.acequia || !(S.resources.piedra>=3 && S.resources.agua>=2);
-      ba.onclick = ()=>{ build('acequia'); renderActions(); save(); };
+      ba.onclick = ()=>{ build('acequia'); renderActions(); save();  renderActions();};
       buildWrap.appendChild(ba);
     }
     if(S.discoveries && S.discoveries.hierro){
       const bf = document.createElement('button'); bf.className='action'; bf.textContent = 'Construir fragua (-5 hierro)';
       bf.disabled = S.unlocked.forge || S.resources.hierro<5;
-      bf.onclick = ()=>{ build('fragua'); renderActions(); save(); };
+      bf.onclick = ()=>{ build('fragua'); renderActions(); save(); renderActions(); };
       buildWrap.appendChild(bf);
     }
     if(buildWrap.children.length>0) actionsEl.appendChild(buildWrap);
@@ -646,11 +796,17 @@
       if(S.fire.heat<=0){ S.fire.lit=false; log('La lumbre se ha apagado.','warn'); }
     }
 
-    // Efectos idle de edificios
-    if(S.unlocked.acequia && Math.random()<0.05) { S.resources.agua++; }
-    if(S.unlocked.molino && Math.random()<0.05 && S.resources.trigo>0){ S.resources.trigo--; S.stats.renown+=1; }
-    // Producción pasiva por aldeanos
-    if((S.people.villagers||0)>0 && Math.random()<0.05){ addRes('trigo', 1); }
+    // Fogata aporta bonus suaves
+    const heat = S.fire.heat;
+    const heatBonus = heat>20 ? 0.02 : heat>10 ? 0.01 : 0;
+    // Efectos idle de edificios y aldeanos
+    if(S.unlocked.acequia && Math.random() < (0.05 + heatBonus)) { addRes('agua', 1); }
+    if(S.unlocked.molino && Math.random() < (0.05 + heatBonus) && S.resources.trigo>0){ S.resources.trigo--; S.stats.renown+=1; }
+    if(S.unlocked.forge && Math.random() < 0.02) { addRes('hierro', 1); }
+    // Producción pasiva por aldeanos (mejora con fogata)
+    if((S.people.villagers||0)>0 && Math.random() < (0.03 + heatBonus)){
+      addRes('trigo', Math.max(1, Math.floor((S.people.villagers||0)/3)));
+    }
 
     // Despawn boss
     if(S.threat && nowTs>=S.threat.endsAt){ log(`${S.threat.name} se desvanece entre la bruma.`, 'dim'); S.threat=null; }
@@ -659,7 +815,7 @@
     // Bosses a partir del día 2
     if(!S.threat && S.time.day>=2 && Math.random()<0.006){ spawnBoss(); }
 
-    updateTags(); renderResources(); checkAchievements();
+    updateTags(); renderResources(); checkAchievements(); renderMap(); renderNotes();
     updateCooldownVisuals();
   }
 
@@ -679,7 +835,14 @@
     if(S.started) return;
     S.started = true;
     save();
-    try{ if(!audio){ audio = new Audio('./audio1'); audio.loop=true; audio.volume=0.3; } audio.play().catch(()=>{}); }catch(e){}
+    try{
+      if(!audio){
+        audio = new Audio('audio1.mp3');
+        audio.loop = true;
+        audio.volume = 0.28;
+      }
+      audio.play().catch(()=>{});
+    }catch(e){}
     startOverlay.classList.add('hidden');
     log('Despiertas en una habitación fría. Una fogata apagada te acompaña.', '');
   }
@@ -691,14 +854,23 @@
     tryUnlocks();
     renderActions();
     renderAchievements();
-    updateTags();
+    updateTags(); renderNotes(); renderMap();
     setInterval(()=>{ gameTick(); S.lastTick = now(); }, 1000);
-    setInterval(save, 10000);
+    setInterval(save, 10000); 
     setInterval(updateCooldownVisuals, 100);
   }
 
   // Bind inicio
   startBtn.addEventListener('click', startGame);
+  if(audioBtn){
+    audioBtn.addEventListener('click', ()=>{
+      try{
+        if(!audio){ audio = new Audio('audio1.mp3'); audio.loop=true; audio.volume=0.28; }
+        if(audio.paused){ audio.play().catch(()=>{}); audioBtn.textContent = '🔊 Audio'; }
+        else { audio.pause(); audioBtn.textContent = '🔈 Audio'; }
+      }catch(e){}
+    });
+  }
 
   // Autoinicio si ya se comenzó
   if(S.started){
