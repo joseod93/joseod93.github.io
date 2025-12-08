@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Three.js Head Tracking Parallax</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: sans-serif;
+            pointer-events: none;
+            z-index: 10;
+        }
+        /* Estilos para el debugger de la cámara que agrega Handsfree */
+        .handsfree-canvas-video { display: none !important; } 
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <link rel="stylesheet" href="https://unpkg.com/handsfree@8.5.1/build/lib/assets/handsfree.css" />
+    <script src="https://unpkg.com/handsfree@8.5.1/build/lib/handsfree.js"></script>
+</head>
+<body>
+
+    <div id="info">
+        <h1>Efecto Parallax con Webcam</h1>
+        <p>Permite el acceso a la cámara y mueve tu cabeza.</p>
+        <button id="start-btn" style="pointer-events: auto; padding: 10px 20px; cursor: pointer;">INICIAR CÁMARA</button>
+    </div>
+
+    <script>
+        // --- CONFIGURACIÓN DE THREE.JS ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x000000, 1, 20);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // Posición inicial de la cámara
+        const initialCamPos = { x: 0, y: 0, z: 5 };
+        camera.position.set(initialCamPos.x, initialCamPos.y, initialCamPos.z);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- AGREGAR OBJETOS PARA VER EL EFECTO ---
+        
+        // 1. Un cubo central
+        const geometry = new THREE.BoxGeometry(2, 2, 2);
+        const material = new THREE.MeshNormalMaterial({ wireframe: false });
+        const cube = new THREE.Mesh(geometry, material);
+        scene.add(cube);
+
+        // 2. Un marco "ventana" (partículas de fondo para referencia de profundidad)
+        const starGeo = new THREE.BufferGeometry();
+        const starCount = 2000;
+        const posArray = new Float32Array(starCount * 3);
+        
+        for(let i = 0; i < starCount * 3; i++) {
+            // Estrellas aleatorias detrás del cubo
+            posArray[i] = (Math.random() - 0.5) * 30; 
+        }
+        
+        starGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const starMat = new THREE.PointsMaterial({size: 0.05, color: 0xffffff});
+        const stars = new THREE.Points(starGeo, starMat);
+        scene.add(stars);
+
+        // --- CONFIGURACIÓN DE HANDSFREE (TRACKING) ---
+        const handsfree = new Handsfree({
+            weboji: true, // Usamos el módulo 'weboji' que es ligero para head tracking
+            showDebug: true // Muestra una pequeña ventana con lo que ve la cámara
+        });
+
+        // Variables para suavizar el movimiento (Lerp)
+        let targetX = 0;
+        let targetY = 0;
+        
+        // El plugin que conecta Handsfree con nuestra lógica
+        handsfree.use('threejs-parallax', (data) => {
+            if (!data.weboji) return;
+
+            // data.weboji.translation contiene [x, y] de la cabeza
+            // data.weboji.rotation contiene [pitch, yaw, roll]
+
+            // Multiplicamos por un factor para exagerar el movimiento
+            // Invertimos o ajustamos signos según se sienta natural
+            targetX = data.weboji.translation[0] * 3; 
+            targetY = data.weboji.translation[1] * 3;
+        });
+
+        // --- BUCLE DE RENDERIZADO ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Interpolación Lineal (Lerp) para un movimiento suave
+            // Fórmula: PosiciónActual + (PosiciónDeseada - PosiciónActual) * factorSuavizado
+            camera.position.x += (targetX - camera.position.x) * 0.05;
+            camera.position.y += (targetY - camera.position.y) * 0.05;
+
+            // Opcional: Rotar el cubo ligeramente
+            cube.rotation.x += 0.005;
+            cube.rotation.y += 0.005;
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // --- MANEJO DE VENTANA Y BOTÓN ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            handsfree.start();
+            document.getElementById('info').querySelector('p').innerText = "Cargando modelo de IA...";
+            setTimeout(() => {
+                document.getElementById('info').style.display = 'none';
+            }, 2000);
+        });
+
+    </script>
+</body>
+</html>
