@@ -2,46 +2,56 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Three.js Head Tracking Parallax</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Three.js Hyper Parallax</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #1a1a1a; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
         canvas { display: block; }
-        
-        /* Contenedor para mostrar la webcam (opcional para debug) */
-        #video-container {
+
+        /* UI Overlay */
+        #ui-layer {
             position: absolute;
-            top: 10px;
-            left: 10px;
-            width: 160px;
-            height: 120px;
-            border-radius: 8px;
-            overflow: hidden;
-            border: 2px solid white;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             z-index: 10;
-            opacity: 0.7;
-        }
-        
-        video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1); /* Efecto espejo */
         }
 
-        #loading {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-family: sans-serif;
-            font-size: 1.5rem;
-            pointer-events: none;
-            text-align: center;
+        #start-btn {
+            pointer-events: auto;
+            background: transparent;
+            color: #00ffff;
+            border: 2px solid #00ffff;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            cursor: pointer;
+            letter-spacing: 4px;
+            transition: 0.3s;
+            box-shadow: 0 0 15px #00ffff55;
         }
+
+        #start-btn:hover {
+            background: #00ffff;
+            color: #000;
+            box-shadow: 0 0 30px #00ffff;
+        }
+
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #ffffff88;
+            font-size: 0.8rem;
+        }
+
+        /* Debug video oculto pero funcional */
+        video { display: none; }
     </style>
     
-    <!-- Import Maps para usar módulos ES6 directamente desde CDN -->
     <script type="importmap">
         {
             "imports": {
@@ -54,187 +64,239 @@
 </head>
 <body>
 
-    <div id="loading">Cargando IA y Cámara...<br><span style="font-size: 0.8rem">Por favor permite el acceso a la webcam</span></div>
-    
-    <div id="video-container">
-        <video id="webcam" autoplay playsinline></video>
+    <div id="ui-layer">
+        <button id="start-btn">INICIAR EXPERIENCIA</button>
     </div>
+    <div id="status">Esperando input...</div>
+    <video id="webcam" autoplay playsinline></video>
 
     <script type="module">
         import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
         import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 
-        // --------------------------------------------------------
-        // 1. CONFIGURACIÓN DE THREE.JS
-        // --------------------------------------------------------
+        // --- 1. CONFIGURACIÓN ESCENA (VISUALES PRO) ---
         const scene = new THREE.Scene();
-        scene.fog = new THREE.FogExp2(0x1a1a1a, 0.04);
+        // Niebla negra para fundir el fondo
+        scene.fog = new THREE.FogExp2(0x000000, 0.035);
 
-        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.z = 5;
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 8;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: false }); // False porque el PostProcessing se encarga
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ReinhardToneMapping;
         document.body.appendChild(renderer.domElement);
 
-        // --- Luces ---
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
+        // --- OBJETOS ---
         
-        const dirLight = new THREE.DirectionalLight(0xff00ff, 2);
-        dirLight.position.set(5, 5, 5);
-        scene.add(dirLight);
-
-        const blueLight = new THREE.PointLight(0x00ffff, 2);
-        blueLight.position.set(-5, -5, 2);
-        scene.add(blueLight);
-
-        // --- Objetos para notar el Parallax ---
-        // Objeto Central
-        const geometry = new THREE.IcosahedronGeometry(1, 1);
+        // 1.1 El Núcleo (Torus Knot)
+        const geometry = new THREE.TorusKnotGeometry(1.5, 0.4, 128, 32);
         const material = new THREE.MeshStandardMaterial({ 
-            color: 0xffffff, 
-            roughness: 0.1, 
-            metalness: 0.8 
+            color: 0x000000, 
+            roughness: 0.1,
+            metalness: 0.9,
+            emissive: 0xaa00ff, // Brillo púrpura
+            emissiveIntensity: 0.2,
+            wireframe: true
         });
-        const mainObj = new THREE.Mesh(geometry, material);
-        scene.add(mainObj);
+        const nucleus = new THREE.Mesh(geometry, material);
+        scene.add(nucleus);
 
-        // Fondo de partículas (cubos flotantes) para dar profundidad
-        const floatingGroup = new THREE.Group();
-        const boxGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
-        const boxMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
-
-        for (let i = 0; i < 100; i++) {
-            const mesh = new THREE.Mesh(boxGeo, boxMat);
-            // Posicionamos aleatoriamente, algunos muy atrás, algunos cerca
-            mesh.position.x = (Math.random() - 0.5) * 20;
-            mesh.position.y = (Math.random() - 0.5) * 20;
-            mesh.position.z = (Math.random() - 0.5) * 15 - 5; // Mayoría detrás
-            mesh.rotation.set(Math.random(), Math.random(), Math.random());
-            floatingGroup.add(mesh);
-        }
-        scene.add(floatingGroup);
-
-
-        // --------------------------------------------------------
-        // 2. CONFIGURACIÓN DE MEDIAPIPE (TRACKING)
-        // --------------------------------------------------------
-        let faceLandmarker = undefined;
-        let webcamRunning = false;
-        const video = document.getElementById('webcam');
-
-        // Variables para suavizar el movimiento (Lerp)
-        let targetX = 0;
-        let targetY = 0;
-        let currentX = 0;
-        let currentY = 0;
+        // 1.2 Anillos de Túnel (Profundidad)
+        const ringsGroup = new THREE.Group();
+        const ringGeo = new THREE.TorusGeometry(3, 0.05, 16, 100);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 });
         
-        // Intensidad del efecto parallax
-        const PARALLAX_AMP = 3.5; 
+        for(let i=0; i<10; i++) {
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.z = -i * 2;
+            ring.scale.set(1 + i*0.2, 1 + i*0.2, 1);
+            ringsGroup.add(ring);
+        }
+        scene.add(ringsGroup);
 
-        // Inicializar la IA de visión
-        async function createFaceLandmarker() {
-            const filesetResolver = await FilesetResolver.forVisionTasks(
-                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-            );
-            faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
-                baseOptions: {
-                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-                    delegate: "GPU"
-                },
-                outputFaceBlendshapes: false,
-                runningMode: "VIDEO",
-                numFaces: 1
-            });
-            startWebcam();
+        // 1.3 Partículas flotantes
+        const particlesGeo = new THREE.BufferGeometry();
+        const particlesCount = 700;
+        const posArray = new Float32Array(particlesCount * 3);
+        for(let i=0; i<particlesCount * 3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 30; // Dispersión
+        }
+        particlesGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const particlesMat = new THREE.PointsMaterial({ size: 0.05, color: 0xffffff });
+        const particleMesh = new THREE.Points(particlesGeo, particlesMat);
+        scene.add(particleMesh);
+
+        // --- POST-PROCESADO (BLOOM) ---
+        const renderScene = new RenderPass(scene, camera);
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0;
+        bloomPass.strength = 2.0; // Intensidad del brillo
+        bloomPass.radius = 0.5;
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        // --- 2. LÓGICA DE INPUT (GIROSCOPIO Y CÁMARA) ---
+        
+        let targetX = 0, targetY = 0;
+        let currentX = 0, currentY = 0;
+        let inputMode = "mouse"; // mouse, gyro, face
+        const statusDiv = document.getElementById('status');
+        const startBtn = document.getElementById('start-btn');
+
+        // Variables Face Tracking
+        let faceLandmarker;
+        let video = document.getElementById('webcam');
+        let lastVideoTime = -1;
+
+        startBtn.addEventListener('click', async () => {
+            startBtn.style.display = 'none';
+            statusDiv.innerText = "Iniciando sensores...";
+            
+            // A. Intentar iniciar Giroscopio (Móvil)
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS 13+
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        window.addEventListener('deviceorientation', handleGyro);
+                        inputMode = "gyro";
+                        statusDiv.innerText = "Modo: Giroscopio (iOS)";
+                    }
+                } catch (e) { console.error(e); }
+            } else if (window.DeviceOrientationEvent && 'ontouchstart' in window) {
+                // Android / iOS antiguo (si es touch device)
+                window.addEventListener('deviceorientation', handleGyro);
+                inputMode = "gyro";
+                statusDiv.innerText = "Modo: Giroscopio (Android/Legacy)";
+            }
+
+            // B. Si no es móvil, iniciar Webcam
+            if (inputMode !== "gyro") {
+                statusDiv.innerText = "Modo: Cargando IA Facial...";
+                await initFaceTracking();
+            }
+        });
+
+        // Handler Giroscopio
+        function handleGyro(event) {
+            // Beta: Inclinación frontal (-180 a 180) -> Eje Y
+            // Gamma: Inclinación lateral (-90 a 90) -> Eje X
+            
+            let x = event.gamma; // -90 (izq) a 90 (der)
+            let y = event.beta;  // -180 a 180
+            
+            // Limitamos para que no de la vuelta completa
+            if (x > 45) x = 45; if (x < -45) x = -45;
+            if (y > 45) y = 45; if (y < -45) y = -45;
+
+            // Mapear a coordenadas de cámara (Invertimos para efecto ventana)
+            targetX = x * 0.1; 
+            targetY = (y - 30) * 0.1; // Restamos 30 porque solemos sostener el móvil inclinado
         }
 
-        // Iniciar Webcam
-        function startWebcam() {
-            navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+        // Setup Face Tracking
+        async function initFaceTracking() {
+            try {
+                const filesetResolver = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+                );
+                faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+                    baseOptions: {
+                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
+                        delegate: "GPU"
+                    },
+                    runningMode: "VIDEO",
+                    numFaces: 1
+                });
+
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 video.srcObject = stream;
                 video.addEventListener("loadeddata", () => {
-                    webcamRunning = true;
-                    document.getElementById('loading').style.display = 'none';
+                    inputMode = "face";
+                    statusDiv.innerText = "Modo: Rastreo Facial Activo";
                     predictWebcam();
                 });
-            }).catch(err => {
-                console.error(err);
-                document.getElementById('loading').innerText = "Error: No se pudo acceder a la cámara.";
-            });
+            } catch (err) {
+                statusDiv.innerText = "Modo: Mouse (Cámara/Giroscopio no disponibles)";
+                window.addEventListener('mousemove', handleMouse);
+            }
         }
 
-        // Ciclo de predicción
-        let lastVideoTime = -1;
-        async function predictWebcam() {
-            if (webcamRunning) {
+        function predictWebcam() {
+            if (inputMode === "face") {
                 let startTimeMs = performance.now();
                 if (video.currentTime !== lastVideoTime) {
                     lastVideoTime = video.currentTime;
-                    const startTime = performance.now();
-                    const faceLandmarkerResult = faceLandmarker.detectForVideo(video, startTime);
-                    
-                    if (faceLandmarkerResult.faceLandmarks.length > 0) {
-                        // El landmark 1 es la punta de la nariz (buen punto central)
-                        const nose = faceLandmarkerResult.faceLandmarks[0][1];
-                        
-                        // MediaPipe da coordenadas de 0 a 1.
-                        // Invertimos X porque la cámara es espejo
-                        // Convertimos a rango -1 a 1
-                        const rawX = (1 - nose.x) * 2 - 1; 
-                        const rawY = (1 - nose.y) * 2 - 1; 
-
-                        // Asignamos el objetivo
-                        targetX = rawX * PARALLAX_AMP;
-                        targetY = -rawY * PARALLAX_AMP; // Invertir Y para que se sienta natural
+                    const result = faceLandmarker.detectForVideo(video, startTimeMs);
+                    if (result.faceLandmarks.length > 0) {
+                        const nose = result.faceLandmarks[0][1];
+                        // Convertir 0-1 a coordenadas cámara
+                        // Multiplicador 8 para mayor movimiento
+                        targetX = (1 - nose.x - 0.5) * 8; 
+                        targetY = (1 - nose.y - 0.5) * -8;
                     }
                 }
                 requestAnimationFrame(predictWebcam);
             }
         }
-        
-        // Iniciar todo
-        createFaceLandmarker();
 
+        // Fallback Mouse
+        function handleMouse(e) {
+            targetX = (e.clientX / window.innerWidth - 0.5) * 5;
+            targetY = -(e.clientY / window.innerHeight - 0.5) * 5;
+        }
 
-        // --------------------------------------------------------
-        // 3. RENDER LOOP Y LÓGICA DE MOVIMIENTO
-        // --------------------------------------------------------
-        
+        // --- 3. ANIMATION LOOP ---
+        const clock = new THREE.Clock();
+
         function animate() {
             requestAnimationFrame(animate);
+            const elapsedTime = clock.getElapsedTime();
 
-            // 1. Interpolación Lineal (Lerp) para suavizar el movimiento de la cámara
-            // Esto evita que la cámara tiemble si la detección no es perfecta
-            currentX += (targetX - currentX) * 0.05; // 0.05 es el factor de suavizado (menor = más suave/lento)
+            // A. Lerp de Cámara (Suavizado de movimiento)
+            currentX += (targetX - currentX) * 0.05;
             currentY += (targetY - currentY) * 0.05;
-
-            // 2. Aplicar posición a la cámara
-            // Mantenemos Z fijo, movemos X e Y
             camera.position.x = currentX;
             camera.position.y = currentY;
-            
-            // La cámara siempre debe mirar al centro (donde está el cubo principal)
             camera.lookAt(0, 0, 0);
 
-            // 3. Rotación o animación suave de objetos
-            mainObj.rotation.y += 0.01;
-            mainObj.rotation.x += 0.005;
-            floatingGroup.rotation.y -= 0.002;
+            // B. Animación de objetos
+            // El núcleo gira sobre sí mismo
+            nucleus.rotation.x = elapsedTime * 0.5;
+            nucleus.rotation.y = elapsedTime * 0.3;
 
-            renderer.render(scene, camera);
+            // Los anillos pulsan
+            ringsGroup.children.forEach((ring, i) => {
+                ring.rotation.z += 0.005 * (i % 2 === 0 ? 1 : -1);
+                // Efecto túnel infinito moviendo anillos
+                ring.position.z += 0.02;
+                if(ring.position.z > 2) ring.position.z = -18;
+            });
+
+            // Partículas giran suavemente
+            particleMesh.rotation.y = elapsedTime * 0.05;
+
+            // Render con Bloom
+            composer.render();
         }
 
         animate();
 
-        // Responsive
+        // Resize
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
         });
+
     </script>
 </body>
 </html>
