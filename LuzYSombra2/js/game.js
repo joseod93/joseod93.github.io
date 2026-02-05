@@ -1,11 +1,12 @@
 
 import { $, now, fmtMs } from './utils.js';
 import { S, loadState, saveState, resetState } from './state.js';
-import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip } from './ui.js';
+import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics } from './ui.js';
 import { renderActions, tryUnlocks, checkAchievements } from './actions.js';
 import { renderMap } from './map.js';
 import { showEncounterPrompt } from './combat.js';
 import { BOSSES } from './constants.js';
+import integrator from './integrator.js';
 
 const startOverlay = $('#startOverlay');
 const startBtn = $('#startBtn');
@@ -15,19 +16,19 @@ const audioBtn = $('#audioBtn');
 function addRes(key, n) {
     S.resources[key] = (S.resources[key] || 0) + n;
     if (S.resources[key] > 0) {
-        // discovery check logic is simple enough to skip or duplicate? 
-        // actions.js handles discovery on render. here we are passive.
-        // we can just let renderResources handle visual? 
-        // discoveries are used to unlock buildings.
         if (!S.discoveries[key]) S.discoveries[key] = true;
     }
+    // Hook para el nuevo sistema
+    integrator.onResourceGathered(S, key, n, log);
 }
 
-function spawnBoss() {
+export function spawnBoss() {
     const pool = BOSSES;
     const pick = pool[Math.floor(Math.random() * pool.length)];
     S.threat = { key: pick.key, name: pick.name, icon: pick.icon, hp: pick.hp, max: pick.hp, endsAt: now() + pick.duration, region: pick.region };
     log(`${pick.name} emerge cerca de ${pick.region}.`, 'bad');
+    // Hook para el nuevo sistema
+    integrator.onBossSpawned(S, pick.name, pick.region);
     showEncounterPrompt();
     if (!S.stats.bossTipShown) {
         setTip('Consejo: vuelve cada cierto tiempo para reclamar expediciones y bosses temporales.');
@@ -80,7 +81,9 @@ function gameTick() {
     if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus)) { addRes('agua', 1); }
     if (S.unlocked.molino && Math.random() < (0.05 + heatBonus) && S.resources.trigo > 0) {
         S.resources.trigo--;
-        S.stats.renown += (1 * prestigeMult);
+        const gained = (1 * prestigeMult);
+        S.stats.renown += gained;
+        integrator.onRenownGained(S, gained, log);
     }
     if (S.unlocked.forge && Math.random() < 0.02) { addRes('hierro', 1); }
 
@@ -130,8 +133,14 @@ function gameTick() {
             if (S.people.jobs.miner > 0) {
                 const mineChance = 0.05 * S.people.jobs.miner;
                 if (Math.random() < mineChance) {
-                    if (Math.random() < 0.7) addRes('piedra', 1);
-                    else addRes('hierro', 1);
+                    const roll = Math.random();
+                    if (roll < 0.4) { addRes('piedra', 1); log('Hallaste piedra útil.', ''); }
+                    else if (roll < 0.6) { addRes('hierro', 1); log('Recoges vetas de hierro.', ''); }
+                    else {
+                        S.stats.renown += 1;
+                        integrator.onRenownGained(S, 1, log);
+                        log('Tus mineros encuentran una veta de gran pureza. (+Renombre)', 'good');
+                    }
                 }
             }
         }
@@ -157,6 +166,7 @@ function gameTick() {
             rate: 20 // 20 units for 1 renown
         };
         log('Un mercader ambulante ha acampado cerca.', 'good');
+        integrator.onTraderArrived(S);
         renderActions(); window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
     }
 
@@ -180,6 +190,8 @@ function gameTick() {
     renderMap();
     renderNotes();
     updateCooldownVisuals();
+    // Hook para el nuevo sistema (eventos, misiones, etc)
+    integrator.onGameTick(S, log);
     S.lastTick = now();
 }
 
@@ -208,10 +220,17 @@ function startGame() {
     } catch (e) { }
     startOverlay.classList.add('hidden');
     log('Despiertas en una habitación fría. Una fogata apagada te acompaña.', '');
+
+    // Iniciar tutorial si es nuevo jugador
+    integrator.initializeSystems(S);
+    import('./tutorial.js').then(m => {
+        if (!m.default.completed) m.default.start();
+    });
 }
 
 function init() {
     loadState();
+    integrator.initializeSystems(S);
     resumeIdleProgress();
 
     renderResources();
@@ -341,6 +360,19 @@ if (btnWipe) {
         }
     };
 }
+
+const btnStats = $('#btnStats');
+if (btnStats) {
+    btnStats.addEventListener('click', showStatistics);
+}
+
+// Renderizar misiones periódicamente
+setInterval(renderQuests, 5000);
+
+// Finalizar sesión antes de cerrar
+window.addEventListener('beforeunload', () => {
+    integrator.endSession(S);
+});
 
 init();
 

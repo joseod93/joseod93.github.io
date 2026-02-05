@@ -1,0 +1,361 @@
+/* Animations CSS - Animaciones y transiciones mejoradas */
+/* Luz y Sombra: El Alba de Hispania */
+
+/* Transiciones suaves en botones */
+button.action {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+button.action:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(242, 166, 90, 0.3);
+    border-color: #f2a65a;
+}
+
+button.action:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(242, 166, 90, 0.2);
+}
+
+/* Efecto ripple en botones */
+button.action::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+}
+
+button.action:active::before {
+    width: 300px;
+    height: 300px;
+}
+
+/* Pulso en botones disponibles */
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(242, 166, 90, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(242, 166, 90, 0);
+    }
+}
+
+button.action.available {
+    animation: pulse 2s infinite;
+}
+
+/* Entrada de recursos nuevos */
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.res.new {
+    animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Brillo al ganar recursos */
+@keyframes glow {
+    0%, 100% {
+        box-shadow: 0 0 5px rgba(154, 208, 110, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(154, 208, 110, 0.8);
+    }
+}
+
+.res.gained {
+    animation: glow 0.6s ease-in-out;
+}
+
+/* Shake al perder recursos */
+@keyframes shakeLoss {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+.res.lost {
+    animation: shakeLoss 0.4s ease-in-out;
+}
+
+/* Fade in para cards */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* Entrada de logs */
+#log p {
+    animation: slideInRight 0.3s ease-out;
+}
+
+/* Progreso de barras animado */
+.bar {
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hp-fill {
+    transition: width 0.3s ease-out, background 0.3s ease;
+}
+
+/* Efecto de partículas al completar acción */
+@keyframes particle {
+    0% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(var(--tx), var(--ty)) scale(0);
+    }
+}
+
+.particle {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: #f2a65a;
+    border-radius: 50%;
+    pointer-events: none;
+    animation: particle 0.8s ease-out forwards;
+}
+
+/* Tutorial styles */
+.tutorial-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 9998;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.tutorial-tooltip {
+    position: fixed;
+    background: linear-gradient(180deg, #111827 0%, #0e1522 100%);
+    border: 2px solid #f2a65a;
+    border-radius: 12px;
+    padding: 16px;
+    max-width: 320px;
+    z-index: 9999;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+    animation: fadeIn 0.3s ease-out;
+}
+
+.tutorial-tooltip h3 {
+    margin: 0 0 8px;
+    color: #f2a65a;
+    font-size: 1.1rem;
+}
+
+.tutorial-tooltip p {
+    margin: 0 0 12px;
+    color: #e7edf7;
+    line-height: 1.5;
+}
+
+.tutorial-action {
+    background: #0c1424;
+    border: 1px solid #1b2636;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 12px 0;
+    color: #9ad06e;
+    font-size: 0.9rem;
+}
+
+.tutorial-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.tutorial-skip {
+    background: transparent;
+    border: 1px solid #1b2636;
+    color: #93a1b3;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.tutorial-skip:hover {
+    background: #1b2636;
+    color: #e7edf7;
+}
+
+.tutorial-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #1b2636;
+}
+
+.tutorial-footer span {
+    color: #93a1b3;
+    font-size: 0.85rem;
+}
+
+.tutorial-next {
+    background: linear-gradient(180deg, #f2a65a, #e09548);
+    border: none;
+    color: #0b0e12;
+    padding: 6px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.tutorial-next:hover {
+    background: linear-gradient(180deg, #ffe08a, #f2a65a);
+}
+
+.tutorial-highlight {
+    position: relative;
+    z-index: 9999;
+    box-shadow: 0 0 0 4px rgba(242, 166, 90, 0.5), 0 0 20px rgba(242, 166, 90, 0.3);
+    animation: pulse 2s infinite;
+}
+
+/* Notificaciones in-app */
+.notification-container {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 9000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 320px;
+}
+
+.in-app-notification {
+    background: linear-gradient(180deg, #111827 0%, #0e1522 100%);
+    border: 1px solid #1b2636;
+    border-left: 4px solid #f2a65a;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    animation: slideInRight 0.3s ease-out;
+}
+
+.in-app-notification.fade-out {
+    animation: fadeOut 0.3s ease-out forwards;
+}
+
+@keyframes fadeOut {
+    to {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+}
+
+.notif-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.notif-header strong {
+    color: #e7edf7;
+    font-size: 0.95rem;
+}
+
+.notif-close {
+    background: transparent;
+    border: none;
+    color: #93a1b3;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    line-height: 1;
+}
+
+.notif-close:hover {
+    color: #e7edf7;
+}
+
+.notif-body {
+    color: #93a1b3;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+/* Logros con animación */
+.ach {
+    transition: all 0.3s ease;
+}
+
+.ach:not(.locked):hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(242, 166, 90, 0.3);
+}
+
+.ach.unlocked {
+    animation: glow 0.6s ease-in-out;
+}
+
+/* Loading spinner */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-spinner {
+    border: 3px solid #1b2636;
+    border-top-color: #f2a65a;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Transiciones de página */
+body {
+    transition: background 1s ease;
+}
+
+/* Hover effects para tags */
+.tag {
+    transition: all 0.2s ease;
+}
+
+.tag:hover {
+    background: #151b26;
+    border-color: #2a3646;
+}

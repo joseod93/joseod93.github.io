@@ -1,7 +1,9 @@
 
 import { $, fmtMs, now } from './utils.js';
-import { S } from './state.js';
-import { RES_META, BOSSES, EXTRA_ACHIEVEMENTS } from './constants.js';
+import { S, saveState } from './state.js';
+import { RES_META, BOSSES } from './constants.js';
+import { ACHIEVEMENTS } from './achievements.js';
+import integrator from './integrator.js';
 
 const resEl = $('#resources');
 const logEl = $('#log');
@@ -15,6 +17,9 @@ const toastEl = $('#toast');
 const tipFooter = $('#tipFooter');
 const achEl = $('#achievements');
 const notesBody = $('#notesBody');
+const hpMobile = $('#hpMobile');
+const fireMobile = $('#fireMobile');
+const peopleMobile = $('#peopleMobile');
 const villagersTag = document.createElement('span');
 villagersTag.className = 'tag';
 
@@ -106,6 +111,12 @@ export function updateTags() {
         expeditionTag.parentElement.appendChild(villagersTag);
     }
     villagersTag.textContent = `👥 ${S.people.villagers || 0}`;
+
+    // Update mobile bar if visible
+    if (hpMobile) hpMobile.textContent = `❤️ ${S.player.hp}/${S.player.maxHp}`;
+    if (fireMobile) fireMobile.textContent = `🔥 ${Math.floor(S.fire.heat)}°`;
+    if (peopleMobile) peopleMobile.textContent = `👥 ${S.people.villagers || 0}`;
+
     renderNotes();
 }
 
@@ -137,22 +148,22 @@ export function renderNotes() {
 export function renderAchievements() {
     if (!achEl) return;
     achEl.innerHTML = '';
-    // Bosses
-    BOSSES.forEach(b => {
+
+    // Convert OBJECT to ARRAY for easier rendering
+    const allAchs = Object.values(ACHIEVEMENTS);
+
+    allAchs.forEach(a => {
         const d = document.createElement('div');
-        const has = !!S.achievements[b.key];
-        d.className = 'ach' + (has ? '' : ' locked');
-        d.title = b.name;
-        d.textContent = b.icon;
-        achEl.appendChild(d);
-    });
-    // Extra
-    EXTRA_ACHIEVEMENTS.forEach(a => {
-        const d = document.createElement('div');
-        const has = !!S.achievements[a.key];
-        d.className = 'ach' + (has ? '' : ' locked');
-        d.title = a.name;
+        const has = !!S.achievements[a.id];
+        d.className = 'ach' + (has ? ' unlocked' : ' locked');
+        d.title = `${a.name}: ${a.description}`;
         d.textContent = a.icon;
+
+        // Add click listener to show description as toast on mobile
+        d.onclick = () => {
+            toast(`${a.name}: ${a.description}`);
+        };
+
         achEl.appendChild(d);
     });
 }
@@ -160,4 +171,76 @@ export function renderAchievements() {
 // Tip footer helper
 export function setTip(text) {
     tipFooter.textContent = text;
+}
+
+export function renderQuests() {
+    const questsContainer = $('#quests');
+    if (!questsContainer) return;
+
+    const activeQuests = integrator.getActiveQuests();
+
+    if (activeQuests.length === 0) {
+        questsContainer.innerHTML = '<p style="color: #888; text-align: center; padding: 10px;">No hay misiones activas por ahora. ¡Explora más!</p>';
+        return;
+    }
+
+    questsContainer.innerHTML = activeQuests.map(q => `
+        <div class="quest ${q.completed ? 'completed' : ''}" style="margin-bottom: 12px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-weight: bold; color: #e9f0ff;">${q.icon} ${q.name}</span>
+                <span style="font-variant-numeric: tabular-nums; color: #94a3b8;">${q.progress} / ${q.target.amount}</span>
+            </div>
+            <div style="width: 100%; height: 6px; background: rgba(0,0,0,0.3); border-radius: 3px; overflow: hidden;">
+                <div style="width: ${Math.min(100, (q.progress / q.target.amount) * 100)}%; height: 100%; background: linear-gradient(90deg, #f59e0b, #fbbf24); transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);"></div>
+            </div>
+            ${q.completed ? '<button class="action claim-btn" data-id="' + q.id + '" style="margin-top: 8px; padding: 4px 0; font-size: 0.8rem;">Reclamar Recompensa</button>' : ''}
+        </div>
+    `).join('');
+
+    // Bind claim buttons
+    questsContainer.querySelectorAll('.claim-btn').forEach(btn => {
+        btn.onclick = () => {
+            const id = btn.dataset.id;
+            integrator.claimQuestReward(S, id, log);
+            renderQuests();
+            renderResources();
+            saveState();
+        };
+    });
+}
+
+export function showStatistics() {
+    const stats = integrator.getStatistics();
+
+    const modal = document.createElement('div');
+    modal.className = 'overlay';
+    modal.style.zIndex = '10000';
+
+    modal.innerHTML = `
+        <div class="panel" style="max-width: 500px; width: 90%;">
+            <h2 style="color: #f59e0b; margin-bottom: 20px;">📊 Estadísticas de tu Reino</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; text-align: left;">
+                ${Object.entries(stats).map(([key, value]) => `
+                    <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+                        <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;">${key}</div>
+                        <div style="font-size: 1.1rem; font-weight: bold; color: #f8fafc; margin-top: 2px;">${value}</div>
+                    </div>
+                `).join('')}
+            </div>
+            <button id="closeStatsBtn" class="action" style="margin-top: 24px; width: 100%;">Cerrar</button>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const close = () => {
+        modal.classList.add('hidden');
+        setTimeout(() => modal.remove(), 300);
+    };
+
+    modal.querySelector('#closeStatsBtn').onclick = close;
+    modal.onclick = (e) => { if (e.target === modal) close(); };
+
+    // Trigger show animation
+    requestAnimationFrame(() => modal.classList.remove('hidden'));
 }

@@ -1,3 +1,13 @@
+import { AudioSystem } from './audio.js';
+import { S, loadState, saveState, resetState, exportState, importState, now } from './storage.js';
+import { $, fmtMs, getRandomPos, formatNumber, vibrate, isMobile } from './utils.js';
+import { triggerRandomEvent, triggerRegionEvent, updateWeather } from './events.js';
+import { checkAchievements, ACHIEVEMENTS } from './achievements.js';
+import { tutorial } from './tutorial.js';
+import { notifications } from './notifications.js';
+import { quests } from './quests.js';
+import { statistics } from './statistics.js';
+
 
 const RES_META = {
     lenia: { label: 'Leña', icon: '🪵' },
@@ -33,12 +43,6 @@ const BOSSES = [
     { key: 'boss_sierra', name: 'Centinela de Sierra Morena', icon: '🌲', hp: 18, duration: 120000, region: 'Sevilla' }
 ];
 
-const EXTRA_ACHIEVEMENTS = [
-    { key: 'ach_aceitunero', name: 'Maestro Aceitunero', icon: '🫒' },
-    { key: 'ach_acequia', name: 'Arquitecto del Agua', icon: '🚰' },
-    { key: 'ach_herrero', name: 'Herrero Mayor', icon: '⚒️' }
-];
-
 // Map positioning constants
 const SCALE = 3.0;
 const OFFSET_X = -300;
@@ -57,177 +61,7 @@ const REGION_POS = {
     'Madrid': { x: 190 * SCALE + OFFSET_X, y: 60 * SCALE + OFFSET_Y }
 };
 
-const $ = sel => document.querySelector(sel);
-const now = () => Date.now();
-
-function fmtMs(ms) {
-    const s = Math.ceil(ms / 1000);
-    if (s < 60) return s + 's';
-    const m = Math.floor(s / 60); const r = s % 60;
-    return m + 'm' + (r ? (' ' + r + 's') : '');
-}
-
-function getRandomPos(existing, minDist = 40) {
-    let x, y, ok = false;
-    while (!ok) {
-        x = 20 + Math.random() * 260;
-        y = 20 + Math.random() * 180;
-        ok = existing.every(p => Math.hypot(p.x - x, p.y - y) >= minDist);
-    }
-    return { x, y };
-}
-
-// Simple toast/log system - will be initialized or imported by UI but exposed here for convenience if needed,
-// OR we can keep them in UI and import UI helpers in other modules.
-// For now, let's keep pure utils here. Log and Toast depend on DOM elements, so they fit better in UI or a dedicated Logger module.
-// However, to avoid circular deps (Game -> UI -> Game), we'll put them in UI and import UI in Game/Actions.
-
-
-
-let S;
-const blank = () => ({
-    version: 3,
-    started: false,
-    startedAt: now(),
-    lastTick: now(),
-    time: { day: 1, minutes: 0 },
-    fire: { lit: false, heat: 0, fuel: 0 },
-    player: { hp: 100, maxHp: 100, guard: false },
-    unlocked: { water: false, olives: false, herbs: false, village: false, expedition: false, forge: false, crafting: false, molino: false, acequia: false },
-    stats: { explore: 0, renown: 0, bossesDefeated: 0, bossTipShown: false },
-    people: { villagers: 0, jobs: { lumber: 0, farmer: 0, miner: 0 } },
-    resources: { lenia: 0, agua: 0, aceitunas: 0, hierbas: 0, piedra: 0, hierro: 0, trigo: 0, sal: 0, antorchas: 0, medicina: 0 },
-    cooldowns: { cut: 0, fetch: 0, forage: 0, explore: 0, stoke: 0, boss: 0, craft: 0 },
-    expedition: null,
-    threat: null,
-    trader: null,
-    prestige: 0,
-    achievements: {},
-    regionFocus: null,
-    weather: 'clear',
-    discoveries: { lenia: false, agua: false, aceitunas: false, hierbas: false, piedra: false, hierro: false, trigo: false, sal: false }
-});
-
-
-
-function loadState() {
-    try {
-        const raw = localStorage.getItem('lys_save_v2');
-        if (raw) {
-            S = JSON.parse(raw);
-            // Migration: Ensure jobs exist
-            if (!S.people.jobs) S.people.jobs = { lumber: 0, farmer: 0, miner: 0 };
-            if (S.people.jobs.miner === undefined) S.people.jobs.miner = 0;
-            // Ensure structure is correct if versions mismatch (simple merge/fallback could go here)
-        }
-    } catch (e) { S = blank(); }
-    return S;
-}
-
-function saveState() {
-    try {
-        localStorage.setItem('lys_save_v2', JSON.stringify(S));
-        return true;
-    } catch (e) { return false; }
-}
-
-function resetState() {
-    S = blank();
-    saveState();
-}
-
-const AudioSystem = {
-    audio: null,
-    muted: false,
-    ctx: null,
-    init() {
-        this.muted = localStorage.getItem('lys_muted') === 'true';
-        try {
-            const Ctx = window.AudioContext || window.webkitAudioContext;
-            if (Ctx) this.ctx = new Ctx();
-        } catch (e) { console.error('AudioContext not supported'); }
-    },
-    toggle() {
-        if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
-        this.muted = !this.muted;
-        localStorage.setItem('lys_muted', this.muted);
-        if (this.audio) {
-            if (this.muted) {
-                this.audio.pause();
-            } else {
-                this.audio.play().catch(() => { });
-            }
-        }
-        return this.muted;
-    },
-    playMusic(src, vol = 0.28) {
-        if (!this.audio) {
-            this.audio = new Audio(src);
-            this.audio.loop = true;
-            this.audio.volume = vol;
-        }
-        if (!this.muted) {
-            this.audio.play().catch(() => { });
-        }
-    },
-    playTone(type) {
-        if (this.muted || !this.ctx) return;
-        if (this.ctx.state === 'suspended') this.ctx.resume();
-
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        const now = this.ctx.currentTime;
-
-        if (type === 'click') {
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(800, now);
-            osc.frequency.exponentialRampToValueAtTime(1200, now + 0.05);
-            gain.gain.setValueAtTime(0.05, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-            osc.start(now);
-            osc.stop(now + 0.05);
-        } else if (type === 'wood') {
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(150, now);
-            osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
-            gain.gain.setValueAtTime(0.05, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-            osc.start(now);
-            osc.stop(now + 0.1);
-        } else if (type === 'metal') {
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(2000, now);
-            osc.frequency.exponentialRampToValueAtTime(500, now + 0.2);
-            gain.gain.setValueAtTime(0.03, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-            osc.start(now);
-            osc.stop(now + 0.2);
-        } else if (type === 'fight') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(100, now);
-            osc.frequency.linearRampToValueAtTime(50, now + 0.1);
-            gain.gain.setValueAtTime(0.05, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-            osc.start(now);
-            osc.stop(now + 0.1);
-        } else if (type === 'bad') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150, now);
-            osc.frequency.linearRampToValueAtTime(100, now + 0.3);
-            gain.gain.setValueAtTime(0.05, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-            osc.start(now);
-            osc.stop(now + 0.3);
-        }
-    }
-};
-
-AudioSystem.init();
-
-
+// DOM Elements
 
 const resEl = $('#resources');
 const logEl = $('#log');
@@ -1393,8 +1227,6 @@ function resumeIdleProgress() {
         log(`Has estado fuera ${fmtMs(elapsed)}. Progreso idle aplicado.`, 'dim');
     }
 }
-
-import { AudioSystem } from './audio.js';
 
 let audio = null; // Removed in favor of AudioSystem singleton logic, but we kept reference in original code. 
 // We will replace implementation.

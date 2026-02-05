@@ -7,9 +7,8 @@
   <meta name="theme-color" content="#0b0e12" />
   <title>Luz y Sombra: El Alba de Hispania</title>
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="css/styles.css" />
-</head>
+  <link rel="stylesheet" href="css/animations.css" />
 </head>
 
 <body>
@@ -33,24 +32,16 @@
 
 
 
-    <section class="card">
-      <h2>Diario</h2>
-      <div class="body">
-        <div id="log"></div>
-      </div>
-      <div class="footer" id="tipFooter"></div>
-    </section>
-
-    <section class="card">
+    <section class="card notes-card" id="notesSection">
       <h2>Notas</h2>
       <div class="body" id="notesBody"></div>
       <div class="footer"></div>
     </section>
 
-    <section class="card">
+    <section class="card actions-card" id="actionsSection">
       <h2>Acciones</h2>
       <div class="body actions" id="actions"></div>
-      <div class="footer">
+      <div class="footer desktop-only">
         <div class="inline">
           <span class="tag" id="fireTag">🔥 Lumbre apagada</span>
           <span class="tag" id="expeditionTag">🧭 Sin expedición</span>
@@ -59,15 +50,36 @@
         </div>
       </div>
     </section>
+
+    <section class="card results-card" id="resultsSection" style="grid-row: span 2;">
+      <h2>Diario</h2>
+      <div class="body">
+        <div id="log"></div>
+      </div>
+      <div class="footer" id="tipFooter"></div>
+    </section>
+
+    <section class="card">
+      <h2>📋 Misiones</h2>
+      <div class="body" id="quests"></div>
+      <div class="footer">Cumple objetivos para ganar recompensas.</div>
+    </section>
   </div>
 
-  <section class="card" style="max-width:1100px;margin:0 auto 16px;">
+  <!-- Mobile sticky stats -->
+  <div class="mobile-stats-bar mobile-only">
+    <span id="hpMobile">❤️ 100/100</span>
+    <span id="fireMobile">🔥 0°</span>
+    <span id="peopleMobile">👥 0</span>
+  </div>
+
+  <section class="card achs-card" id="achievementsSection" style="max-width:1100px;margin:0 auto 16px;">
     <h2>Logros</h2>
     <div class="body achs" id="achievements"></div>
     <div class="footer"></div>
   </section>
 
-  <section class="card" style="max-width:1100px;margin:0 auto 16px;">
+  <section class="card map-card" id="mapSection" style="max-width:1100px;margin:0 auto 16px;">
     <h2>Mapa</h2>
     <div class="body" id="mapBody">
       <div id="mapRegions" class="actions"></div>
@@ -75,9 +87,10 @@
     <div class="footer" id="mapFooter"></div>
   </section>
 
-  <section class="card" style="max-width:1100px;margin:0 auto 16px;">
+  <section class="card sys-card" id="sysSection" style="max-width:1100px;margin:0 auto 16px;">
     <h2>Sistema</h2>
     <div class="body inline">
+      <button id="btnStats" class="action">📊 Ver Estadísticas</button>
       <button id="btnExport" class="action">Exportar Partida</button>
       <button id="btnImport" class="action">Importar Partida</button>
       <button id="btnWipe" class="action" style="border-color:#ff6b6b;color:#ff6b6b">Borrar Datos</button>
@@ -126,9 +139,8 @@
       </div>
     </div>
   </div>
- 
-  <script type="module" src="js/app.js"></script>
 
+  <script type="module" src="js/game.js"></script>
   <script>
     if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
       window.addEventListener('load', () => {

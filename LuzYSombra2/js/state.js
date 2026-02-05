@@ -28,15 +28,31 @@ export let S = blank(); // Default to blank, will be overwritten by load
 
 export function loadState() {
     try {
-        const raw = localStorage.getItem('lys_save_v2');
+        let raw = localStorage.getItem('lys_save_v2');
+
+        // Intentar migrar desde v1 si v2 no existe
+        if (!raw) {
+            const v1 = localStorage.getItem('lys_save_v1');
+            if (v1) {
+                console.log('Migrando partida desde v1...');
+                raw = v1;
+                localStorage.setItem('lys_save_v2', v1); // Clonar en v2
+            }
+        }
+
         if (raw) {
-            S = JSON.parse(raw);
+            const loaded = JSON.parse(raw);
+            S = { ...blank(), ...loaded };
+
             // Migration: Ensure jobs exist
             if (!S.people.jobs) S.people.jobs = { lumber: 0, farmer: 0, miner: 0 };
             if (S.people.jobs.miner === undefined) S.people.jobs.miner = 0;
-            // Ensure structure is correct if versions mismatch (simple merge/fallback could go here)
+            if (!S.discoveries) S.discoveries = blank().discoveries;
         }
-    } catch (e) { S = blank(); }
+    } catch (e) {
+        console.error('Error al cargar estado:', e);
+        S = blank();
+    }
     return S;
 }
 

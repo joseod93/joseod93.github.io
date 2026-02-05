@@ -86,24 +86,166 @@
     @media (max-width:900px) {
       .wrap {
         grid-template-columns: 1fr;
-        padding: 12px
+        padding: 8px;
+        gap: 12px;
+      }
+
+      header {
+        flex-direction: column;
+        padding: 10px 16px;
+        align-items: stretch;
+        gap: 8px;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
       }
 
       header h1 {
-        font-size: .95rem
+        font-size: 0.9rem;
+        text-align: center;
+      }
+
+      header .inline {
+        justify-content: space-between;
       }
 
       #log {
-        height: 260px
+        height: 220px;
+        font-size: 0.85rem;
       }
 
       button.action {
-        padding: 16px 16px;
-        font-size: 1rem
+        padding: 14px 12px;
+        font-size: 0.95rem;
+        min-height: 48px;
+        /* Standard touch target height */
+      }
+
+      .resources {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+      }
+
+      .res {
+        padding: 8px;
       }
 
       .res b {
-        font-size: 1rem
+        font-size: 0.85rem;
+      }
+
+      .achs {
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      /* Sticky bottom bar for mobile to show HP and Fire */
+      .mobile-stats-bar {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #0e1420;
+        border-top: 1px solid #1c2433;
+        padding: 8px 16px;
+        justify-content: space-between;
+        z-index: 1000;
+        font-size: 0.8rem;
+        backdrop-filter: blur(8px);
+      }
+    }
+
+    @media (max-width: 400px) {
+      .achs {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .resources {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Accessibility and Mobile Polish */
+    .mobile-only {
+      display: none;
+    }
+
+    @media (max-width: 900px) {
+      .mobile-only {
+        display: block;
+      }
+
+      .desktop-only {
+        display: none;
+      }
+
+      /* Reorder sections for mobile */
+      .actions-card {
+        order: 1;
+      }
+
+      .results-card {
+        order: 2;
+      }
+
+      .card:nth-child(1) {
+        order: 3;
+      }
+
+      /* Resources */
+      .card:nth-child(5) {
+        order: 4;
+      }
+
+      /* Quests */
+      .card:nth-child(6) {
+        order: 5;
+      }
+
+      /* Achievements (Wait, index.html structure might differ) */
+
+      /* Map and System at the bottom */
+      #mapSection {
+        order: 10;
+      }
+
+      #sysSection {
+        order: 11;
+      }
+
+      #notesSection {
+        order: 9;
+      }
+
+      .achs-card {
+        order: 8;
+      }
+
+      /* Overlay/Modal mobile adjustments */
+      .overlay .panel {
+        width: 96%;
+        padding: 14px;
+        max-height: 98vh;
+        overflow-y: auto;
+      }
+
+      .combat-ui {
+        gap: 16px;
+        margin: 12px 0;
+        min-height: 120px;
+      }
+
+      .fighter {
+        width: 100px;
+      }
+
+      .fighter .icon {
+        font-size: 2.5rem;
+      }
+
+      .dmg-num {
+        font-size: 1.2rem;
       }
     }
 

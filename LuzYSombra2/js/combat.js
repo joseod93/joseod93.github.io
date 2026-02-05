@@ -1,7 +1,8 @@
 
-import { $ } from './utils.js';
+import { $, sleep, vibrate } from './utils.js';
 import { S, saveState } from './state.js';
 import { log, toast, updateTags, renderResources } from './ui.js';
+import integrator from './integrator.js';
 
 const fightOverlay = $('#fightOverlay');
 const fightTitle = $('#fightTitle');
@@ -24,7 +25,7 @@ const btnEncDecline = $('#btnEncDecline');
 let combatState = null;
 let encounterTimer = null;
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 
 function createDamageNumber(amount, targetEl, type = 'dmg') {
     if (!targetEl) return;
@@ -81,7 +82,13 @@ const renderAscii = renderCombatUI;
 
 export function openCombat() {
     if (!S.threat) return;
-    combatState = { boss: S.threat, turn: 'player' };
+    combatState = {
+        boss: S.threat,
+        turn: 'player',
+        totalDamageDealt: 0,
+        totalDamageTaken: 0,
+        startTime: Date.now()
+    };
     fightTitle.textContent = `Combate: ${S.threat.name}`;
     fightInfo.textContent = 'Turnos: tú actúas primero. Decide atacar, defender o curarte.';
     fightFooter.textContent = `HP Jugador: ${S.player.hp}/${S.player.maxHp} | HP Enemigo: ${combatState.boss.hp}/${combatState.boss.max}`;
@@ -121,6 +128,7 @@ function enemyTurn() {
     }
     S.player.guard = false;
     S.player.hp = Math.max(0, S.player.hp - dmg);
+    combatState.totalDamageTaken += dmg;
     fightInfo.textContent = `El enemigo ataca y te hace ${dmg} de daño.`;
     fightFooter.textContent = ''; // Hide footer text info as bars show it
 
@@ -130,6 +138,7 @@ function enemyTurn() {
         playerEl.classList.add('hit');
         setTimeout(() => playerEl.classList.remove('hit'), 450);
         createDamageNumber(dmg, playerEl);
+        vibrate(80); // Vibrar al recibir daño
     }
 
     updateTags();
@@ -161,6 +170,7 @@ btnAttack.addEventListener('click', () => {
     }
 
     combatState.boss.hp -= atk;
+    combatState.totalDamageDealt += atk;
     fightInfo.textContent = isCrit ? `¡GOLPE CRÍTICO! Infliges ${atk} de daño.` : `Atacas e infliges ${atk} de daño.`;
     fightFooter.textContent = '';
 
@@ -180,6 +190,10 @@ btnAttack.addEventListener('click', () => {
         log(`${t.name} ha sido derrotado.`, 'good');
         S.stats.bossesDefeated++;
         window.dispatchEvent(new CustomEvent('lys-unlock-achievement', { detail: { key: t.key, mk: `Derrotaste a ${t.name}` } }));
+
+        // Hook para el nuevo sistema
+        const duration = Date.now() - combatState.startTime;
+        integrator.onBossDefeated(S, t.name, combatState.totalDamageDealt, combatState.totalDamageTaken, duration, log);
 
         S.threat = null;
         bossTag.textContent = '👁️ Sin amenaza';
