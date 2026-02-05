@@ -28,7 +28,6 @@ const ASSETS = [
   './audioFight1.mp3',
   './audioFight2.mp3',
   './icon-192.svg',
-  './icon-512.svg',
   './LOGO.jpg'
 ];
 

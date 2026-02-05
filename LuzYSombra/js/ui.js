@@ -212,18 +212,36 @@ export function renderQuests() {
 export function showStatistics() {
     const stats = integrator.getStatistics();
 
+    const formatStatValue = (key, value) => {
+        if (Array.isArray(value)) {
+            if (value.length === 0) return 'Ninguno';
+            // Specific handling for totalResources which is [{resource, amount}, ...]
+            if (key === 'totalResources') {
+                return value.map(i => `${i.resource}: ${i.amount}`).join(', ');
+            }
+            return value.join(', ');
+        }
+        if (typeof value === 'object' && value !== null) {
+            if (Object.keys(value).length === 0) return 'Ninguno';
+            return Object.entries(value)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(', ');
+        }
+        return value;
+    };
+
     const modal = document.createElement('div');
     modal.className = 'overlay';
     modal.style.zIndex = '10000';
 
     modal.innerHTML = `
-        <div class="panel" style="max-width: 500px; width: 90%;">
+        <div class="panel" style="max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
             <h2 style="color: #f59e0b; margin-bottom: 20px;">📊 Estadísticas de tu Reino</h2>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; text-align: left;">
+            <div style="display: grid; grid-template-columns: 1fr; gap: 12px; text-align: left;">
                 ${Object.entries(stats).map(([key, value]) => `
                     <div style="background: rgba(255,255,255,0.03); padding: 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
-                        <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;">${key}</div>
-                        <div style="font-size: 1.1rem; font-weight: bold; color: #f8fafc; margin-top: 2px;">${value}</div>
+                        <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em;">${key.replace(/([A-Z])/g, ' $1').trim()}</div>
+                        <div style="font-size: 1rem; color: #e7edf7; margin-top: 4px; line-height: 1.4; word-break: break-word;">${formatStatValue(key, value)}</div>
                     </div>
                 `).join('')}
             </div>
