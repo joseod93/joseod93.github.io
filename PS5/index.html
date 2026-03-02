@@ -2,119 +2,151 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Advanced WebKit JS Diagnostic</title>
+<title>Deep JS Engine Analysis</title>
 <style>
-  body { font-family: monospace; background:#111; color:#eee; padding:20px; }
-  h1 { color:#4CAF50; }
-  h2 { color:#00BCD4; margin-top:30px; }
-  .box { background:#1e1e1e; padding:15px; margin-top:10px; border-radius:8px; }
-  button { padding:6px 10px; margin-top:5px; }
-  pre { max-height:300px; overflow:auto; background:#000; padding:10px; }
+body { font-family: monospace; background:#111; color:#eee; padding:20px; }
+h1 { color:#4CAF50; }
+h2 { color:#00BCD4; margin-top:30px; }
+.box { background:#1e1e1e; padding:15px; margin-top:10px; border-radius:8px; }
+button { margin-top:5px; padding:5px 10px; }
+pre { max-height:250px; overflow:auto; background:#000; padding:10px; }
 </style>
 </head>
 <body>
 
-<h1>Advanced WebKit JS Diagnostic</h1>
+<h1>Deep JS Engine Analysis</h1>
 
 <div class="box">
-<h2>1️⃣ Listar propiedades globales</h2>
-<button onclick="listGlobals()">Mostrar propiedades</button>
+<h2>1️⃣ Entorno</h2>
+<p id="env"></p>
+</div>
+
+<div class="box">
+<h2>2️⃣ Globals detallados</h2>
+<button onclick="listGlobals()">Listar</button>
 <p>Total: <span id="globalCount"></span></p>
 <pre id="globalList"></pre>
 </div>
 
 <div class="box">
-<h2>2️⃣ Detección indirecta de JIT</h2>
-<button onclick="jitTest()">Ejecutar test rendimiento</button>
-<p id="jitResult"></p>
+<h2>3️⃣ Análisis de objeto _ps</h2>
+<button onclick="inspectPS()">Inspeccionar</button>
+<pre id="psOutput"></pre>
 </div>
 
 <div class="box">
-<h2>3️⃣ Stress test arrays</h2>
-<button onclick="arrayTest()">Test array grande</button>
-<p id="arrayResult"></p>
+<h2>4️⃣ Eval / Function constructor</h2>
+<button onclick="testEval()">Test</button>
+<p id="evalResult"></p>
 </div>
 
 <div class="box">
-<h2>4️⃣ DOM stress test</h2>
-<button onclick="domTest()">Crear 10k nodos</button>
-<p id="domResult"></p>
+<h2>5️⃣ Profundidad máxima de recursión</h2>
+<button onclick="recursionTest()">Medir</button>
+<p id="recursionResult"></p>
 </div>
 
 <div class="box">
-<h2>5️⃣ Límites numéricos</h2>
-<button onclick="numberTest()">Test números grandes</button>
-<p id="numberResult"></p>
+<h2>6️⃣ Test simple GC presión memoria</h2>
+<button onclick="gcTest()">Ejecutar</button>
+<p id="gcResult"></p>
+</div>
+
+<div class="box">
+<h2>7️⃣ Mutabilidad prototipos</h2>
+<button onclick="protoTest()">Test</button>
+<p id="protoResult"></p>
 </div>
 
 <script>
 
-// 1️⃣ Listar propiedades
+// 1️⃣ Entorno
+document.getElementById("env").textContent =
+  "UA: " + navigator.userAgent + 
+  " | Platform: " + navigator.platform;
+
+// 2️⃣ Globals
 function listGlobals() {
-  let props = Object.getOwnPropertyNames(window);
+  let props = Object.getOwnPropertyNames(window).sort();
   document.getElementById("globalCount").textContent = props.length;
   document.getElementById("globalList").textContent = props.join("\n");
 }
 
-// 2️⃣ Test JIT (indirecto por rendimiento)
-function jitTest() {
-  let start = performance.now();
-  function heavy(n) {
-    let x = 0;
-    for (let i = 0; i < n; i++) {
-      x += i % 10;
+// 3️⃣ _ps inspection
+function inspectPS() {
+  let output = "";
+  if (typeof _ps !== "undefined") {
+    output += "Tipo: " + typeof _ps + "\n";
+    try {
+      output += "Propiedades:\n";
+      output += Object.getOwnPropertyNames(_ps).join("\n");
+    } catch(e) {
+      output += "Error accediendo propiedades: " + e.message;
     }
-    return x;
+  } else {
+    output = "_ps no existe.";
   }
-  heavy(50_000_000);
-  let end = performance.now();
-  let time = end - start;
-  document.getElementById("jitResult").textContent =
-    "Tiempo ejecución: " + time.toFixed(2) + " ms";
+  document.getElementById("psOutput").textContent = output;
 }
 
-// 3️⃣ Array grande
-function arrayTest() {
+// 4️⃣ Eval / Function
+function testEval() {
+  let result = "";
   try {
-    let arr = new Array(10_000_000).fill(1);
-    document.getElementById("arrayResult").textContent =
-      "Array creado correctamente (10M elementos)";
-  } catch (e) {
-    document.getElementById("arrayResult").textContent =
-      "Error creando array: " + e.message;
+    result += "eval activo: " + (eval("1+1") === 2) + " | ";
+  } catch(e) {
+    result += "eval bloqueado | ";
+  }
+  try {
+    let f = new Function("return 42");
+    result += "Function constructor activo: " + (f() === 42);
+  } catch(e) {
+    result += "Function bloqueado";
+  }
+  document.getElementById("evalResult").textContent = result;
+}
+
+// 5️⃣ Recursion depth
+function recursionTest() {
+  let depth = 0;
+  function recurse() {
+    depth++;
+    recurse();
+  }
+  try {
+    recurse();
+  } catch(e) {
+    document.getElementById("recursionResult").textContent =
+      "Profundidad máxima aproximada: " + depth;
   }
 }
 
-// 4️⃣ DOM stress
-function domTest() {
+// 6️⃣ GC pressure test
+function gcTest() {
   try {
-    let container = document.createElement("div");
-    for (let i = 0; i < 10000; i++) {
-      let el = document.createElement("span");
-      el.textContent = "x";
-      container.appendChild(el);
+    let arr = [];
+    for (let i = 0; i < 100000; i++) {
+      arr.push({index:i, data:new Array(100).fill(i)});
     }
-    document.body.appendChild(container);
-    document.getElementById("domResult").textContent =
-      "10,000 nodos creados correctamente";
-  } catch (e) {
-    document.getElementById("domResult").textContent =
-      "Error DOM: " + e.message;
+    document.getElementById("gcResult").textContent =
+      "Objetos creados: 100000";
+  } catch(e) {
+    document.getElementById("gcResult").textContent =
+      "Error memoria: " + e.message;
   }
 }
 
-// 5️⃣ Límites numéricos
-function numberTest() {
+// 7️⃣ Prototype mutability
+function protoTest() {
+  let result = "";
   try {
-    let big = Number.MAX_SAFE_INTEGER;
-    let overflow = big + 1;
-    document.getElementById("numberResult").textContent =
-      "MAX_SAFE_INTEGER: " + big +
-      " | big+1 === big? " + (overflow === big);
-  } catch (e) {
-    document.getElementById("numberResult").textContent =
-      "Error numérico: " + e.message;
+    Array.prototype.testProp = 123;
+    result += "Array prototype modificable: " + (Array.prototype.testProp === 123);
+    delete Array.prototype.testProp;
+  } catch(e) {
+    result += "Array prototype protegido";
   }
+  document.getElementById("protoResult").textContent = result;
 }
 
 </script>
