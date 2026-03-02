@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebKit PDF Test</title>
+</head>
+<body>
+  <h1>Diagnostico de entorno ALERT </h1>
+
+  <script>
+    document.write("<p><b>User Agent:</b> " + navigator.userAgent + "</p>");
+    document.write("<p><b>Platform:</b> " + navigator.platform + "</p>");
+    document.write("<p><b>Cookies enabled:</b> " + navigator.cookieEnabled + "</p>");
+  </script>
+
+  <h2>Test ALERT de renderizado PDF</h2>
+  <iframe src="test_alert.pdf" width="600" height="400"></iframe>
+
+</body>
+</html>
