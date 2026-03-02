@@ -1,19 +1,125 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-  <title>WebKit PDF Test</title>
+<meta charset="UTF-8">
+<title>WebKit Diagnostic Suite</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; background:#111; color:#eee; }
+  h1 { color:#4CAF50; }
+  h2 { margin-top:30px; color:#00BCD4; }
+  .box { background:#1e1e1e; padding:15px; margin-top:10px; border-radius:8px; }
+</style>
 </head>
 <body>
-  <h1>Diagnostico de entorno</h1>
 
-  <script>
-    document.write("<p><b>User Agent:</b> " + navigator.userAgent + "</p>");
-    document.write("<p><b>Platform:</b> " + navigator.platform + "</p>");
-    document.write("<p><b>Cookies enabled:</b> " + navigator.cookieEnabled + "</p>");
-  </script>
+<h1>WebKit Diagnostic Suite</h1>
 
-  <h2>Test de renderizado PDF</h2>
-  <iframe src="test.pdf" width="600" height="400"></iframe>
+<div class="box">
+<h2>1️⃣ Información básica</h2>
+<p><b>User Agent:</b> <span id="ua"></span></p>
+<p><b>Platform:</b> <span id="platform"></span></p>
+<p><b>Cookies enabled:</b> <span id="cookies"></span></p>
+<p><b>Hardware Concurrency:</b> <span id="cores"></span></p>
+<p><b>Device Memory:</b> <span id="memory"></span></p>
+<p><b>Timezone:</b> <span id="timezone"></span></p>
+</div>
+
+<div class="box">
+<h2>2️⃣ APIs modernas</h2>
+<div id="apis"></div>
+</div>
+
+<div class="box">
+<h2>3️⃣ Superficie JS</h2>
+<p>Propiedades en <code>window</code>: <span id="surface"></span></p>
+</div>
+
+<div class="box">
+<h2>4️⃣ Test WebGL</h2>
+<p id="webgl"></p>
+</div>
+
+<div class="box">
+<h2>5️⃣ Test WebAssembly</h2>
+<p id="wasm"></p>
+</div>
+
+<div class="box">
+<h2>6️⃣ Test PDF (iframe)</h2>
+<iframe src="test.pdf" width="600" height="400"></iframe>
+</div>
+
+<div class="box">
+<h2>7️⃣ Test PDF (embed)</h2>
+<embed src="test.pdf" width="600" height="400" type="application/pdf">
+</div>
+
+<div class="box">
+<h2>8️⃣ Test PDF Blob dinámico</h2>
+<div id="blobtest"></div>
+</div>
+
+<script>
+
+// 1️⃣ Información básica
+document.getElementById("ua").textContent = navigator.userAgent;
+document.getElementById("platform").textContent = navigator.platform;
+document.getElementById("cookies").textContent = navigator.cookieEnabled;
+document.getElementById("cores").textContent = navigator.hardwareConcurrency || "No disponible";
+document.getElementById("memory").textContent = navigator.deviceMemory || "No disponible";
+document.getElementById("timezone").textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// 2️⃣ APIs modernas
+const apis = {
+  "ServiceWorker": 'serviceWorker' in navigator,
+  "WebGL": !!window.WebGLRenderingContext,
+  "WebGL2": !!window.WebGL2RenderingContext,
+  "WebRTC": !!window.RTCPeerConnection,
+  "IndexedDB": !!window.indexedDB,
+  "SharedArrayBuffer": typeof SharedArrayBuffer !== "undefined",
+  "WebAssembly": typeof WebAssembly === "object",
+  "Fetch API": typeof fetch === "function",
+  "WebSocket": typeof WebSocket === "function",
+  "Notification API": typeof Notification !== "undefined"
+};
+
+let apiOutput = "";
+for (let api in apis) {
+  apiOutput += "<p>" + api + ": " + (apis[api] ? "✔ Disponible" : "❌ No disponible") + "</p>";
+}
+document.getElementById("apis").innerHTML = apiOutput;
+
+// 3️⃣ Superficie JS
+document.getElementById("surface").textContent =
+  Object.getOwnPropertyNames(window).length;
+
+// 4️⃣ WebGL test real
+try {
+  let canvas = document.createElement("canvas");
+  let gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+  document.getElementById("webgl").textContent =
+    gl ? "✔ WebGL funcional" : "❌ WebGL no disponible";
+} catch(e) {
+  document.getElementById("webgl").textContent = "❌ WebGL bloqueado";
+}
+
+// 5️⃣ WebAssembly
+document.getElementById("wasm").textContent =
+  (typeof WebAssembly === "object") ?
+  "✔ WebAssembly disponible" :
+  "❌ WebAssembly no disponible";
+
+// 8️⃣ Blob PDF dinámico
+try {
+  const blob = new Blob(["%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF"], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  document.getElementById("blobtest").innerHTML =
+    '<iframe src="' + url + '" width="300" height="200"></iframe>';
+} catch(e) {
+  document.getElementById("blobtest").textContent = "No soporta Blob PDF.";
+}
+
+</script>
 
 </body>
 </html>
