@@ -1,153 +1,146 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Deep JS Engine Analysis</title>
+<title>WebKit Security Diagnostic</title>
 <style>
-body { font-family: monospace; background:#111; color:#eee; padding:20px; }
-h1 { color:#4CAF50; }
-h2 { color:#00BCD4; margin-top:30px; }
-.box { background:#1e1e1e; padding:15px; margin-top:10px; border-radius:8px; }
-button { margin-top:5px; padding:5px 10px; }
-pre { max-height:250px; overflow:auto; background:#000; padding:10px; }
+body { font-family: monospace; background:#111; color:#0f0; padding:20px; }
+h2 { color:#0ff; }
+.pass { color:#0f0; }
+.warn { color:#ff0; }
+.fail { color:#f00; }
 </style>
 </head>
 <body>
 
-<h1>Deep JS Engine Analysis</h1>
-
-<div class="box">
-<h2>1️⃣ Entorno</h2>
-<p id="env"></p>
-</div>
-
-<div class="box">
-<h2>2️⃣ Globals detallados</h2>
-<button onclick="listGlobals()">Listar</button>
-<p>Total: <span id="globalCount"></span></p>
-<pre id="globalList"></pre>
-</div>
-
-<div class="box">
-<h2>3️⃣ Análisis de objeto _ps</h2>
-<button onclick="inspectPS()">Inspeccionar</button>
-<pre id="psOutput"></pre>
-</div>
-
-<div class="box">
-<h2>4️⃣ Eval / Function constructor</h2>
-<button onclick="testEval()">Test</button>
-<p id="evalResult"></p>
-</div>
-
-<div class="box">
-<h2>5️⃣ Profundidad máxima de recursión</h2>
-<button onclick="recursionTest()">Medir</button>
-<p id="recursionResult"></p>
-</div>
-
-<div class="box">
-<h2>6️⃣ Test simple GC presión memoria</h2>
-<button onclick="gcTest()">Ejecutar</button>
-<p id="gcResult"></p>
-</div>
-
-<div class="box">
-<h2>7️⃣ Mutabilidad prototipos</h2>
-<button onclick="protoTest()">Test</button>
-<p id="protoResult"></p>
-</div>
+<h1>WebKit Security Diagnostic</h1>
+<div id="log"></div>
 
 <script>
-
-// 1️⃣ Entorno
-document.getElementById("env").textContent =
-  "UA: " + navigator.userAgent + 
-  " | Platform: " + navigator.platform;
-
-// 2️⃣ Globals
-function listGlobals() {
-  let props = Object.getOwnPropertyNames(window).sort();
-  document.getElementById("globalCount").textContent = props.length;
-  document.getElementById("globalList").textContent = props.join("\n");
+function log(msg, cls="pass") {
+    const div = document.createElement("div");
+    div.className = cls;
+    div.textContent = msg;
+    document.getElementById("log").appendChild(div);
 }
 
-// 3️⃣ _ps inspection
-function inspectPS() {
-  let output = "";
-  if (typeof _ps !== "undefined") {
-    output += "Tipo: " + typeof _ps + "\n";
-    try {
-      output += "Propiedades:\n";
-      output += Object.getOwnPropertyNames(_ps).join("\n");
-    } catch(e) {
-      output += "Error accediendo propiedades: " + e.message;
-    }
-  } else {
-    output = "_ps no existe.";
-  }
-  document.getElementById("psOutput").textContent = output;
+log("UserAgent: " + navigator.userAgent);
+log("Platform: " + navigator.platform);
+log("HardwareConcurrency: " + navigator.hardwareConcurrency);
+log("Timezone: " + Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+log("---- JIT Heuristic Test ----", "warn");
+
+// JIT heuristic timing
+function jitTest(){
+    function add(a,b){ return a+b; }
+    let t0 = performance.now();
+    for(let i=0;i<5e6;i++) add(i,i);
+    let t1 = performance.now();
+    return t1 - t0;
 }
 
-// 4️⃣ Eval / Function
-function testEval() {
-  let result = "";
-  try {
-    result += "eval activo: " + (eval("1+1") === 2) + " | ";
-  } catch(e) {
-    result += "eval bloqueado | ";
-  }
-  try {
-    let f = new Function("return 42");
-    result += "Function constructor activo: " + (f() === 42);
-  } catch(e) {
-    result += "Function bloqueado";
-  }
-  document.getElementById("evalResult").textContent = result;
+let jitTime = jitTest();
+log("JIT timing: " + jitTime.toFixed(2) + " ms");
+
+log("---- Prototype Integrity ----", "warn");
+let originalPush = Array.prototype.push;
+Array.prototype.push = function(...args){
+    return originalPush.apply(this,args);
+};
+
+if (Array.prototype.push === originalPush)
+    log("Prototype locked", "fail");
+else
+    log("Prototype mutable", "warn");
+
+// Restore
+Array.prototype.push = originalPush;
+
+log("---- TypedArray Boundary Test ----", "warn");
+
+try {
+    let buf = new ArrayBuffer(1024);
+    let view = new Uint8Array(buf);
+    view[1023] = 1;
+    view[1024] = 2; // Should fail silently or ignore
+    log("TypedArray OOB write did not crash (expected safe behavior)");
+} catch(e){
+    log("TypedArray boundary exception: " + e, "fail");
 }
 
-// 5️⃣ Recursion depth
-function recursionTest() {
-  let depth = 0;
-  function recurse() {
-    depth++;
-    recurse();
-  }
-  try {
-    recurse();
-  } catch(e) {
-    document.getElementById("recursionResult").textContent =
-      "Profundidad máxima aproximada: " + depth;
-  }
-}
+log("---- Memory Pressure Test ----", "warn");
 
-// 6️⃣ GC pressure test
-function gcTest() {
-  try {
+try {
     let arr = [];
-    for (let i = 0; i < 100000; i++) {
-      arr.push({index:i, data:new Array(100).fill(i)});
+    for(let i=0;i<100000;i++){
+        arr.push(new Array(100).fill(i));
     }
-    document.getElementById("gcResult").textContent =
-      "Objetos creados: 100000";
-  } catch(e) {
-    document.getElementById("gcResult").textContent =
-      "Error memoria: " + e.message;
-  }
+    log("Memory pressure stable at 100k allocations");
+} catch(e){
+    log("Memory pressure exception: " + e, "fail");
 }
 
-// 7️⃣ Prototype mutability
-function protoTest() {
-  let result = "";
-  try {
-    Array.prototype.testProp = 123;
-    result += "Array prototype modificable: " + (Array.prototype.testProp === 123);
-    delete Array.prototype.testProp;
-  } catch(e) {
-    result += "Array prototype protegido";
-  }
-  document.getElementById("protoResult").textContent = result;
+log("---- Recursion Depth ----", "warn");
+
+let depth = 0;
+try {
+    (function recurse(){
+        depth++;
+        recurse();
+    })();
+} catch(e){
+    log("Max recursion depth: " + depth);
 }
+
+log("---- WebAssembly Test ----", "warn");
+
+if (typeof WebAssembly === "object") {
+    log("WebAssembly available", "warn");
+    try {
+        const wasmCode = new Uint8Array([
+            0x00,0x61,0x73,0x6d,
+            0x01,0x00,0x00,0x00
+        ]);
+        WebAssembly.compile(wasmCode);
+        log("Minimal WASM module compiled");
+    } catch(e){
+        log("WASM compile error (expected if disabled)");
+    }
+} else {
+    log("WebAssembly not available");
+}
+
+log("---- Eval / Dynamic Code ----", "warn");
+
+try {
+    let f = new Function("return 42;");
+    log("Function constructor allowed");
+} catch(e){
+    log("Function constructor blocked", "fail");
+}
+
+log("---- Timer Resolution ----", "warn");
+
+let t0 = performance.now();
+setTimeout(()=>{
+    let t1 = performance.now();
+    log("Timer delta: " + (t1 - t0).toFixed(3) + " ms");
+},10);
+
+log("---- DOM Stress ----", "warn");
+
+try {
+    for(let i=0;i<5000;i++){
+        let div = document.createElement("div");
+        document.body.appendChild(div);
+    }
+    log("DOM stress 5000 nodes OK");
+} catch(e){
+    log("DOM stress failure: " + e, "fail");
+}
+
+log("---- End Diagnostic ----", "pass");
 
 </script>
 
