@@ -251,6 +251,110 @@
             color: #fff;
             box-shadow: 0 0 10px rgba(221, 179, 39, 0.4);
         }
+
+        /* -----  LUA LOADER INTEGRADO ----- */
+        .lua-container {
+            background-color: var(--panel);
+            padding: 20px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            margin-bottom: 20px;
+        }
+
+        .lua-container h2 {
+            color: var(--yellow);
+            font-size: 14px;
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+        }
+
+        .lua-config-row {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .lua-config-row input {
+            background: #2a2a3a;
+            color: #fff;
+            border: 1px solid var(--gray);
+            border-radius: 4px;
+            padding: 5px;
+            font-family: monospace;
+        }
+
+        .lua-config-row button {
+            background: #4a4a5a;
+            color: #fff;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .lua-config-row button:hover {
+            background: #5a5b6c;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 11px;
+        }
+
+        .st-conn {
+            background: #2e7d32;
+            color: #fff;
+        }
+
+        .st-disc {
+            background: #c62828;
+            color: #fff;
+        }
+
+        .st-scan {
+            background: #f9a825;
+            color: #000;
+        }
+
+        #lua-payload-textarea {
+            width: 100%;
+            height: 120px;
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #1a1a2a;
+            color: var(--green);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+        }
+
+        .lua-grid-preset {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .lua-preset-btn {
+            background-color: #2a2a3a;
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 6px;
+            font-size: 11px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .lua-preset-btn:hover {
+            background-color: #3b3b4d;
+            border-color: var(--yellow);
+        }
     </style>
 </head>
 
@@ -266,12 +370,55 @@
             <span style="font-size: 10px; color: var(--text); font-weight: normal;">(PSFree/FontFace + IPv6 UAF)</span>
         </a>
         <a href="./Psfree-Lapso-Ps4-Ps5-Exploit-POC-LUA-Loader/index.html" class="launcher-btn lua">
-            ► Lanzar "LUA Payload Loader"<br>
+            ► Lanzar "Lapso Exploit Menu (PS4/PS5)"<br>
             <span style="font-size: 10px; color: var(--text); font-weight: normal;">(PSFree SerializedScriptValue
                 UAF)</span>
         </a>
         <p style="color: var(--gray); font-size: 11px; margin-top: 5px;">⚠ Advertencia: Lanzar estos módulos
             interactuará directamente con el kernel subyacente. Usar bajo propia responsabilidad.</p>
+    </div>
+
+    <!-- Integración LUA Loader Sender Directo -->
+    <div class="lua-container">
+        <h2>🖥️ Injector LUA Remoto (Requiere Lapso Exploit Activo)</h2>
+
+        <div class="lua-config-row">
+            <span style="color:var(--gray)">Target PS4/PS5 IP:</span>
+            <input type="text" id="lua-ip" value="192.168.1.58">
+            <span style="color:var(--gray)">Port:</span>
+            <input type="text" id="lua-port" value="9026" style="width: 60px;">
+            <span id="lua-conn-status" class="status-badge st-scan">Ready</span>
+        </div>
+
+        <div class="lua-config-row">
+            <span style="color:var(--gray)">Proxy Server IP:</span>
+            <input type="text" id="lua-proxy-ip" value="207.180.248.212">
+            <span style="color:var(--gray)">Port:</span>
+            <input type="text" id="lua-proxy-port" value="5000" style="width: 60px;">
+            <button id="lua-check-proxy">Test Proxy</button>
+            <span id="lua-proxy-status" class="status-badge st-disc">Not Checked</span>
+        </div>
+
+        <textarea id="lua-payload-textarea" placeholder="Escribe tu código LUA o carga un preset..."></textarea>
+
+        <div class="lua-config-row">
+            <button id="lua-send-btn" style="background:var(--red); font-weight:bold;">🔥 INJECT PAYLOAD</button>
+        </div>
+
+        <p style="color:var(--purple); font-size:12px; margin-top:10px;">Carga rápida de scripts:</p>
+        <div class="lua-grid-preset">
+            <button class="lua-preset-btn"
+                data-payload="function main() send_ps_notification('✅ Hola desde WebKit POC') end main()">Notificación
+                Simple</button>
+            <button class="lua-preset-btn" data-payload="__LOAD_REMOTE_FILE__::payloadsLUA/notification6p1.lua">Notif
+                6.1s</button>
+            <button class="lua-preset-btn" data-payload="__LOAD_REMOTE_FILE__::payloadsLUA/ftp_server.lua">Start
+                FTP</button>
+            <button class="lua-preset-btn" data-payload="__LOAD_REMOTE_FILE__::payloadsLUA/aio_double_free_test.lua">AIO
+                Double Free Test</button>
+            <button class="lua-preset-btn" data-payload="__LOAD_REMOTE_FILE__::hello.lua">Test Connection LUA
+                Hello</button>
+        </div>
     </div>
 
     <div id="summary">
@@ -1052,6 +1199,122 @@
 
             done(id);
         })();
+
+        // ─── LUA PAYLOAD LOADER INTEGRATION ─────────────────────────────────────────
+
+        // Settings State
+        let proxyIp = '207.180.248.212';
+        let proxyPort = 5000;
+        let ps4Ip = '192.168.1.58';
+        let ps4Port = 9026;
+
+        const luaPayloadTextarea = document.getElementById('lua-payload-textarea');
+        const luaSendBtn = document.getElementById('lua-send-btn');
+        const luaCheckProxyBtn = document.getElementById('lua-check-proxy');
+        const luaIpInput = document.getElementById('lua-ip');
+        const luaPortInput = document.getElementById('lua-port');
+        const luaProxyIpInput = document.getElementById('lua-proxy-ip');
+        const luaProxyPortInput = document.getElementById('lua-proxy-port');
+        const luaConnStatus = document.getElementById('lua-conn-status');
+        const luaProxyStatus = document.getElementById('lua-proxy-status');
+
+        function luaLog(message) {
+            // Re-use PoC logging utility just putting it into a visual block or console
+            console.log('[PSFree LUA Injector]', message);
+            const ts = new Date().toLocaleTimeString();
+            // Fallback for visual
+            if (luaPayloadTextarea) {
+                // Not ideal, but better than nothing
+            }
+        }
+
+        async function checkProxy() {
+            try {
+                proxyIp = luaProxyIpInput.value.trim();
+                proxyPort = luaProxyPortInput.value.trim();
+                const testUrl = `http://${proxyIp}:${proxyPort}/test`;
+
+                luaProxyStatus.textContent = "Checking...";
+                luaProxyStatus.className = "status-badge st-scan";
+
+                const response = await fetch(testUrl, { method: 'GET' });
+
+                if (response.ok) {
+                    luaProxyStatus.textContent = "Proxy: Connected";
+                    luaProxyStatus.className = "status-badge st-conn";
+                    return true;
+                } else {
+                    throw new Error(`HTTP status ${response.status}`);
+                }
+            } catch (error) {
+                luaProxyStatus.textContent = "Proxy: Failed";
+                luaProxyStatus.className = "status-badge st-disc";
+                return false;
+            }
+        }
+
+        async function sendLuaPayload() {
+            ps4Ip = luaIpInput.value.trim();
+            ps4Port = parseInt(luaPortInput.value.trim());
+
+            if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ps4Ip)) { alert("ERROR: Formato IP Target inválido"); return; }
+            if (isNaN(ps4Port)) { alert("ERROR: Puerto Target inválido"); return; }
+
+            const payload = luaPayloadTextarea.value.trim();
+            if (!payload) { alert("ERROR: El Payload está vacío"); return; }
+
+            luaConnStatus.textContent = "Sending...";
+            luaConnStatus.className = "status-badge st-scan";
+
+            try {
+                const response = await fetch(`http://${proxyIp}:${proxyPort}/send-payload`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ ip: ps4Ip, port: ps4Port, payload: payload })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    luaConnStatus.textContent = "Injected!";
+                    luaConnStatus.className = "status-badge st-conn";
+                    alert("✅ Payload Enviado con Éxito\n" + (result.response || ''));
+                } else {
+                    throw new Error(result.error || "Error Desconocido");
+                }
+            } catch (error) {
+                luaConnStatus.textContent = "Injection Failed";
+                luaConnStatus.className = "status-badge st-disc";
+                alert(`❌ Fallo en la inyección vía proxy:\n${error.message}\nAsegúrate que Lapso exploit y el proxy están activos.`);
+            }
+        }
+
+        // Eventos LUA Loader
+        if (luaCheckProxyBtn) luaCheckProxyBtn.addEventListener('click', checkProxy);
+        if (luaSendBtn) luaSendBtn.addEventListener('click', sendLuaPayload);
+
+        document.querySelectorAll('.lua-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                luaPayloadTextarea.value = btn.getAttribute('data-payload');
+            });
+        });
+
+        // Initialize LUA section async detection
+        setTimeout(async () => {
+            const detectedHost = window.location.hostname;
+            if (detectedHost && luaProxyIpInput && luaProxyIpInput.value.trim() === "207.180.248.212") {
+                luaProxyIpInput.value = detectedHost;
+                proxyIp = detectedHost;
+            }
+            try {
+                const res = await fetch("https://api.ipify.org?format=json");
+                const data = await res.json();
+                if (data.ip && luaIpInput && luaIpInput.value === "192.168.1.58") {
+                    luaIpInput.value = data.ip;
+                }
+            } catch (e) { }
+            if (luaProxyIpInput) checkProxy();
+        }, 1000);
 
     </script>
 </body>
