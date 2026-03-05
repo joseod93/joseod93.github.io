@@ -199,12 +199,80 @@
         .stat-value {
             color: var(--text);
         }
+
+        /* Estilos para Launchers de exploits reales */
+        #exploit-launchers {
+            margin-bottom: 20px;
+            background: #1a0a1a;
+            border: 1px solid #ff3355;
+            border-radius: 6px;
+            padding: 16px;
+        }
+
+        #exploit-launchers h2 {
+            color: #ff3355;
+            font-size: 14px;
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+        }
+
+        .launcher-btn {
+            display: inline-block;
+            background: #ff333520;
+            color: var(--red);
+            border: 1px solid #ff333580;
+            padding: 12px 20px;
+            margin-right: 12px;
+            margin-bottom: 12px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 14px;
+            border-radius: 4px;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .launcher-btn:hover {
+            background: #ff333540;
+            color: #fff;
+            box-shadow: 0 0 10px rgba(255, 51, 85, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .launcher-btn.lua {
+            border-color: #ddb327;
+            color: #ddb327;
+            background: rgba(221, 179, 39, 0.1);
+        }
+
+        .launcher-btn.lua:hover {
+            background: rgba(221, 179, 39, 0.3);
+            color: #fff;
+            box-shadow: 0 0 10px rgba(221, 179, 39, 0.4);
+        }
     </style>
 </head>
 
 <body>
 
     <h1>🔬 WebKit <span>PS5</span> · Security Research PoC</h1>
+
+    <!-- Nueva sección: Launchers de exploits integrados -->
+    <div id="exploit-launchers">
+        <h2>💥 Ejecución de Exploits (Activos)</h2>
+        <a href="./ps5-exploit-host/index.html" class="launcher-btn">
+            ► Lanzar "PS5 Kernel Exploit (3.00-4.51)"<br>
+            <span style="font-size: 10px; color: var(--text); font-weight: normal;">(PSFree/FontFace + IPv6 UAF)</span>
+        </a>
+        <a href="./Psfree-Lapso-Ps4-Ps5-Exploit-POC-LUA-Loader/index.html" class="launcher-btn lua">
+            ► Lanzar "LUA Payload Loader"<br>
+            <span style="font-size: 10px; color: var(--text); font-weight: normal;">(PSFree SerializedScriptValue
+                UAF)</span>
+        </a>
+        <p style="color: var(--gray); font-size: 11px; margin-top: 5px;">⚠ Advertencia: Lanzar estos módulos
+            interactuará directamente con el kernel subyacente. Usar bajo propia responsabilidad.</p>
+    </div>
 
     <div id="summary">
         <h2>⚡ Target Fingerprint</h2>
