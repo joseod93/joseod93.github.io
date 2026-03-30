@@ -47,6 +47,33 @@ h6 {
 }
 
 /*--------------------------------------------------------------
+# Skip to content (accessibility)
+--------------------------------------------------------------*/
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  z-index: 10000;
+  padding: 10px 20px;
+  background: #18d26e;
+  color: #fff;
+  font-weight: 700;
+}
+
+.skip-to-content:focus {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  border-radius: 4px;
+}
+
+/*--------------------------------------------------------------
 # Header
 --------------------------------------------------------------*/
 #header {
@@ -182,9 +209,6 @@ h6 {
 /*--------------------------------------------------------------
 # Navigation Menu
 --------------------------------------------------------------*/
-/**
-* Desktop Navigation 
-*/
 .navbar {
   padding: 0;
   margin-top: 35px;
@@ -430,37 +454,39 @@ section .container {
 /*--------------------------------------------------------------
 # Skills
 --------------------------------------------------------------*/
-.skills .progress {
-  height: 60px;
-  display: block;
-  background: none;
-  border-radius: 0;
-}
-
-.skills .progress .skill {
-  padding: 10px 0;
-  margin: 0;
-  text-transform: uppercase;
-  display: block;
+.skills-category {
+  font-size: 16px;
   font-weight: 600;
+  color: #18d26e;
+  text-transform: uppercase;
   font-family: "Poppins", sans-serif;
+  margin-bottom: 15px;
+  letter-spacing: 1px;
+}
+
+.skills-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.skill-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  background: rgba(24, 210, 110, 0.15);
   color: #fff;
+  border: 1px solid rgba(24, 210, 110, 0.3);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: "Poppins", sans-serif;
+  transition: all 0.3s ease;
 }
 
-.skills .progress .skill .val {
-  float: right;
-  font-style: normal;
-}
-
-.skills .progress-bar-wrap {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.skills .progress-bar {
-  width: 1px;
-  height: 10px;
-  transition: 0.9s;
-  background-color: #18d26e;
+.skill-badge:hover {
+  background: rgba(24, 210, 110, 0.3);
+  border-color: #18d26e;
+  transform: translateY(-2px);
 }
 
 /*--------------------------------------------------------------
@@ -492,6 +518,15 @@ section .container {
 .intereses .icon-box:hover {
   background: rgba(255, 255, 255, 0.12);
 }
+
+.interest-programacion { color: #ffbb2c; }
+.interest-videojuegos { color: #5578ff; }
+.interest-fotografia { color: #e80368; }
+.interest-tecnologias { color: #e361ff; }
+.interest-vr { color: #47aeff; }
+.interest-violin { color: #ffa76e; }
+.interest-seguridad { color: #11dbcf; }
+.interest-3d { color: #4233ff; }
 
 /*--------------------------------------------------------------
 # Resumen
@@ -560,8 +595,11 @@ section .container {
 .proyectos .icon-box {
   text-align: center;
   background: rgba(204, 204, 204, 0.1);
-  padding: 80px 20px;
+  padding: 40px 20px;
   transition: all ease-in-out 0.3s;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
 .proyectos .icon-box .icon {
@@ -610,6 +648,40 @@ section .container {
   line-height: 24px;
   font-size: 14px;
   margin-bottom: 0;
+  flex-grow: 1;
+}
+
+.proyectos .icon-box .project-link {
+  display: inline-block;
+  margin-top: 15px;
+  padding: 8px 18px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.proyectos .icon-box .project-link i {
+  margin-right: 5px;
+  font-size: 16px;
+  vertical-align: middle;
+}
+
+.proyectos .icon-box .project-link:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.proyectos .icon-box .project-links-group {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.proyectos .icon-box .project-links-group .project-link {
+  margin-top: 0;
 }
 
 .proyectos .icon-box:hover {
@@ -632,6 +704,10 @@ section .container {
 .proyectos .icon-box:hover h4 a,
 .proyectos .icon-box:hover p {
   color: #fff;
+}
+
+.proyectos .icon-box:hover .project-link {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /*--------------------------------------------------------------
@@ -684,111 +760,6 @@ section .container {
 
 .contacto .info-box .social-links a:hover {
   color: #18d26e;
-}
-
-.contacto .php-email-form {
-  padding: 30px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.contacto .php-email-form .error-message {
-  display: none;
-  background: rgba(255, 255, 255, 0.08);
-  background: #ed3c0d;
-  text-align: left;
-  padding: 15px;
-  font-weight: 600;
-}
-
-.contacto .php-email-form .error-message br+br {
-  margin-top: 25px;
-}
-
-.contacto .php-email-form .sent-message {
-  display: none;
-  background: rgba(255, 255, 255, 0.08);
-  background: #18d26e;
-  text-align: center;
-  padding: 15px;
-  font-weight: 600;
-}
-
-.contacto .php-email-form .loading {
-  display: none;
-  background: rgba(255, 255, 255, 0.08);
-  text-align: center;
-  padding: 15px;
-}
-
-.contacto .php-email-form .loading:before {
-  content: "";
-  display: inline-block;
-  border-radius: 50%;
-  width: 24px;
-  height: 24px;
-  margin: 0 10px -6px 0;
-  border: 3px solid #18d26e;
-  border-top-color: #eee;
-  animation: animate-loading 1s linear infinite;
-}
-
-.contacto .php-email-form input,
-.contacto .php-email-form textarea {
-  border-radius: 0;
-  box-shadow: none;
-  font-size: 14px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 0;
-  transition: 0.3s;
-  color: #fff;
-}
-
-.contacto .php-email-form input:focus,
-.contacto .php-email-form textarea:focus {
-  background-color: rgba(255, 255, 255, 0.11);
-}
-
-.contacto .php-email-form input::-moz-placeholder,
-.contacto .php-email-form textarea::-moz-placeholder {
-  color: rgba(255, 255, 255, 0.3);
-  opacity: 1;
-}
-
-.contacto .php-email-form input::placeholder,
-.contacto .php-email-form textarea::placeholder {
-  color: rgba(255, 255, 255, 0.3);
-  opacity: 1;
-}
-
-.contacto .php-email-form input {
-  padding: 10px 15px;
-}
-
-.contacto .php-email-form textarea {
-  padding: 12px 15px;
-}
-
-.contacto .php-email-form button[type=submit] {
-  background: #18d26e;
-  border: 0;
-  padding: 10px 30px;
-  color: #fff;
-  transition: 0.4s;
-  border-radius: 4px;
-}
-
-.contacto .php-email-form button[type=submit]:hover {
-  background: #15bb62;
-}
-
-@keyframes animate-loading {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
-    transform: rotate(360deg);
-  }
 }
 
 /*--------------------------------------------------------------
