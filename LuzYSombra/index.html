@@ -3,8 +3,10 @@
 
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#0b0e12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Luz y Sombra: El Alba de Hispania</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="css/styles.css" />
@@ -13,130 +15,210 @@
 
 <body>
   <header>
-    <h1>🔥 Luz y Sombra: El Alba de Hispania</h1>
-    <div class="inline">
-      <small id="saveInfo">Guardado automático</small>
-      <button id="audioBtn" class="action" style="width:auto;min-width:120px">🔈 Audio</button>
+    <div class="header-top">
+      <h1>🔥 Luz y Sombra</h1>
+      <div class="header-right">
+        <div class="level-badge" id="levelBadge" title="Nivel">
+          <span class="level-num" id="levelNum">1</span>
+        </div>
+        <button id="audioBtn" class="icon-btn" aria-label="Audio">🔈</button>
+      </div>
+    </div>
+    <div class="xp-bar-wrap">
+      <div class="xp-bar" id="xpBar" style="width:0%"></div>
+      <span class="xp-label" id="xpLabel">0 / 100 XP</span>
+    </div>
+    <div class="header-stats" id="headerStats">
+      <span class="stat-pill" id="fireTag">🔥 Apagada</span>
+      <span class="stat-pill" id="timeOfDay">🌙 Noche</span>
+      <span class="stat-pill" id="streakPill">🔥 Racha: 0</span>
     </div>
   </header>
 
-  <div class="wrap">
-    <section class="card">
-      <h2>Recursos</h2>
-      <div class="body resources" id="resources"></div>
-      <div class="footer">
-        <span class="tag">⏳ Ritmo idle activo</span>
-        <span class="tag" id="timeOfDay">🌙 Noche</span>
-      </div>
-    </section>
+  <!-- Tab Content: Aldea -->
+  <main class="tab-content active" id="tabAldea">
+    <div class="wrap-single">
+      <section class="card resources-card">
+        <h2>Recursos</h2>
+        <div class="body resources" id="resources"></div>
+      </section>
 
-
-
-    <section class="card notes-card" id="notesSection">
-      <h2>Notas</h2>
-      <div class="body" id="notesBody"></div>
-      <div class="footer"></div>
-    </section>
-
-    <section class="card actions-card" id="actionsSection">
-      <h2>Acciones</h2>
-      <div class="body actions" id="actions"></div>
-      <div class="footer desktop-only">
-        <div class="inline">
-          <span class="tag" id="fireTag">🔥 Lumbre apagada</span>
-          <span class="tag" id="expeditionTag">🧭 Sin expedición</span>
-          <span class="tag" id="bossTag">👁️ Sin amenaza</span>
-          <span class="tag" id="hpTag">❤️ 100/100</span>
+      <section class="card actions-card" id="actionsSection">
+        <h2>Acciones</h2>
+        <div class="body actions" id="actions"></div>
+        <div class="footer desktop-only">
+          <div class="inline">
+            <span class="tag" id="expeditionTag">🧭 Sin expedición</span>
+            <span class="tag" id="bossTag">👁️ Sin amenaza</span>
+            <span class="tag" id="hpTag">❤️ 100/100</span>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
+  </main>
 
-    <section class="card results-card" id="resultsSection" style="grid-row: span 2;">
-      <h2>Diario</h2>
-      <div class="body">
-        <div id="log"></div>
-      </div>
-      <div class="footer" id="tipFooter"></div>
-    </section>
+  <!-- Tab Content: Diario -->
+  <main class="tab-content" id="tabDiario">
+    <div class="wrap-single">
+      <section class="card results-card" id="resultsSection">
+        <h2>Diario</h2>
+        <div class="body">
+          <div id="log"></div>
+        </div>
+        <div class="footer" id="tipFooter"></div>
+      </section>
 
-    <section class="card">
-      <h2>📋 Misiones</h2>
-      <div class="body" id="quests"></div>
-      <div class="footer">Cumple objetivos para ganar recompensas.</div>
-    </section>
-  </div>
+      <section class="card">
+        <h2>📋 Misiones</h2>
+        <div class="body" id="quests"></div>
+        <div class="footer">Cumple objetivos para ganar recompensas.</div>
+      </section>
+    </div>
+  </main>
 
-  <!-- Mobile sticky stats -->
-  <div class="mobile-stats-bar mobile-only">
-    <span id="hpMobile">❤️ 100/100</span>
+  <!-- Tab Content: Mapa -->
+  <main class="tab-content" id="tabMapa">
+    <div class="wrap-single">
+      <section class="card map-card" id="mapSection">
+        <h2>Mapa de Andalucía</h2>
+        <div class="body" id="mapBody">
+          <div id="mapRegions" class="actions"></div>
+        </div>
+        <div class="footer" id="mapFooter"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Tab Content: Más -->
+  <main class="tab-content" id="tabMas">
+    <div class="wrap-single">
+      <section class="card notes-card" id="notesSection">
+        <h2>Notas</h2>
+        <div class="body" id="notesBody"></div>
+      </section>
+
+      <section class="card achs-card" id="achievementsSection">
+        <h2>Logros</h2>
+        <div class="body achs" id="achievements"></div>
+      </section>
+
+      <section class="card sys-card" id="sysSection">
+        <h2>Sistema</h2>
+        <div class="body sys-buttons">
+          <button id="btnStats" class="action">📊 Estadísticas</button>
+          <button id="btnExport" class="action">📤 Exportar</button>
+          <button id="btnImport" class="action">📥 Importar</button>
+          <button id="btnWipe" class="action danger">🗑️ Borrar Datos</button>
+        </div>
+        <div class="footer" id="sysFooter">
+          <small id="saveInfo">Guardado automático</small>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Bottom Tab Bar (Mobile) -->
+  <nav class="tab-bar" id="tabBar">
+    <button class="tab active" data-tab="tabAldea">
+      <span class="tab-icon">⚔️</span>
+      <span class="tab-label">Aldea</span>
+    </button>
+    <button class="tab" data-tab="tabDiario">
+      <span class="tab-icon">📖</span>
+      <span class="tab-label">Diario</span>
+      <span class="tab-badge hidden" id="logBadge">!</span>
+    </button>
+    <button class="tab" data-tab="tabMapa">
+      <span class="tab-icon">🗺️</span>
+      <span class="tab-label">Mapa</span>
+    </button>
+    <button class="tab" data-tab="tabMas">
+      <span class="tab-icon">⭐</span>
+      <span class="tab-label">Más</span>
+    </button>
+  </nav>
+
+  <!-- Mobile Floating Stats -->
+  <div class="mobile-float-stats" id="mobileFloatStats">
+    <span id="hpMobile">❤️ 100</span>
     <span id="fireMobile">🔥 0°</span>
     <span id="peopleMobile">👥 0</span>
   </div>
 
-  <section class="card achs-card" id="achievementsSection" style="max-width:1100px;margin:0 auto 16px;">
-    <h2>Logros</h2>
-    <div class="body achs" id="achievements"></div>
-    <div class="footer"></div>
-  </section>
-
-  <section class="card map-card" id="mapSection" style="max-width:1100px;margin:0 auto 16px;">
-    <h2>Mapa</h2>
-    <div class="body" id="mapBody">
-      <div id="mapRegions" class="actions"></div>
-    </div>
-    <div class="footer" id="mapFooter"></div>
-  </section>
-
-  <section class="card sys-card" id="sysSection" style="max-width:1100px;margin:0 auto 16px;">
-    <h2>Sistema</h2>
-    <div class="body inline">
-      <button id="btnStats" class="action">📊 Ver Estadísticas</button>
-      <button id="btnExport" class="action">Exportar Partida</button>
-      <button id="btnImport" class="action">Importar Partida</button>
-      <button id="btnWipe" class="action" style="border-color:#ff6b6b;color:#ff6b6b">Borrar Datos</button>
-    </div>
-    <div class="footer" id="sysFooter">Gestión de datos locales.</div>
-  </section>
-
+  <!-- Toast -->
   <div class="toast" id="toast"></div>
+
+  <!-- Confetti canvas -->
+  <canvas id="confettiCanvas" class="confetti-canvas"></canvas>
+
+  <!-- Fight Overlay -->
   <div id="fightOverlay" class="overlay hidden">
     <div class="panel">
       <h2 id="fightTitle">Combate</h2>
       <p id="fightInfo">Prepárate...</p>
       <div id="fightUI" class="combat-ui"></div>
-      <div class="inline" style="margin-top:10px">
-        <button id="btnAttack" class="action">Atacar (A)</button>
-        <button id="btnDefend" class="action">Defender (D)</button>
-        <button id="btnHeal" class="action">Curarte (Medicina)</button>
+      <div class="combat-actions">
+        <button id="btnAttack" class="action combat-btn atk">⚔️ Atacar</button>
+        <button id="btnDefend" class="action combat-btn def">🛡️ Defender</button>
+        <button id="btnHeal" class="action combat-btn heal">💊 Curar</button>
       </div>
       <div class="footer" id="fightFooter"></div>
     </div>
   </div>
+
+  <!-- Encounter Overlay -->
   <div id="encounterOverlay" class="overlay hidden">
-    <div class="panel">
+    <div class="panel encounter-panel">
+      <div class="encounter-icon">👁️</div>
       <h2 id="encounterTitle">Amenaza detectada</h2>
       <p id="encounterInfo">Una presencia se aproxima...</p>
-      <div class="inline" style="margin-top:10px">
-        <button id="btnEncAccept" class="action">Aceptar</button>
-        <button id="btnEncDecline" class="action">Rechazar</button>
+      <div class="encounter-actions">
+        <button id="btnEncAccept" class="action combat-btn atk">⚔️ Luchar</button>
+        <button id="btnEncDecline" class="action combat-btn def">🏃 Huir</button>
+      </div>
+      <div class="encounter-timer">
+        <div class="encounter-timer-bar" id="encounterTimerBar"></div>
       </div>
       <div class="footer">Desaparece en <span id="encounterCountdown">10</span>s</div>
     </div>
   </div>
+
+  <!-- Welcome Back Overlay -->
+  <div id="welcomeBackOverlay" class="overlay hidden">
+    <div class="panel welcome-panel">
+      <h2>🌅 ¡Bienvenido de vuelta!</h2>
+      <p id="welcomeTime">Has estado fuera un rato.</p>
+      <div class="welcome-rewards" id="welcomeRewards"></div>
+      <div class="welcome-streak" id="welcomeStreak"></div>
+      <button id="welcomeCloseBtn" class="action glow-btn">Continuar</button>
+    </div>
+  </div>
+
+  <!-- Level Up Overlay -->
+  <div id="levelUpOverlay" class="overlay hidden">
+    <div class="panel levelup-panel">
+      <div class="levelup-icon">⭐</div>
+      <h2 id="levelUpText">¡Nivel 2!</h2>
+      <p>Tu aldea crece y se fortalece.</p>
+      <div class="levelup-bonus" id="levelUpBonus"></div>
+      <button id="levelUpCloseBtn" class="action glow-btn">¡Genial!</button>
+    </div>
+  </div>
+
+  <!-- Start Overlay -->
   <div id="startOverlay" class="overlay">
-    <div class="panel">
-      <h2>🌘 Luz y Sombra: El Alba de Hispania</h2>
-      <p>Despiertas en una habitación fría y oscura en Andalucía. Enciende la fogata, sobrevive y haz crecer tu aldea.
-      </p>
-      <ul>
-        <li>Enciende y mantiene la fogata para combatir el frío.</li>
-        <li>Recolecta leña, agua, hierbas y aceitunas.</li>
-        <li>Explora para ganar renombre, construir y desbloquear expediciones.</li>
-        <li>Vuelve cada cierto tiempo para reclamar expediciones y derrotar bosses temporales.</li>
+    <div class="panel start-panel">
+      <div class="start-icon">🌘</div>
+      <h2>Luz y Sombra</h2>
+      <p class="start-subtitle">El Alba de Hispania</p>
+      <p class="start-desc">Despiertas en una habitación fría y oscura en Andalucía. Enciende la fogata, sobrevive y haz crecer tu aldea.</p>
+      <ul class="start-features">
+        <li>🔥 Mantén la fogata encendida</li>
+        <li>🪵 Recolecta recursos del entorno</li>
+        <li>🏰 Explora y conquista regiones</li>
+        <li>⚔️ Derrota bosses temporales</li>
       </ul>
-      <div style="margin-top:12px" class="inline">
-        <button id="startBtn" class="action">Comenzar</button>
-      </div>
+      <button id="startBtn" class="action glow-btn start-btn">Comenzar Aventura</button>
     </div>
   </div>
 

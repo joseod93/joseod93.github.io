@@ -2,7 +2,7 @@
 import { S, saveState } from './state.js';
 import { REGIONS, REGION_POS } from './constants.js';
 import { getRandomPos, now, fmtMs, $ } from './utils.js';
-import { log, updateTags, renderResources, renderNotes } from './ui.js'; // renderResources needed? maybe
+import { log, updateTags, renderResources, renderNotes, addXP, xpFlash } from './ui.js';
 
 const mapBody = $('#mapBody');
 const mapFooter = $('#mapFooter');
@@ -27,14 +27,14 @@ export function renderMap() {
         const focused = (S.regionFocus === r.name);
         const fill = focused ? '#ffe08a' : (active ? '#f2a65a' : '#6b7280');
         const stroke = focused ? '#f59e0b' : '#1b2636';
-        const radius = focused ? 12 : 10;
+        const radius = focused ? 14 : 11;
         return `<g data-region="${r.name}" cursor="pointer">
         <circle cx="${p.x}" cy="${p.y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="2" />
         <text x="${p.x + 12}" y="${p.y + 4}" fill="#e9f0ff" font-size="10" font-family="Segoe UI, Arial">${r.emoji} ${r.name}</text>
       </g>`;
     }).join('');
 
-    mapBody.innerHTML = `<svg id="mapSvg" viewBox="0 0 ${w} ${h}" width="100%" height="350px" style="background:#0b1020;border:1px solid #1b2636;border-radius:8px">
+    mapBody.innerHTML = `<svg id="mapSvg" viewBox="0 0 ${w} ${h}" width="100%" height="auto" style="background:#0b1020;border:1px solid #1b2636;border-radius:12px;max-height:50vh;aspect-ratio:${w}/${h}">
       <rect x="0" y="0" width="${w}" height="${h}" fill="#0b1020"/>
       ${nodes}
     </svg>`;
@@ -50,7 +50,8 @@ export function renderMap() {
                 if (S.unlocked.expedition && !S.expedition) {
                     const dur = (3 + Math.floor(Math.random() * 6)) * 60 * 1000;
                     S.expedition = { endsAt: now() + dur, startedAt: now(), region: region.name };
-                    log(`${region.emoji} Expedición organizada hacia ${region.name} desde el mapa.`, 'warn');
+                    log(`${region.emoji} Expedición hacia ${region.name}.`, 'warn');
+                    addXP(5); xpFlash();
                     updateTags(); saveState(); renderMap(); renderNotes();
                     window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
                 } else {
@@ -75,7 +76,7 @@ export function renderMap() {
                 else if (['almeria'].includes(key)) document.body.classList.add('bg-almeria'); // Orange/Desert
             }
 
-            mapFooter.innerHTML = `<button id="mapExpBtn" class="action" style="width:auto">Organizar expedición a ${S.regionFocus}</button>`;
+            mapFooter.innerHTML = `<button id="mapExpBtn" class="action glow-btn" style="width:auto">🗺️ Expedición a ${S.regionFocus}</button>`;
             const btn = document.querySelector('#mapExpBtn');
             if (btn) {
                 btn.onclick = () => {

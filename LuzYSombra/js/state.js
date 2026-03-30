@@ -8,7 +8,7 @@ const blank = () => ({
     lastTick: now(),
     time: { day: 1, minutes: 0 },
     fire: { lit: false, heat: 0, fuel: 0 },
-    player: { hp: 100, maxHp: 100, guard: false },
+    player: { hp: 100, maxHp: 100, guard: false, xp: 0, level: 1 },
     unlocked: { water: false, olives: false, herbs: false, village: false, expedition: false, forge: false, crafting: false, molino: false, acequia: false },
     stats: { explore: 0, renown: 0, bossesDefeated: 0, bossTipShown: false },
     people: { villagers: 0, jobs: { lumber: 0, farmer: 0, miner: 0 } },
@@ -21,22 +21,26 @@ const blank = () => ({
     achievements: {},
     regionFocus: null,
     weather: 'clear',
-    discoveries: { lenia: false, agua: false, aceitunas: false, hierbas: false, piedra: false, hierro: false, trigo: false, sal: false }
+    discoveries: { lenia: false, agua: false, aceitunas: false, hierbas: false, piedra: false, hierro: false, trigo: false, sal: false },
+    streak: { current: 0, best: 0, lastLoginDate: null, totalLogins: 0, claimedToday: false },
+    lastSessionEnd: null
 });
 
-export let S = blank(); // Default to blank, will be overwritten by load
+export let S = blank();
+
+export function xpForLevel(lvl) {
+    return Math.floor(80 * Math.pow(1.35, lvl - 1));
+}
 
 export function loadState() {
     try {
         let raw = localStorage.getItem('lys_save_v2');
 
-        // Intentar migrar desde v1 si v2 no existe
         if (!raw) {
             const v1 = localStorage.getItem('lys_save_v1');
             if (v1) {
-                console.log('Migrando partida desde v1...');
                 raw = v1;
-                localStorage.setItem('lys_save_v2', v1); // Clonar en v2
+                localStorage.setItem('lys_save_v2', v1);
             }
         }
 
@@ -44,10 +48,12 @@ export function loadState() {
             const loaded = JSON.parse(raw);
             S = { ...blank(), ...loaded };
 
-            // Migration: Ensure jobs exist
             if (!S.people.jobs) S.people.jobs = { lumber: 0, farmer: 0, miner: 0 };
             if (S.people.jobs.miner === undefined) S.people.jobs.miner = 0;
             if (!S.discoveries) S.discoveries = blank().discoveries;
+            if (!S.player.xp && S.player.xp !== 0) S.player.xp = 0;
+            if (!S.player.level) S.player.level = 1;
+            if (!S.streak) S.streak = blank().streak;
         }
     } catch (e) {
         console.error('Error al cargar estado:', e);
