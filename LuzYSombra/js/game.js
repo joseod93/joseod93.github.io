@@ -74,17 +74,29 @@ function gameTick() {
     const heat = S.fire.heat;
     const heatBonus = heat > 20 ? 0.02 : heat > 10 ? 0.01 : 0;
 
+    // Passive HP regeneration when fire is lit
+    if (S.fire.lit && S.player.hp < S.player.maxHp) {
+        S.stats._hpRegenAcc = (S.stats._hpRegenAcc || 0) + 1;
+        const regenRate = heat > 20 ? 5 : 10;
+        if (S.stats._hpRegenAcc >= regenRate) {
+            const hpGain = heat > 20 ? 2 : 1;
+            S.player.hp = Math.min(S.player.maxHp, S.player.hp + hpGain);
+            S.stats._hpRegenAcc = 0;
+        }
+    }
+
     const prestigeMult = 1 + ((S.prestige || 0) * 0.5);
     const levelBonus = 1 + (S.player.level - 1) * 0.02;
+    const doubleProd = (S._doubleProd && nowTs < S._doubleProd) ? 2 : 1;
 
-    if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus) * levelBonus) addRes('agua', 1);
+    if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus) * levelBonus) addRes('agua', 1 * doubleProd);
     if (S.unlocked.molino && Math.random() < (0.05 + heatBonus) * levelBonus && S.resources.trigo > 0) {
         S.resources.trigo--;
         const gained = (1 * prestigeMult);
         S.stats.renown += gained;
         integrator.onRenownGained(S, gained, log);
     }
-    if (S.unlocked.forge && Math.random() < 0.02 * levelBonus) addRes('hierro', 1);
+    if (S.unlocked.forge && Math.random() < 0.02 * levelBonus) addRes('hierro', 1 * doubleProd);
 
     if (S.people.villagers > 0) {
         let needed = S.people.villagers * 0.1;
@@ -110,11 +122,11 @@ function gameTick() {
         }
 
         if (S.people.jobs) {
-            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus) addRes('lenia', 1);
+            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus) addRes('lenia', 1 * doubleProd);
             if (S.people.jobs.farmer > 0) {
                 let farmChance = 0.08 + (heatBonus * 2);
                 if (S.weather === 'rain') farmChance += 0.05;
-                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus) addRes('trigo', 1);
+                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus) addRes('trigo', 1 * doubleProd);
             }
             if (S.people.jobs.miner > 0) {
                 const mineChance = 0.05 * S.people.jobs.miner * levelBonus;

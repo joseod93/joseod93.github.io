@@ -39,20 +39,20 @@ export const EXTRA_ACHIEVEMENTS = [
     { key: 'ach_herrero', name: 'Herrero Mayor', icon: '⚒️' }
 ];
 
-// Map positioning constants
-export const SCALE = 3.0;
-export const OFFSET_X = -300;
-export const OFFSET_Y = -310;
+// Map positioning constants — tuned so all regions fall within viewBox 0 0 300 220
+export const SCALE = 1.5;
+export const OFFSET_X = -80;
+export const OFFSET_Y = -60;
 
 export const REGION_POS = {
-    'Sevilla': { x: 120 * SCALE + OFFSET_X, y: 120 * SCALE + OFFSET_Y },
-    'Cádiz': { x: 90 * SCALE + OFFSET_X, y: 160 * SCALE + OFFSET_Y },
-    'Huelva': { x: 70 * SCALE + OFFSET_X, y: 130 * SCALE + OFFSET_Y },
-    'Málaga': { x: 160 * SCALE + OFFSET_X, y: 160 * SCALE + OFFSET_Y },
-    'Córdoba': { x: 150 * SCALE + OFFSET_X, y: 120 * SCALE + OFFSET_Y },
-    'Jaén': { x: 190 * SCALE + OFFSET_X, y: 120 * SCALE + OFFSET_Y },
-    'Granada': { x: 200 * SCALE + OFFSET_X, y: 150 * SCALE + OFFSET_Y },
-    'Almería': { x: 230 * SCALE + OFFSET_X, y: 150 * SCALE + OFFSET_Y },
-    'Toledo': { x: 170 * SCALE + OFFSET_X, y: 80 * SCALE + OFFSET_Y },
-    'Madrid': { x: 190 * SCALE + OFFSET_X, y: 60 * SCALE + OFFSET_Y }
+    'Sevilla': { x: 100, y: 120 },
+    'Cádiz':   { x: 55,  y: 180 },
+    'Huelva':  { x: 25,  y: 135 },
+    'Málaga':  { x: 160, y: 180 },
+    'Córdoba': { x: 145, y: 120 },
+    'Jaén':    { x: 205, y: 120 },
+    'Granada': { x: 220, y: 165 },
+    'Almería': { x: 265, y: 155 },
+    'Toledo':  { x: 175, y: 60  },
+    'Madrid':  { x: 205, y: 30  }
 };

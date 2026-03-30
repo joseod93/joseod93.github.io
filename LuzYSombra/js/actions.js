@@ -2,7 +2,7 @@
 import { S, saveState } from './state.js';
 import { REGIONS, BOSSES, RES_META } from './constants.js';
 import { now, fmtMs, $, randomRange, randomChoice, vibrate } from './utils.js';
-import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash } from './ui.js';
+import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash, incrementCombo, fireConfetti } from './ui.js';
 import { openCombat, showEncounterPrompt } from './combat.js';
 import { renderMap, getRandomRegion } from './map.js';
 import { AudioSystem } from './audio.js';
@@ -99,6 +99,67 @@ export function checkAchievements() {
     // Handled by integrator
 }
 
+function getTodayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function canSpin() {
+    if (!S.streak) return false;
+    return S.streak.lastSpinDate !== getTodayStr();
+}
+
+const SPIN_REWARDS = [
+    { icon: '🪵', label: '+5 Leña', apply: () => { S.resources.lenia += 5; } },
+    { icon: '💧', label: '+4 Agua', apply: () => { S.resources.agua += 4; } },
+    { icon: '🌿', label: '+3 Hierbas', apply: () => { S.resources.hierbas += 3; } },
+    { icon: '🪨', label: '+3 Piedra', apply: () => { S.resources.piedra += 3; } },
+    { icon: '⛓️', label: '+2 Hierro', apply: () => { S.resources.hierro += 2; } },
+    { icon: '🌾', label: '+4 Trigo', apply: () => { S.resources.trigo += 4; } },
+    { icon: '💊', label: '+2 Medicina', apply: () => { S.resources.medicina += 2; } },
+    { icon: '⭐', label: '+20 XP', apply: () => { addXP(20); } },
+    { icon: '🏅', label: '+3 Renombre', apply: () => { S.stats.renown += 3; } },
+    { icon: '🔥', label: '¡Producción x2 60s!', rare: true, apply: () => { S._doubleProd = now() + 60000; } },
+];
+
+function doSpin(container) {
+    if (!canSpin()) return;
+    S.streak.lastSpinDate = getTodayStr();
+
+    const resultEl = container.querySelector('.spin-result');
+    const btnEl = container.querySelector('.spin-btn');
+    if (btnEl) btnEl.disabled = true;
+
+    let ticks = 0;
+    const totalTicks = 18;
+    const finalIdx = Math.floor(Math.random() * SPIN_REWARDS.length);
+    const rareBoost = Math.random() < 0.12;
+    const picked = rareBoost ? SPIN_REWARDS[SPIN_REWARDS.length - 1] : SPIN_REWARDS[finalIdx];
+
+    const interval = setInterval(() => {
+        ticks++;
+        const showIdx = Math.floor(Math.random() * SPIN_REWARDS.length);
+        if (resultEl) resultEl.textContent = `${SPIN_REWARDS[showIdx].icon} ${SPIN_REWARDS[showIdx].label}`;
+
+        if (ticks >= totalTicks) {
+            clearInterval(interval);
+            if (resultEl) resultEl.textContent = `${picked.icon} ${picked.label}`;
+            picked.apply();
+            log(`🎰 Rueda diaria: ${picked.icon} ${picked.label}`, 'good');
+            toast(`🎰 ${picked.label}`);
+            vibrate([30, 50, 30]);
+            if (picked.rare) {
+                screenFlash('gold');
+                fireConfetti();
+            }
+            xpFlash();
+            renderResources();
+            saveState();
+            setTimeout(() => renderActions(), 2000);
+        }
+    }, 80 + ticks * 12);
+}
+
 export function renderActions() {
     if (!actionsEl) return;
     actionsEl.innerHTML = '';
@@ -106,6 +167,20 @@ export function renderActions() {
     const reg = (key, btn, ms) => {
         import('./ui.js').then(ui => ui.registerCooldownBtn(btn, key, ms));
     };
+
+    // Daily Spin Wheel
+    if (canSpin()) {
+        const spinDiv = document.createElement('div');
+        spinDiv.className = 'spin-container';
+        spinDiv.innerHTML = `
+            <div class="spin-title">🎰 Rueda de la Suerte</div>
+            <div class="spin-result">Gira para descubrir tu premio diario</div>
+            <button class="spin-btn">🎲 ¡Girar Rueda!</button>
+        `;
+        const spinBtn = spinDiv.querySelector('.spin-btn');
+        spinBtn.onclick = () => doSpin(spinDiv);
+        actionsEl.appendChild(spinDiv);
+    }
 
     // Fire
     const btnLight = document.createElement('button');
@@ -148,6 +223,7 @@ export function renderActions() {
         vibrate(30);
         addXP(2);
         xpFlash();
+        incrementCombo();
         setCooldown(btnWood, 'cut', 1800, '🪵 Cortar leña');
         saveState(); renderActions();
     };
@@ -165,6 +241,7 @@ export function renderActions() {
             vibrate(20);
             addXP(2);
             xpFlash();
+            incrementCombo();
             setCooldown(btnWater, 'fetch', 3000, '💧 Buscar agua');
             saveState(); renderActions();
         };
@@ -184,6 +261,7 @@ export function renderActions() {
             vibrate(20);
             addXP(2);
             xpFlash();
+            incrementCombo();
             setCooldown(btnHerb, 'forage', 3500, '🌿 Forrajear');
             saveState(); renderActions();
         };

@@ -789,6 +789,171 @@ button.action.danger {
   100% { opacity: 0; transform: translate(-50%, -60px) scale(1.0); }
 }
 
+/* ===== REGION CARDS (Map) ===== */
+.map-svg-wrap {
+  margin-bottom: 12px;
+}
+
+.region-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px;
+}
+
+.region-card {
+  background: #0c1320;
+  border: 1px solid #1b2636;
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.region-card:active { transform: scale(0.98); }
+
+.region-card.focused {
+  border-color: #f59e0b;
+  box-shadow: 0 0 12px rgba(245,158,11,0.15);
+}
+
+.region-card.exp-active {
+  border-color: #228be6;
+  box-shadow: 0 0 12px rgba(34,139,230,0.15);
+}
+
+.region-card.locked-card {
+  cursor: default;
+  opacity: 0.6;
+  text-align: center;
+  padding: 10px;
+}
+
+.region-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.region-card-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #e9f0ff;
+}
+
+.region-card-loot {
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+}
+
+.region-status {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.region-status.ready {
+  color: var(--ok);
+  font-weight: 700;
+  animation: badgePop .4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.region-progress {
+  height: 5px;
+  background: #0d1422;
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.region-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4dabf7, #74c0fc);
+  border-radius: 99px;
+  transition: width 1s linear;
+}
+
+.region-send-btn {
+  margin-top: 8px;
+  padding: 10px 12px !important;
+  font-size: 0.82rem !important;
+  width: 100%;
+}
+
+/* ===== SPIN WHEEL ===== */
+.spin-container {
+  background: linear-gradient(135deg, #1a1f35, #0e1522);
+  border: 2px solid #f59e0b55;
+  border-radius: 16px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 10px;
+  animation: spinGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes spinGlow {
+  from { box-shadow: 0 0 8px rgba(245,158,11,0.1); }
+  to { box-shadow: 0 0 20px rgba(245,158,11,0.25); }
+}
+
+.spin-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--accent2);
+  margin-bottom: 8px;
+}
+
+.spin-result {
+  font-size: 1.5rem;
+  margin: 12px 0;
+  min-height: 40px;
+}
+
+.spin-btn {
+  background: linear-gradient(135deg, #f2a65a, #e87d2a) !important;
+  border: none !important;
+  color: #0b0e12 !important;
+  font-weight: 800 !important;
+  font-size: 1rem !important;
+  padding: 14px 24px !important;
+  width: 100%;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform .2s, box-shadow .2s;
+  box-shadow: 0 4px 16px rgba(242,166,90,0.35);
+}
+
+.spin-btn:active { transform: scale(0.95); }
+
+/* ===== COMBO COUNTER ===== */
+.combo-indicator {
+  position: fixed;
+  top: calc(var(--header-h) + 8px);
+  right: 12px;
+  background: linear-gradient(135deg, #f59e0b, #f97316);
+  color: #0b0e12;
+  font-weight: 900;
+  font-size: 0.85rem;
+  padding: 6px 12px;
+  border-radius: 99px;
+  z-index: 150;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(245,158,11,0.4);
+  animation: comboPop .3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: opacity .3s;
+}
+
+.combo-indicator.hidden { opacity: 0; transform: scale(0.8); }
+
+@keyframes comboPop {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 /* ===== CONFETTI CANVAS ===== */
 .confetti-canvas {
   position: fixed;

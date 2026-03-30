@@ -122,6 +122,7 @@
     <button class="tab active" data-tab="tabAldea">
       <span class="tab-icon">⚔️</span>
       <span class="tab-label">Aldea</span>
+      <span class="tab-badge hidden" id="aldeaBadge">!</span>
     </button>
     <button class="tab" data-tab="tabDiario">
       <span class="tab-icon">📖</span>
@@ -131,6 +132,7 @@
     <button class="tab" data-tab="tabMapa">
       <span class="tab-icon">🗺️</span>
       <span class="tab-label">Mapa</span>
+      <span class="tab-badge hidden" id="mapaBadge">!</span>
     </button>
     <button class="tab" data-tab="tabMas">
       <span class="tab-icon">⭐</span>
@@ -144,6 +146,9 @@
     <span id="fireMobile">🔥 0°</span>
     <span id="peopleMobile">👥 0</span>
   </div>
+
+  <!-- Combo Indicator -->
+  <div class="combo-indicator hidden" id="comboIndicator">🔥 x1</div>
 
   <!-- Toast -->
   <div class="toast" id="toast"></div>

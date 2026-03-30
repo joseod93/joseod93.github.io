@@ -22,7 +22,7 @@ const blank = () => ({
     regionFocus: null,
     weather: 'clear',
     discoveries: { lenia: false, agua: false, aceitunas: false, hierbas: false, piedra: false, hierro: false, trigo: false, sal: false },
-    streak: { current: 0, best: 0, lastLoginDate: null, totalLogins: 0, claimedToday: false },
+    streak: { current: 0, best: 0, lastLoginDate: null, totalLogins: 0, claimedToday: false, lastSpinDate: null },
     lastSessionEnd: null
 });
 

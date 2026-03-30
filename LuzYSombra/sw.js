@@ -1,7 +1,7 @@
 // Service Worker - Mejorado con estrategia de caché inteligente
 // Luz y Sombra: El Alba de Hispania
 
-const CACHE_NAME = 'lys-cache-v6';
+const CACHE_NAME = 'lys-cache-v7';
 const ASSETS = [
   './',
   './index.html',

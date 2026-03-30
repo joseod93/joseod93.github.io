@@ -26,6 +26,9 @@ const levelNum = $('#levelNum');
 const levelBadge = $('#levelBadge');
 const streakPill = $('#streakPill');
 const logBadge = $('#logBadge');
+const mapaBadge = $('#mapaBadge');
+const aldeaBadge = $('#aldeaBadge');
+const comboIndicator = $('#comboIndicator');
 const confettiCanvas = $('#confettiCanvas');
 
 let logCount = 0;
@@ -56,9 +59,9 @@ export function switchTab(tabId) {
     const btn = document.querySelector(`.tab[data-tab="${tabId}"]`);
     if (btn) btn.classList.add('active');
 
-    if (tabId === 'tabDiario' && logBadge) {
-        logBadge.classList.add('hidden');
-    }
+    if (tabId === 'tabDiario' && logBadge) logBadge.classList.add('hidden');
+    if (tabId === 'tabMapa' && mapaBadge) mapaBadge.classList.add('hidden');
+    if (tabId === 'tabAldea' && aldeaBadge) aldeaBadge.classList.add('hidden');
 }
 
 // ===== TOAST =====
@@ -302,6 +305,33 @@ export function updateTags() {
 
     updateXPBar();
     updateStreakDisplay();
+    updateTabBadges();
+}
+
+// ===== TAB BADGES =====
+function updateTabBadges() {
+    // Mapa badge: expedition ready to claim
+    if (mapaBadge) {
+        const expReady = S.expedition && (S.expedition.endsAt - now() <= 0);
+        if (expReady && activeTab !== 'tabMapa') {
+            mapaBadge.classList.remove('hidden');
+            mapaBadge.textContent = '!';
+        } else {
+            mapaBadge.classList.add('hidden');
+        }
+    }
+
+    // Aldea badge: boss or trader present
+    if (aldeaBadge) {
+        const hasBoss = !!S.threat;
+        const hasTrader = !!S.trader;
+        if ((hasBoss || hasTrader) && activeTab !== 'tabAldea') {
+            aldeaBadge.classList.remove('hidden');
+            aldeaBadge.textContent = hasBoss ? '⚔' : '🪵';
+        } else {
+            aldeaBadge.classList.add('hidden');
+        }
+    }
 }
 
 // ===== RENDER RESOURCES =====
@@ -408,6 +438,39 @@ export function renderQuests() {
         };
     });
 }
+
+// ===== COMBO COUNTER =====
+let comboCount = 0;
+let comboTimer = null;
+const COMBO_TIMEOUT = 8000;
+
+export function incrementCombo() {
+    comboCount++;
+    if (comboTimer) clearTimeout(comboTimer);
+
+    if (comboIndicator) {
+        comboIndicator.textContent = `🔥 x${comboCount}`;
+        comboIndicator.classList.remove('hidden');
+        comboIndicator.style.animation = 'none';
+        void comboIndicator.offsetWidth;
+        comboIndicator.style.animation = '';
+    }
+
+    const bonusXP = Math.min(comboCount, 10);
+    if (comboCount >= 2) {
+        addXP(bonusXP);
+    }
+
+    comboTimer = setTimeout(() => {
+        if (comboCount >= 3) {
+            toast(`Combo x${comboCount} terminado (+${Math.floor(comboCount * (comboCount + 1) / 2)} XP bonus)`);
+        }
+        comboCount = 0;
+        if (comboIndicator) comboIndicator.classList.add('hidden');
+    }, COMBO_TIMEOUT);
+}
+
+export function getComboCount() { return comboCount; }
 
 // ===== STATISTICS MODAL =====
 export function showStatistics() {
