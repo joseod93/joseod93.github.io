@@ -1,5 +1,6 @@
 
 import { $, fmtMs, now } from './utils.js';
+import { AudioSystem } from './audio.js';
 import { S, saveState, xpForLevel } from './state.js';
 import { RES_META, BOSSES } from './constants.js';
 import { ACHIEVEMENTS } from './achievements.js';
@@ -153,6 +154,7 @@ function updateXPBar() {
 function onLevelUp(level) {
     log(`¡Has alcanzado el nivel ${level}! Tu aldea prospera.`, 'good');
     toast(`🎉 ¡Nivel ${level}!`);
+    AudioSystem.playTone('levelup');
     screenFlash('gold');
     fireConfetti();
 
@@ -303,9 +305,25 @@ export function updateTags() {
     if (fireMobile) fireMobile.textContent = `🔥 ${Math.floor(S.fire.heat)}°`;
     if (peopleMobile) peopleMobile.textContent = `👥 ${S.people.villagers || 0}`;
 
+    // Dynamic fireplace (Mejora 4)
+    const fireIndicator = $('#fireIndicator');
+    const headerEl = document.querySelector('header');
+    if (fireIndicator) {
+        fireIndicator.classList.toggle('lit', S.fire.lit);
+        fireIndicator.classList.toggle('hot', S.fire.heat > 20);
+        fireIndicator.classList.toggle('warm', S.fire.heat > 10 && S.fire.heat <= 20);
+    }
+    if (headerEl) {
+        headerEl.classList.remove('fire-glow-hot', 'fire-glow-warm');
+        if (S.fire.heat > 20) headerEl.classList.add('fire-glow-hot');
+        else if (S.fire.heat > 10) headerEl.classList.add('fire-glow-warm');
+    }
+
     updateXPBar();
     updateStreakDisplay();
     updateTabBadges();
+    updateTimeClass();
+    updateStarfield();
 }
 
 // ===== TAB BADGES =====
@@ -355,9 +373,23 @@ export function renderResources() {
         d.innerHTML = `<b>${meta.icon} ${rounded}</b><small>${meta.label}</small>`;
 
         const prevText = prev[k];
-        if (prevText && prevText !== `${meta.icon} ${rounded}`) {
-            d.classList.add('gained');
-            setTimeout(() => d.classList.remove('gained'), 800);
+        if (prevText) {
+            const prevNum = parseInt(prevText.replace(/[^\d]/g, '')) || 0;
+            const b = d.querySelector('b');
+            if (rounded > prevNum) {
+                d.classList.add('gained');
+                b.classList.add('count-up');
+                setTimeout(() => { d.classList.remove('gained'); b.classList.remove('count-up'); }, 800);
+            } else if (rounded < prevNum) {
+                d.classList.add('lost');
+                b.classList.add('count-down');
+                setTimeout(() => { d.classList.remove('lost'); b.classList.remove('count-down'); }, 500);
+            } else {
+                // Idle breathe animation for unchanged resources
+                d.classList.add('idle-breathe');
+            }
+        } else {
+            d.classList.add('idle-breathe');
         }
 
         resEl.appendChild(d);
@@ -471,6 +503,284 @@ export function incrementCombo() {
 }
 
 export function getComboCount() { return comboCount; }
+
+// ===== ACTION SCENE ANIMATIONS =====
+const actionSceneEl = $('#actionScene');
+const actionSceneArt = $('#actionSceneArt');
+const actionSceneLabel = $('#actionSceneLabel');
+let sceneTimer = null;
+
+const ACTION_SCENES = {
+    cut: {
+        art: `    🌳🌳🌳\n   🌲🪓💥🌲\n    🌳🌳🌳\n   🪵🪵🪵`,
+        label: '¡Tala!',
+        animClass: 'axe-anim',
+        duration: 1200,
+    },
+    water: {
+        art: `   💧  💧  💧\n  ~~~~💧~~~~\n ~🏺~~~🌊~~\n  ~~~~~~~~~~`,
+        label: 'Agua fresca',
+        animClass: 'water-anim',
+        duration: 1100,
+    },
+    forage: {
+        art: `  🌿  🍃  🌿\n 🌱🌾🍂🌱🌾\n  🫒🌿🫒🌿\n   ✋🧺✋`,
+        label: 'Forrajeo',
+        animClass: 'herb-anim',
+        duration: 1100,
+    },
+    explore: {
+        art: `     ⭐\n   🌄🧭🗻\n  🌲🚶‍♂️🌲🏛️\n ═══🛤️═══`,
+        label: 'Explorando...',
+        animClass: 'compass-anim',
+        duration: 1300,
+    },
+    craft_torch: {
+        art: `     🔥\n     ║\n  🪵➕🫒\n    💨💨`,
+        label: '¡Antorcha creada!',
+        animClass: 'fire-anim',
+        duration: 1100,
+    },
+    craft_medicine: {
+        art: `   🧪 💊 🧪\n  🌿💧🌿\n   ⚗️🔬\n    ✨`,
+        label: '¡Medicina lista!',
+        animClass: 'fire-anim',
+        duration: 1100,
+    },
+    build_molino: {
+        art: `    ⚙️\n   🏚️🔨💥\n  🪨🪨🪨🪨🪨\n  ═══════`,
+        label: '¡Molino construido!',
+        animClass: 'hammer-anim',
+        duration: 1400,
+    },
+    build_acequia: {
+        art: `  💧      💧\n ═💧══💧══💧═\n  🪨🪨🪨🪨🪨\n   ~~~~~~~`,
+        label: '¡Acequia lista!',
+        animClass: 'hammer-anim',
+        duration: 1400,
+    },
+    build_fragua: {
+        art: `   🔥🔥🔥\n  ⚒️🏗️🔨\n  ⛓️⛓️⛓️⛓️⛓️\n  ═══════`,
+        label: '¡Fragua forjada!',
+        animClass: 'hammer-anim',
+        duration: 1400,
+    },
+    fire_light: {
+        art: `    🔥\n   🔥🔥🔥\n  🪵🪵🪵🪵\n   ·····`,
+        label: '¡Fogata encendida!',
+        animClass: 'fire-anim',
+        duration: 1100,
+    },
+    fire_stoke: {
+        art: `   🔥💨🔥\n  🔥🔥🔥🔥\n  🪵🪵🪵🪵\n   ✨✨✨`,
+        label: 'Lumbre avivada',
+        animClass: 'fire-anim',
+        duration: 1000,
+    },
+    recruit: {
+        art: `  🏘️🏠🏘️\n  👤➡️🏘️\n  👥👥👥\n   🎉🎉`,
+        label: '¡Nuevo aldeano!',
+        animClass: 'recruit-anim',
+        duration: 1200,
+    },
+    expedition: {
+        art: `  🌄  ⛰️  🌅\n 🐎🚶🐎🚶🐎\n ══🛤️══🛤️══\n   🗺️ 🧭`,
+        label: '¡Expedición lanzada!',
+        animClass: 'march-anim',
+        duration: 1400,
+    },
+    expedition_claim: {
+        art: `  ⭐  🏆  ⭐\n  🎁🎁🎁🎁\n 🪵💧🪨⛓️🌾\n   🎉🎉🎉`,
+        label: '¡Botín reclamado!',
+        animClass: 'fire-anim',
+        duration: 1300,
+    },
+    trade: {
+        art: `  🤝\n 🧑‍🌾↔️🪵\n  💰🏅💰\n   ✨`,
+        label: '¡Intercambio exitoso!',
+        animClass: 'recruit-anim',
+        duration: 1100,
+    },
+    explore_adv: {
+        art: `   🏛️⭐🏛️\n  🌲🧭🗿🌲\n 🚶═══🛤️══🏰\n   🗺️🗺️🗺️`,
+        label: 'Rutas andaluzas',
+        animClass: 'compass-anim',
+        duration: 1300,
+    },
+};
+
+export function playActionScene(key) {
+    const scene = ACTION_SCENES[key];
+    if (!scene || !actionSceneEl) return;
+
+    if (sceneTimer) { clearTimeout(sceneTimer); }
+
+    actionSceneArt.innerHTML = scene.art;
+    actionSceneLabel.textContent = scene.label;
+
+    actionSceneEl.className = 'action-scene';
+    actionSceneEl.classList.remove('hidden', 'fade-out');
+
+    // spawn floating particles around the scene
+    spawnSceneParticles(key);
+
+    sceneTimer = setTimeout(() => {
+        actionSceneEl.classList.add('fade-out');
+        setTimeout(() => {
+            actionSceneEl.classList.add('hidden');
+            actionSceneEl.classList.remove('fade-out');
+        }, 400);
+    }, scene.duration);
+}
+
+function spawnSceneParticles(key) {
+    const particleMap = {
+        cut: ['🪵', '🍃', '🌿', '💥'],
+        water: ['💧', '💦', '~', '💧'],
+        forage: ['🍃', '🌿', '🍂', '✨'],
+        explore: ['✨', '⭐', '🌟', '💫'],
+        fire_light: ['🔥', '✨', '💛', '🧡'],
+        fire_stoke: ['🔥', '💨', '🧡', '✨'],
+        craft_torch: ['🔥', '✨', '💛'],
+        craft_medicine: ['✨', '💚', '💊'],
+        build_molino: ['🪨', '💥', '✨', '⭐'],
+        build_acequia: ['💧', '💦', '✨'],
+        build_fragua: ['🔥', '⛓️', '💥', '✨'],
+        recruit: ['🎉', '✨', '👤', '⭐'],
+        expedition: ['🧭', '✨', '⭐'],
+        expedition_claim: ['🎁', '⭐', '✨', '🏆'],
+        trade: ['💰', '✨', '🏅'],
+        explore_adv: ['✨', '⭐', '🌟', '🏛️'],
+    };
+
+    const particles = particleMap[key] || ['✨'];
+    const container = actionSceneEl;
+
+    for (let i = 0; i < 6; i++) {
+        const p = document.createElement('span');
+        p.className = 'float-particle';
+        p.textContent = particles[Math.floor(Math.random() * particles.length)];
+        p.style.left = `${50 + (Math.random() - 0.5) * 120}px`;
+        p.style.top = `${30 + Math.random() * 40}px`;
+        p.style.fontSize = `${0.7 + Math.random() * 0.6}rem`;
+        p.style.animationDelay = `${Math.random() * 0.3}s`;
+        p.style.setProperty('--tx', `${(Math.random() - 0.5) * 40}px`);
+        container.appendChild(p);
+        setTimeout(() => p.remove(), 1000);
+    }
+}
+
+// ===== WEATHER VISUALS (Mejora 1) =====
+let currentWeatherType = null;
+export function updateWeatherVisuals(weather) {
+    const overlay = $('#weatherOverlay');
+    if (!overlay || weather === currentWeatherType) return;
+    currentWeatherType = weather;
+    overlay.innerHTML = '';
+    overlay.classList.remove('active');
+
+    const isMobile = window.innerWidth < 600;
+
+    if (weather === 'rain') {
+        const count = isMobile ? 20 : 40;
+        for (let i = 0; i < count; i++) {
+            const drop = document.createElement('div');
+            drop.className = 'rain-drop';
+            drop.style.setProperty('--x', Math.random() * 100 + '%');
+            drop.style.setProperty('--dur', (0.6 + Math.random() * 0.6) + 's');
+            drop.style.setProperty('--delay', Math.random() * 2 + 's');
+            overlay.appendChild(drop);
+        }
+        overlay.classList.add('active');
+    } else if (weather === 'wind') {
+        const count = isMobile ? 6 : 12;
+        for (let i = 0; i < count; i++) {
+            const streak = document.createElement('div');
+            streak.className = 'wind-streak';
+            streak.style.setProperty('--y', Math.random() * 100 + '%');
+            streak.style.setProperty('--dur', (1.5 + Math.random() * 1.5) + 's');
+            streak.style.setProperty('--delay', Math.random() * 3 + 's');
+            overlay.appendChild(streak);
+        }
+        overlay.classList.add('active');
+    } else {
+        const ray = document.createElement('div');
+        ray.className = 'sun-ray';
+        overlay.appendChild(ray);
+        overlay.classList.add('active');
+    }
+}
+
+// ===== DAY/NIGHT CYCLE (Mejora 2) =====
+function updateTimeClass() {
+    const m = S.time.minutes % (24 * 60);
+    const h = Math.floor(m / 60);
+    const body = document.body;
+    body.classList.remove('time-morning', 'time-afternoon', 'time-sunset', 'time-night');
+    // Don't override region background
+    if (body.className.match(/bg-/)) return;
+    if (h >= 6 && h < 12) body.classList.add('time-morning');
+    else if (h >= 12 && h < 19) body.classList.add('time-afternoon');
+    else if (h >= 19 && h < 23) body.classList.add('time-sunset');
+    else body.classList.add('time-night');
+}
+
+// ===== STARFIELD (Mejora 11) =====
+let starsCreated = false;
+function updateStarfield() {
+    const m = S.time.minutes % (24 * 60);
+    const h = Math.floor(m / 60);
+    const isNight = h < 6 || h >= 23;
+    if (isNight && !starsCreated) {
+        const container = document.createElement('div');
+        container.id = 'starfield';
+        for (let i = 0; i < 30; i++) {
+            const star = document.createElement('div');
+            star.className = 'star-particle';
+            star.style.left = Math.random() * 100 + '%';
+            star.style.top = Math.random() * 60 + '%';
+            star.style.setProperty('--dur', (2 + Math.random() * 4) + 's');
+            star.style.setProperty('--delay', Math.random() * 3 + 's');
+            container.appendChild(star);
+        }
+        document.body.appendChild(container);
+        starsCreated = true;
+    } else if (!isNight && starsCreated) {
+        const sf = $('#starfield');
+        if (sf) sf.remove();
+        starsCreated = false;
+    }
+}
+
+// ===== PASSIVE GAIN FLOATERS (Mejora 5) =====
+export function showPassiveGain(resKey, amount) {
+    const resItem = document.querySelector(`.res[data-key="${resKey}"]`);
+    if (!resItem) return;
+    const meta = RES_META[resKey];
+    if (!meta) return;
+    const el = document.createElement('div');
+    el.className = 'passive-gain';
+    el.textContent = `+${amount} ${meta.icon}`;
+    resItem.appendChild(el);
+    setTimeout(() => el.remove(), 1300);
+}
+
+// ===== EVENT BANNER (Mejora 8) =====
+let bannerTimer = null;
+export function showEventBanner(text, type = 'neutral') {
+    const banner = $('#eventBanner');
+    if (!banner) return;
+    if (bannerTimer) clearTimeout(bannerTimer);
+    banner.textContent = text;
+    banner.className = `event-banner ${type}`;
+    requestAnimationFrame(() => {
+        banner.classList.add('show');
+        bannerTimer = setTimeout(() => {
+            banner.classList.remove('show');
+            setTimeout(() => banner.classList.add('hidden'), 500);
+        }, 2500);
+    });
+}
 
 // ===== STATISTICS MODAL =====
 export function showStatistics() {

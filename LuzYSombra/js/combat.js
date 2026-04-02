@@ -1,5 +1,6 @@
 
 import { $, sleep, vibrate } from './utils.js';
+import { AudioSystem } from './audio.js';
 import { S, saveState } from './state.js';
 import { log, toast, updateTags, renderResources, addXP, xpFlash, screenFlash, fireConfetti } from './ui.js';
 import integrator from './integrator.js';
@@ -29,7 +30,7 @@ function createDamageNumber(amount, targetEl, type = 'dmg') {
     if (!targetEl) return;
     const el = document.createElement('div');
     el.className = 'dmg-num' + (type === 'heal' ? ' heal' : type === 'crit' ? ' crit' : '');
-    el.textContent = type === 'heal' ? `+${amount}` : `-${amount}`;
+    el.textContent = type === 'crit' ? `💥 -${amount}` : type === 'heal' ? `+${amount}` : `-${amount}`;
     targetEl.appendChild(el);
     setTimeout(() => el.remove(), 900);
 }
@@ -111,6 +112,7 @@ function enableCombatBtns() {
 
 function enemyTurn() {
     if (!combatState) return;
+    AudioSystem.playTone('fight');
     const base = 6 + Math.floor(Math.random() * 4);
     let dmg = base;
     if (S.player.guard) {
@@ -128,6 +130,15 @@ function enemyTurn() {
     S.player.hp = Math.max(0, S.player.hp - dmg);
     combatState.totalDamageTaken += dmg;
     fightInfo.textContent = `El enemigo ataca: ${dmg} daño.`;
+
+    // Enemy rush animation
+    const rushEl = document.querySelector('#enemy');
+    if (rushEl) {
+        rushEl.classList.remove('enemy-rush');
+        void rushEl.offsetWidth;
+        rushEl.classList.add('enemy-rush');
+        setTimeout(() => rushEl.classList.remove('enemy-rush'), 400);
+    }
 
     const playerEl = document.querySelector('#warrior');
     if (playerEl) {
@@ -187,7 +198,14 @@ btnAttack.addEventListener('click', () => {
         createDamageNumber(atk, enemyEl, isCrit ? 'crit' : 'dmg');
     }
 
-    if (isCrit) { vibrate([30, 20, 60]); screenFlash('gold'); }
+    AudioSystem.playTone('fight');
+    if (isCrit) {
+        vibrate([30, 20, 60]); screenFlash('gold');
+        document.body.classList.remove('screen-shake');
+        void document.body.offsetWidth;
+        document.body.classList.add('screen-shake');
+        setTimeout(() => document.body.classList.remove('screen-shake'), 500);
+    }
     else vibrate(30);
 
     renderResources(); renderCombatUI();
@@ -222,7 +240,13 @@ btnDefend.addEventListener('click', () => {
     disableCombatBtns();
     S.player.guard = true;
     fightInfo.textContent = '🛡️ Te cubres tras tu escudo.';
+    AudioSystem.playTone('block');
     vibrate(20);
+    const defPlayerEl = document.querySelector('#warrior');
+    if (defPlayerEl) {
+        defPlayerEl.classList.add('defending');
+        setTimeout(() => defPlayerEl.classList.remove('defending'), 1000);
+    }
     combatState.turn = 'enemy';
     setTimeout(enemyTurn, 600);
 });
@@ -235,11 +259,23 @@ btnHeal.addEventListener('click', () => {
         const amount = 20 + Math.floor(S.player.level * 2);
         S.player.hp = Math.min(S.player.maxHp, S.player.hp + amount);
         fightInfo.textContent = `💊 Recuperas ${amount} HP.`;
+        AudioSystem.playTone('heal');
         const playerEl = document.querySelector('#warrior');
         createDamageNumber(amount, playerEl, 'heal');
         if (playerEl) {
             playerEl.classList.add('attack');
             setTimeout(() => playerEl.classList.remove('attack'), 300);
+            // Heal particles
+            for (let i = 0; i < 5; i++) {
+                const p = document.createElement('span');
+                p.className = 'heal-particle';
+                p.textContent = '✚';
+                p.style.left = (30 + Math.random() * 60) + 'px';
+                p.style.bottom = '20px';
+                p.style.animationDelay = (Math.random() * 0.3) + 's';
+                playerEl.appendChild(p);
+                setTimeout(() => p.remove(), 1000);
+            }
         }
         screenFlash('green');
         renderResources(); updateTags(); saveState();

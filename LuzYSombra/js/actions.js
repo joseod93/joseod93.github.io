@@ -2,7 +2,7 @@
 import { S, saveState } from './state.js';
 import { REGIONS, BOSSES, RES_META } from './constants.js';
 import { now, fmtMs, $, randomRange, randomChoice, vibrate } from './utils.js';
-import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash, incrementCombo, fireConfetti } from './ui.js';
+import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash, incrementCombo, fireConfetti, playActionScene } from './ui.js';
 import { openCombat, showEncounterPrompt } from './combat.js';
 import { renderMap, getRandomRegion } from './map.js';
 import { AudioSystem } from './audio.js';
@@ -56,6 +56,7 @@ function craft(item) {
     if (item === 'antorchas' && S.resources.lenia >= 1 && S.resources.aceitunas >= 1) {
         S.resources.lenia--; S.resources.aceitunas--; S.resources.antorchas++;
         log('Has fabricado una antorcha.', 'good');
+        playActionScene('craft_torch');
         integrator.onItemCrafted(S, item, 1, log);
         addXP(3);
         xpFlash();
@@ -63,6 +64,7 @@ function craft(item) {
     if (item === 'medicina' && S.resources.hierbas >= 2 && S.resources.agua >= 1) {
         S.resources.hierbas -= 2; S.resources.agua--; S.resources.medicina++;
         log('Has preparado una medicina.', 'good');
+        playActionScene('craft_medicine');
         integrator.onItemCrafted(S, item, 1, log);
         addXP(4);
         xpFlash();
@@ -74,6 +76,8 @@ function build(edificio) {
     if (edificio === 'molino' && S.resources.piedra >= 5) {
         S.resources.piedra -= 5; S.unlocked.molino = true;
         log('Has construido un molino.', 'good');
+        playActionScene('build_molino');
+        AudioSystem.playTone('build');
         integrator.onBuildingConstructed(S, edificio, log);
         addXP(20);
         screenFlash('gold');
@@ -81,6 +85,8 @@ function build(edificio) {
     if (edificio === 'acequia' && S.resources.piedra >= 3 && S.resources.agua >= 2) {
         S.resources.piedra -= 3; S.resources.agua -= 2; S.unlocked.acequia = true;
         log('Has construido una acequia.', 'good');
+        playActionScene('build_acequia');
+        AudioSystem.playTone('build');
         integrator.onBuildingConstructed(S, edificio, log);
         addXP(20);
         screenFlash('gold');
@@ -88,6 +94,8 @@ function build(edificio) {
     if (edificio === 'fragua' && S.resources.hierro >= 5) {
         S.resources.hierro -= 5; S.unlocked.forge = true;
         log('Has construido una fragua.', 'good');
+        playActionScene('build_fragua');
+        AudioSystem.playTone('build');
         integrator.onBuildingConstructed(S, edificio, log);
         addXP(25);
         screenFlash('gold');
@@ -193,11 +201,13 @@ export function renderActions() {
             if (S.resources.lenia <= 0) return;
             S.resources.lenia--; S.fire.fuel += 3; S.fire.lit = true;
             log('Has encendido la fogata.', 'good');
+            playActionScene('fire_light');
             addXP(2);
         } else {
             if (S.resources.lenia <= 0) { log('No tienes leña.', 'warn'); return; }
             S.resources.lenia--; S.fire.fuel += 2;
             log('Avivas la lumbre.', 'dim');
+            playActionScene('fire_stoke');
             addXP(1);
         }
         xpFlash();
@@ -219,6 +229,7 @@ export function renderActions() {
     btnWood.onclick = () => {
         addRes('lenia', 1);
         log('Cortas leña del bosque.', '');
+        playActionScene('cut');
         AudioSystem.playTone('wood');
         vibrate(30);
         addXP(2);
@@ -238,6 +249,8 @@ export function renderActions() {
         btnWater.onclick = () => {
             addRes('agua', 1);
             log('Llenas un odre con agua fresca.', '');
+            playActionScene('water');
+            AudioSystem.playTone('water');
             vibrate(20);
             addXP(2);
             xpFlash();
@@ -258,6 +271,8 @@ export function renderActions() {
             const roll = Math.random();
             if (roll < 0.6) { addRes('hierbas', 1); log('Recolectas hierbas aromáticas.', ''); }
             else { addRes('aceitunas', 1); log('Encuentras aceitunas maduras.', ''); }
+            playActionScene('forage');
+            AudioSystem.playTone('herb');
             vibrate(20);
             addXP(2);
             xpFlash();
@@ -278,6 +293,8 @@ export function renderActions() {
     btnExplore.onclick = () => {
         const roll = Math.random();
         S.stats.explore++;
+        playActionScene('explore');
+        AudioSystem.playTone('explore');
         if (roll < 0.4) { addRes('piedra', 1); log('Hallaste piedra útil.', ''); }
         else if (roll < 0.6) { addRes('hierro', 1); log('Recoges vetas de hierro.', ''); }
         else {
@@ -354,6 +371,7 @@ export function renderActions() {
                 const region = getRandomRegion();
                 const dur = (3 + Math.floor(Math.random() * 6)) * 60 * 1000;
                 S.expedition = { endsAt: now() + dur, startedAt: now(), region: region.name };
+                playActionScene('expedition');
                 log(`${region.emoji} Expedición hacia ${region.name}.`, 'warn');
                 addXP(5);
                 xpFlash();
@@ -376,6 +394,7 @@ export function renderActions() {
                 const ev = randomChoice(region.events);
                 log(`${region.emoji} Expedición: ${ev}`, 'good');
                 S.expedition = null;
+                playActionScene('expedition_claim');
                 integrator.onExpeditionCompleted(S, region.name, log);
                 addXP(12);
                 xpFlash();
@@ -408,6 +427,7 @@ export function renderActions() {
             S.stats.renown += gained;
             integrator.onRenownGained(S, gained, log);
             log('El mercader habla bien de ti. (+Renombre)', 'good');
+            playActionScene('trade');
             AudioSystem.playTone('metal');
             vibrate(50);
             addXP(8);
@@ -438,6 +458,8 @@ export function renderActions() {
         bAdv.onclick = () => {
             const region = getRandomRegion();
             const roll = Math.random();
+            playActionScene('explore_adv');
+            AudioSystem.playTone('explore');
             if (roll < 0.5) { addRes('piedra', 2); log(`Materiales en ${region.name}.`, ''); }
             else if (roll < 0.75) { addRes('hierro', 2); log(`Vetas en ${region.name}.`, ''); }
             else { S.stats.renown += 2; integrator.onRenownGained(S, 2, log); log(`Fama en ${region.name}.`, 'good'); }
@@ -465,6 +487,7 @@ export function renderActions() {
             if (left > 0 && S.resources.trigo >= left) { S.resources.trigo -= left; left = 0; }
             if (left > 0) return;
             S.people.villagers = (S.people.villagers || 0) + 1;
+            playActionScene('recruit');
             log('Nuevo aldeano se une a tu poblado.', 'good');
             integrator.onVillagerRecruited(S, log);
             addXP(10);
@@ -518,4 +541,9 @@ export function renderActions() {
             actionsEl.appendChild(jobPanel);
         }
     }
+
+    // Mejora 11: Mark available buttons with pulse animation
+    actionsEl.querySelectorAll('button.action').forEach(btn => {
+        if (!btn.disabled) btn.classList.add('available');
+    });
 }

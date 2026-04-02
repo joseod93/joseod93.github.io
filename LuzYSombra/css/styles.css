@@ -35,6 +35,16 @@ body.bg-granada { background: radial-gradient(1200px 800px at 70% 10%, #3a1b1b 0
 body.bg-cadiz { background: radial-gradient(1200px 800px at 70% 10%, #1b263a 0%, #0b0e12 55%, #06080c 100%); }
 body.bg-almeria { background: radial-gradient(1200px 800px at 70% 10%, #3a2e1b 0%, #0b0e12 55%, #06080c 100%); }
 
+/* Day/Night cycle */
+body.time-morning { background: radial-gradient(1200px 800px at 70% 10%, #2a1f0e 0%, #1a1208 55%, #0b0a06 100%); }
+body.time-afternoon { background: radial-gradient(1200px 800px at 70% 10%, #2a2210 0%, #1a1508 55%, #0d0b06 100%); }
+body.time-sunset { background: radial-gradient(1200px 800px at 70% 10%, #2a1520 0%, #1a0e18 55%, #0b080e 100%); }
+body.time-night { background: radial-gradient(1200px 800px at 70% 10%, #0e1528 0%, #080c18 55%, #040610 100%); }
+
+/* Fire glow on header */
+header.fire-glow-hot { border-bottom-color: #f2a65a88; box-shadow: 0 4px 20px rgba(242,130,50,0.3); }
+header.fire-glow-warm { border-bottom-color: #f2a65a44; box-shadow: 0 4px 20px rgba(242,166,90,0.15); }
+
 /* ===== HEADER ===== */
 header {
   position: sticky;
@@ -313,6 +323,7 @@ header h1 {
 }
 
 .res {
+  position: relative;
   background: #0c1320;
   border: 1px solid #1b2636;
   border-radius: 12px;
@@ -815,6 +826,11 @@ button.action.danger {
 }
 
 .region-card:active { transform: scale(0.98); }
+.region-card:hover:not(.locked-card) {
+  transform: translateY(-2px) scale(1.01);
+  box-shadow: 0 4px 16px rgba(242,166,90,0.15);
+  border-color: var(--accent);
+}
 
 .region-card.focused {
   border-color: #f59e0b;

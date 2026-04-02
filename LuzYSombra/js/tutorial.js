@@ -118,13 +118,19 @@ class Tutorial {
         // Crear overlay si no existe
         if (!this.overlay) {
             this.overlay = document.createElement('div');
-            this.overlay.className = 'tutorial-overlay';
+            this.overlay.className = 'tutorial-overlay spotlight';
             document.body.appendChild(this.overlay);
         }
 
         // Crear tooltip
         this.tooltip = document.createElement('div');
         this.tooltip.className = 'tutorial-tooltip';
+
+        const progressDots = TUTORIAL_STEPS.map((_, i) => {
+            const cls = i < index ? 'done' : i === index ? 'active' : '';
+            return `<div class="tutorial-progress-dot ${cls}"></div>`;
+        }).join('');
+
         this.tooltip.innerHTML = `
             <div class="tutorial-header">
                 <h3>${step.title}</h3>
@@ -133,7 +139,7 @@ class Tutorial {
             <p>${step.message}</p>
             ${step.action ? `<div class="tutorial-action">👉 ${step.action}</div>` : ''}
             <div class="tutorial-footer">
-                <span>Paso ${index + 1} de ${TUTORIAL_STEPS.length}</span>
+                <div class="tutorial-progress">${progressDots}</div>
                 ${index < TUTORIAL_STEPS.length - 1 ? '<button class="tutorial-next">Siguiente</button>' : '<button class="tutorial-next">Finalizar</button>'}
             </div>
         `;
@@ -172,6 +178,17 @@ class Tutorial {
         }
 
         document.body.appendChild(this.tooltip);
+
+        // Animated arrow pointing to target
+        if (step.highlight && this.currentHighlight) {
+            const rect = this.currentHighlight.getBoundingClientRect();
+            this.arrow = document.createElement('div');
+            this.arrow.className = 'tutorial-arrow';
+            this.arrow.textContent = '👇';
+            this.arrow.style.left = (rect.left + rect.width / 2 - 12) + 'px';
+            this.arrow.style.top = (rect.top - 30) + 'px';
+            document.body.appendChild(this.arrow);
+        }
 
         // Event listeners
         this.tooltip.querySelector('.tutorial-next')?.addEventListener('click', () => this.next());
@@ -314,14 +331,32 @@ class Tutorial {
         this.saveProgress();
         this.removeTooltip();
 
-        // Limpiar listeners
-        window.removeEventListener('scroll', this.onScroll);
-        window.removeEventListener('resize', this.onScroll);
+        // Show completion celebration
+        const celebTooltip = document.createElement('div');
+        celebTooltip.className = 'tutorial-tooltip tutorial-complete';
+        celebTooltip.style.position = 'fixed';
+        celebTooltip.style.top = '50%';
+        celebTooltip.style.left = '50%';
+        celebTooltip.style.transform = 'translate(-50%, -50%)';
+        celebTooltip.style.zIndex = '10000';
+        celebTooltip.innerHTML = `
+            <h3 style="font-size:1.5rem;text-align:center;margin-bottom:8px">🎉</h3>
+            <h3>¡Tutorial Completado!</h3>
+            <p>Estas listo para tu aventura en Andalucia.</p>
+        `;
+        document.body.appendChild(celebTooltip);
+        import('./ui.js').then(ui => ui.fireConfetti());
 
-        if (this.overlay) {
-            this.overlay.remove();
-            this.overlay = null;
-        }
+        setTimeout(() => {
+            celebTooltip.remove();
+            // Limpiar listeners
+            window.removeEventListener('scroll', this.onScroll);
+            window.removeEventListener('resize', this.onScroll);
+            if (this.overlay) {
+                this.overlay.remove();
+                this.overlay = null;
+            }
+        }, 2500);
     }
 
     removeTooltip() {
@@ -329,6 +364,11 @@ class Tutorial {
         document.querySelectorAll('.tutorial-highlight').forEach(el => {
             el.classList.remove('tutorial-highlight');
         });
+
+        if (this.arrow) {
+            this.arrow.remove();
+            this.arrow = null;
+        }
 
         if (this.tooltip) {
             this.tooltip.remove();

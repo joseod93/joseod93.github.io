@@ -14,9 +14,10 @@
 </head>
 
 <body>
+  <div id="weatherOverlay" class="weather-overlay"></div>
   <header>
     <div class="header-top">
-      <h1>🔥 Luz y Sombra</h1>
+      <h1><span class="fire-indicator" id="fireIndicator">🔥</span> Luz y Sombra</h1>
       <div class="header-right">
         <div class="level-badge" id="levelBadge" title="Nivel">
           <span class="level-num" id="levelNum">1</span>
@@ -34,6 +35,8 @@
       <span class="stat-pill" id="streakPill">🔥 Racha: 0</span>
     </div>
   </header>
+
+  <div id="eventBanner" class="event-banner hidden"></div>
 
   <!-- Tab Content: Aldea -->
   <main class="tab-content active" id="tabAldea">
@@ -145,6 +148,12 @@
     <span id="hpMobile">❤️ 100</span>
     <span id="fireMobile">🔥 0°</span>
     <span id="peopleMobile">👥 0</span>
+  </div>
+
+  <!-- Action Scene Overlay -->
+  <div class="action-scene hidden" id="actionScene">
+    <div class="action-scene-art" id="actionSceneArt"></div>
+    <div class="action-scene-label" id="actionSceneLabel"></div>
   </div>
 
   <!-- Combo Indicator -->

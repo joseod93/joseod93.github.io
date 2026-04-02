@@ -1,7 +1,7 @@
 
 import { $, now, fmtMs } from './utils.js';
 import { S, loadState, saveState, resetState } from './state.js';
-import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics, initTabs, addXP, xpFlash, screenFlash, fireConfetti, updateStreakDisplay } from './ui.js';
+import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics, initTabs, addXP, xpFlash, screenFlash, fireConfetti, updateStreakDisplay, updateWeatherVisuals, showPassiveGain, showEventBanner } from './ui.js';
 import { renderActions, tryUnlocks, checkAchievements } from './actions.js';
 import { renderMap } from './map.js';
 import { showEncounterPrompt } from './combat.js';
@@ -25,6 +25,7 @@ export function spawnBoss() {
     const pick = pool[Math.floor(Math.random() * pool.length)];
     S.threat = { key: pick.key, name: pick.name, icon: pick.icon, hp: pick.hp, max: pick.hp, endsAt: now() + pick.duration, region: pick.region };
     log(`${pick.name} emerge cerca de ${pick.region}.`, 'bad');
+    showEventBanner(`⚔️ ${pick.name} emerge cerca de ${pick.region}`, 'danger');
     integrator.onBossSpawned(S, pick.name, pick.region);
     showEncounterPrompt();
     if (!S.stats.bossTipShown) {
@@ -49,8 +50,10 @@ function gameTick() {
         const next = weathers[Math.floor(Math.random() * weathers.length)];
         if (next !== S.weather) {
             S.weather = next;
-            const wMsg = { clear: 'El cielo se despeja.', rain: 'Empieza a llover.', wind: 'Se levanta un fuerte viento.' };
+            const wMsg = { clear: '☀️ El cielo se despeja.', rain: '🌧️ Empieza a llover.', wind: '💨 Se levanta un fuerte viento.' };
             log(wMsg[next], 'dim');
+            updateWeatherVisuals(next);
+            showEventBanner(wMsg[next], 'weather');
         }
     }
 
@@ -89,14 +92,14 @@ function gameTick() {
     const levelBonus = 1 + (S.player.level - 1) * 0.02;
     const doubleProd = (S._doubleProd && nowTs < S._doubleProd) ? 2 : 1;
 
-    if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus) * levelBonus) addRes('agua', 1 * doubleProd);
+    if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus) * levelBonus) { addRes('agua', 1 * doubleProd); showPassiveGain('agua', 1 * doubleProd); }
     if (S.unlocked.molino && Math.random() < (0.05 + heatBonus) * levelBonus && S.resources.trigo > 0) {
         S.resources.trigo--;
         const gained = (1 * prestigeMult);
         S.stats.renown += gained;
         integrator.onRenownGained(S, gained, log);
     }
-    if (S.unlocked.forge && Math.random() < 0.02 * levelBonus) addRes('hierro', 1 * doubleProd);
+    if (S.unlocked.forge && Math.random() < 0.02 * levelBonus) { addRes('hierro', 1 * doubleProd); showPassiveGain('hierro', 1 * doubleProd); }
 
     if (S.people.villagers > 0) {
         let needed = S.people.villagers * 0.1;
@@ -117,23 +120,24 @@ function gameTick() {
                         S.people.jobs[k]--;
                     }
                     log('Un aldeano ha muerto de hambre.', 'bad');
+                    showEventBanner('⚠️ Un aldeano ha muerto de hambre', 'danger');
                 }
             }
         }
 
         if (S.people.jobs) {
-            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus) addRes('lenia', 1 * doubleProd);
+            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus) { addRes('lenia', 1 * doubleProd); showPassiveGain('lenia', 1 * doubleProd); }
             if (S.people.jobs.farmer > 0) {
                 let farmChance = 0.08 + (heatBonus * 2);
                 if (S.weather === 'rain') farmChance += 0.05;
-                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus) addRes('trigo', 1 * doubleProd);
+                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus) { addRes('trigo', 1 * doubleProd); showPassiveGain('trigo', 1 * doubleProd); }
             }
             if (S.people.jobs.miner > 0) {
                 const mineChance = 0.05 * S.people.jobs.miner * levelBonus;
                 if (Math.random() < mineChance) {
                     const roll = Math.random();
-                    if (roll < 0.4) addRes('piedra', 1);
-                    else if (roll < 0.6) addRes('hierro', 1);
+                    if (roll < 0.4) { addRes('piedra', 1); showPassiveGain('piedra', 1); }
+                    else if (roll < 0.6) { addRes('hierro', 1); showPassiveGain('hierro', 1); }
                     else {
                         S.stats.renown += 1;
                         integrator.onRenownGained(S, 1, log);
@@ -159,6 +163,7 @@ function gameTick() {
             rate: 20
         };
         log('Un mercader ambulante ha acampado cerca.', 'good');
+        showEventBanner('🪵 Un mercader ambulante ha acampado cerca', 'opportunity');
         integrator.onTraderArrived(S);
         renderActions(); window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
     }
@@ -329,6 +334,7 @@ function init() {
     updateTags();
     renderNotes();
     renderMap();
+    updateWeatherVisuals(S.weather);
 
     setInterval(gameTick, 1000);
     setInterval(saveState, 10000);

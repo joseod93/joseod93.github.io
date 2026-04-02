@@ -41,8 +41,7 @@ class NotificationSystem {
 
     async show(title, options = {}) {
         if (!this.enabled) {
-            // Fallback a notificación in-app
-            this.showInApp(title, options.body);
+            this.showInApp(title, options.body, options.type || options.tag || 'default');
             return;
         }
 
@@ -62,18 +61,23 @@ class NotificationSystem {
             return notification;
         } catch (e) {
             console.error('Notification error:', e);
-            this.showInApp(title, options.body);
+            this.showInApp(title, options.body, options.type || options.tag || 'default');
         }
     }
 
-    showInApp(title, message) {
+    showInApp(title, message, type = 'default') {
         const container = $('#notification-container') || this.createContainer();
+        const icons = {
+            achievement: '🏅', boss: '⚔️', resource: '📦',
+            expedition: '🧭', trader: '🪵', starving: '⚠️', default: '📣'
+        };
+        const icon = icons[type] || icons.default;
 
         const notif = document.createElement('div');
-        notif.className = 'in-app-notification';
+        notif.className = `in-app-notification type-${type}`;
         notif.innerHTML = `
             <div class="notif-header">
-                <strong>${title}</strong>
+                <strong><span class="notif-icon">${icon}</span>${title}</strong>
                 <button class="notif-close">×</button>
             </div>
             ${message ? `<div class="notif-body">${message}</div>` : ''}
@@ -106,7 +110,7 @@ class NotificationSystem {
     expeditionComplete(region) {
         this.show('¡Expedición Completada!', {
             body: `Tu expedición a ${region} ha regresado. ¡Reclama tus recompensas!`,
-            tag: 'expedition',
+            tag: 'expedition', type: 'expedition',
             onClick: () => {
                 // Scroll to actions
                 $('#actions')?.scrollIntoView({ behavior: 'smooth' });
@@ -117,7 +121,7 @@ class NotificationSystem {
     bossSpawned(bossName, region) {
         this.show('¡Amenaza Detectada!', {
             body: `${bossName} ha aparecido cerca de ${region}. ¡Prepárate para el combate!`,
-            tag: 'boss',
+            tag: 'boss', type: 'boss',
             requireInteraction: true
         });
     }
@@ -125,28 +129,28 @@ class NotificationSystem {
     resourceLow(resource) {
         this.show('Recursos Bajos', {
             body: `Te estás quedando sin ${resource}. Considera recolectar más.`,
-            tag: 'resource-low'
+            tag: 'resource-low', type: 'resource'
         });
     }
 
     achievementUnlocked(name) {
         this.show('🏅 ¡Logro Desbloqueado!', {
             body: name,
-            tag: 'achievement'
+            tag: 'achievement', type: 'achievement'
         });
     }
 
     traderArrived() {
         this.show('Mercader Ambulante', {
             body: 'Un mercader ha llegado a tu aldea. ¡Visítalo antes de que se vaya!',
-            tag: 'trader'
+            tag: 'trader', type: 'trader'
         });
     }
 
     villagerStarving() {
         this.show('⚠️ Hambruna', {
             body: 'Tus aldeanos se están muriendo de hambre. ¡Consigue comida urgentemente!',
-            tag: 'starving',
+            tag: 'starving', type: 'starving',
             requireInteraction: true
         });
     }
