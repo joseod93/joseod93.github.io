@@ -14,9 +14,13 @@
     <header id="header">
       <h1>✨ Crafteo Infinito</h1>
       <div id="stats">0 / 0</div>
+      <div id="goal-tracker">
+        <span id="goal-label">Objetivo:</span>
+        <span id="goal-target"></span>
+        <div id="goal-progress-bar"><div id="goal-progress-fill"></div></div>
+      </div>
       <div id="header-actions">
         <button id="btn-clear" title="Limpiar mesa de trabajo">🧹 Limpiar</button>
-        <button id="btn-reset" title="Reiniciar juego">🔄 Reiniciar</button>
       </div>
     </header>
 
@@ -30,7 +34,7 @@
 
       <div id="canvas">
         <div id="canvas-hint">
-          <p>Arrastra elementos aquí</p>
+          <p>Toca o arrastra elementos aquí</p>
           <p>y combínalos entre sí</p>
         </div>
       </div>
@@ -39,15 +43,14 @@
 
   <div id="toast" class="toast"></div>
   <div id="no-result-toast" class="toast toast-error"></div>
+  <div id="goal-toast" class="toast toast-goal"></div>
 
-  <div id="reset-modal" class="modal-overlay hidden">
-    <div class="modal">
-      <h2>¿Reiniciar el juego?</h2>
-      <p>Se perderán todos los elementos descubiertos.</p>
-      <div class="modal-actions">
-        <button id="modal-cancel" class="btn-secondary">Cancelar</button>
-        <button id="modal-confirm" class="btn-danger">Reiniciar</button>
-      </div>
+  <div id="goal-complete-overlay" class="modal-overlay hidden">
+    <div class="modal goal-modal">
+      <div id="goal-complete-emoji" class="goal-big-emoji"></div>
+      <h2 id="goal-complete-title"></h2>
+      <p id="goal-complete-desc"></p>
+      <button id="goal-next-btn" class="btn-accent">Siguiente objetivo</button>
     </div>
   </div>
 

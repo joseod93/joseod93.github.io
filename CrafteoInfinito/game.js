@@ -41,6 +41,64 @@
     return combinationsMap[makeKey(a, b)] || null;
   }
 
+  // ========== OBJETIVOS ==========
+
+  const GOALS = [
+    { name: "Arcoíris", emoji: "🌈", hint: "Agua + Sol", desc: "¡El cielo se llena de colores!" },
+    { name: "Planta", emoji: "🌱", hint: "Lluvia + Tierra", desc: "¡La vida comienza a brotar!" },
+    { name: "Metal", emoji: "⚙️", hint: "Fuego + Piedra", desc: "¡Dominas la metalurgia!" },
+    { name: "Vida", emoji: "🧬", hint: "Electricidad + Pantano", desc: "¡Has creado vida!" },
+    { name: "Humano", emoji: "👤", hint: "Animal + Animal", desc: "¡La humanidad ha nacido!" },
+    { name: "Espada", emoji: "⚔️", hint: "Fuego + Metal", desc: "¡Forjas tu primera arma!" },
+    { name: "Ciudad", emoji: "🏙️", hint: "Pueblo + Pueblo", desc: "¡La civilización florece!" },
+    { name: "Unicornio", emoji: "🦄", hint: "Arcoíris + Caballo", desc: "¡Magia pura!" },
+    { name: "Cohete", emoji: "🚀", hint: "Espacio + Motor", desc: "¡Rumbo a las estrellas!" },
+    { name: "Utopía", emoji: "🌅", hint: "Mundo + Paz", desc: "¡Has alcanzado la perfección!" },
+  ];
+
+  const GOAL_STORAGE_KEY = 'crafteo-infinito-goal';
+  let currentGoalIndex = 0;
+
+  function loadGoalProgress() {
+    try {
+      const saved = localStorage.getItem(GOAL_STORAGE_KEY);
+      if (saved !== null) {
+        currentGoalIndex = parseInt(saved, 10);
+        if (isNaN(currentGoalIndex)) currentGoalIndex = 0;
+      }
+    } catch (_) { /* ignore */ }
+    // Skip already-discovered goals
+    while (currentGoalIndex < GOALS.length && discovered[GOALS[currentGoalIndex].name]) {
+      currentGoalIndex++;
+    }
+  }
+
+  function saveGoalProgress() {
+    try {
+      localStorage.setItem(GOAL_STORAGE_KEY, String(currentGoalIndex));
+    } catch (_) { /* ignore */ }
+  }
+
+  function getCurrentGoal() {
+    return currentGoalIndex < GOALS.length ? GOALS[currentGoalIndex] : null;
+  }
+
+  function checkGoalCompletion(elementName) {
+    const goal = getCurrentGoal();
+    if (!goal || elementName !== goal.name) return;
+    showGoalComplete(goal);
+  }
+
+  function advanceGoal() {
+    currentGoalIndex++;
+    // Skip already-discovered goals
+    while (currentGoalIndex < GOALS.length && discovered[GOALS[currentGoalIndex].name]) {
+      currentGoalIndex++;
+    }
+    saveGoalProgress();
+    renderGoalTracker();
+  }
+
   // ========== ESTADO DEL JUEGO ==========
 
   const STORAGE_KEY = 'crafteo-infinito-save';
@@ -75,8 +133,11 @@
   function resetGame() {
     resetDiscovered();
     clearCanvas();
+    currentGoalIndex = 0;
+    saveGoalProgress();
     saveGame();
     renderSidebar();
+    renderGoalTracker();
   }
 
   // ========== REFERENCIAS DOM ==========
@@ -87,7 +148,13 @@
   const $stats = document.getElementById('stats');
   const $toast = document.getElementById('toast');
   const $noResultToast = document.getElementById('no-result-toast');
-  const $resetModal = document.getElementById('reset-modal');
+  const $goalTarget = document.getElementById('goal-target');
+  const $goalFill = document.getElementById('goal-progress-fill');
+  const $goalToast = document.getElementById('goal-toast');
+  const $goalOverlay = document.getElementById('goal-complete-overlay');
+  const $goalCompleteEmoji = document.getElementById('goal-complete-emoji');
+  const $goalCompleteTitle = document.getElementById('goal-complete-title');
+  const $goalCompleteDesc = document.getElementById('goal-complete-desc');
 
   // ========== SIDEBAR ==========
 
@@ -125,6 +192,53 @@
   function updateStats() {
     const count = Object.keys(discovered).length;
     $stats.textContent = count + ' / ' + totalUniqueElements + ' descubiertos';
+  }
+
+  function renderGoalTracker() {
+    const goal = getCurrentGoal();
+    if (!goal) {
+      $goalTarget.textContent = '🏆 ¡Todos completados!';
+      $goalFill.style.width = '100%';
+      $goalFill.classList.add('goal-complete');
+      return;
+    }
+    $goalTarget.textContent = goal.emoji + ' ' + goal.name;
+    $goalFill.classList.remove('goal-complete');
+    const pct = (currentGoalIndex / GOALS.length) * 100;
+    $goalFill.style.width = pct + '%';
+  }
+
+  function showGoalComplete(goal) {
+    $goalCompleteEmoji.textContent = goal.emoji;
+    $goalCompleteTitle.textContent = '¡Objetivo completado!';
+    $goalCompleteDesc.textContent = goal.desc;
+    $goalOverlay.classList.remove('hidden');
+    spawnGoalFireworks();
+  }
+
+  function spawnGoalFireworks() {
+    const colors = ['#7c5cfc', '#c084fc', '#38bdf8', '#4ade80', '#facc15', '#fb7185', '#f472b6'];
+    for (let burst = 0; burst < 3; burst++) {
+      setTimeout(() => {
+        const cx = window.innerWidth * (0.25 + Math.random() * 0.5);
+        const cy = window.innerHeight * (0.2 + Math.random() * 0.4);
+        for (let i = 0; i < 20; i++) {
+          const p = document.createElement('div');
+          p.className = 'particle';
+          p.style.left = cx + 'px';
+          p.style.top = cy + 'px';
+          p.style.background = colors[Math.floor(Math.random() * colors.length)];
+          p.style.width = '8px';
+          p.style.height = '8px';
+          const angle = (Math.PI * 2 * i) / 20 + (Math.random() - 0.5);
+          const dist = 60 + Math.random() * 100;
+          p.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
+          p.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
+          document.body.appendChild(p);
+          setTimeout(() => p.remove(), 1000);
+        }
+      }, burst * 300);
+    }
   }
 
   // ========== CANVAS ==========
@@ -202,6 +316,7 @@
         showDiscoveryToast(result.name, result.emoji);
         spawnParticles(targetRect.left + targetRect.width / 2,
                        targetRect.top + targetRect.height / 2);
+        checkGoalCompletion(result.name);
       }
     }, 250);
 
@@ -211,6 +326,9 @@
   // ========== DRAG & DROP  (Pointer Events) ==========
 
   let dragState = null;
+
+  let sidebarTapTimer = null;
+  let sidebarDragStarted = false;
 
   function setupSidebarEvents() {
     $sidebar.addEventListener('pointerdown', onSidebarPointerDown);
@@ -223,10 +341,14 @@
 
     const name = chip.dataset.name;
     const emoji = chip.dataset.emoji;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    sidebarDragStarted = false;
 
     const clone = document.createElement('div');
     clone.className = 'drag-clone';
     clone.textContent = emoji + ' ' + name;
+    clone.style.visibility = 'hidden';
     document.body.appendChild(clone);
 
     const hw = clone.offsetWidth / 2;
@@ -241,12 +363,22 @@
       clone: clone,
       halfW: hw,
       halfH: hh,
-      pointerId: e.pointerId
+      pointerId: e.pointerId,
+      startX: startX,
+      startY: startY
     };
 
     document.addEventListener('pointermove', onDragMove);
     document.addEventListener('pointerup', onDragUp);
     document.addEventListener('pointercancel', onDragCancel);
+  }
+
+  function tapAddToCanvas(name, emoji) {
+    const cRect = $canvas.getBoundingClientRect();
+    const padding = 30;
+    const x = padding + Math.random() * (cRect.width - 2 * padding - 100);
+    const y = padding + Math.random() * (cRect.height - 2 * padding - 40);
+    addToCanvas(name, emoji, x, y, true);
   }
 
   function setupCanvasItemEvents(item) {
@@ -284,6 +416,13 @@
     e.preventDefault();
 
     if (dragState.type === 'sidebar') {
+      if (!sidebarDragStarted) {
+        const dx = e.clientX - dragState.startX;
+        const dy = e.clientY - dragState.startY;
+        if (Math.hypot(dx, dy) < 8) return;
+        sidebarDragStarted = true;
+        dragState.clone.style.visibility = '';
+      }
       dragState.clone.style.left = (e.clientX - dragState.halfW) + 'px';
       dragState.clone.style.top = (e.clientY - dragState.halfH) + 'px';
     } else {
@@ -328,7 +467,10 @@
     if (dragState.type === 'sidebar') {
       dragState.clone.remove();
 
-      if (onCanvas) {
+      if (!sidebarDragStarted) {
+        // Tap: add element to canvas directly
+        tapAddToCanvas(dragState.name, dragState.emoji);
+      } else if (onCanvas) {
         const excludeId = null;
         const target = findClosestItem(e.clientX, e.clientY, excludeId);
 
@@ -456,31 +598,25 @@
     }
   }
 
-  // ========== MODAL DE REINICIO ==========
-
-  function setupModal() {
-    document.getElementById('btn-reset').addEventListener('click', () => {
-      $resetModal.classList.remove('hidden');
-    });
-
-    document.getElementById('modal-cancel').addEventListener('click', () => {
-      $resetModal.classList.add('hidden');
-    });
-
-    document.getElementById('modal-confirm').addEventListener('click', () => {
-      $resetModal.classList.add('hidden');
-      resetGame();
-    });
-
-    $resetModal.addEventListener('click', (e) => {
-      if (e.target === $resetModal) $resetModal.classList.add('hidden');
-    });
-  }
-
   // ========== BOTÓN LIMPIAR ==========
 
   function setupClearButton() {
     document.getElementById('btn-clear').addEventListener('click', clearCanvas);
+  }
+
+  // ========== GOAL MODAL ==========
+
+  function setupGoalModal() {
+    document.getElementById('goal-next-btn').addEventListener('click', () => {
+      $goalOverlay.classList.add('hidden');
+      advanceGoal();
+    });
+    $goalOverlay.addEventListener('click', (e) => {
+      if (e.target === $goalOverlay) {
+        $goalOverlay.classList.add('hidden');
+        advanceGoal();
+      }
+    });
   }
 
   // ========== BÚSQUEDA ==========
@@ -502,10 +638,12 @@
   function init() {
     buildDictionary();
     loadGame();
+    loadGoalProgress();
     renderSidebar();
+    renderGoalTracker();
     setupSidebarEvents();
     setupCanvasDoubleTap();
-    setupModal();
+    setupGoalModal();
     setupClearButton();
     setupSearch();
     preventTouchScroll();
