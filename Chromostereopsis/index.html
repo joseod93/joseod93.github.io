@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#000000">
+<title>DEPTH</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;touch-action:none;position:fixed;top:0;left:0}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+
+// === CANVAS ===
+const C = document.getElementById('c'), X = C.getContext('2d');
+let W, H, dpr, isMobile = 'ontouchstart' in window;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  C.width = W * dpr; C.height = H * dpr;
+  C.style.width = W + 'px'; C.style.height = H + 'px';
+  X.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (player) { player.y = H - 100; }
+}
+window.addEventListener('resize', resize);
+
+// === COLORS ===
+const COL = {
+  red: '#FF1744', redGlow: '#FF0000',
+  blue: '#2979FF', blueGlow: '#0044FF', blueLight: '#82B1FF',
+  mag: '#FF00FF', magGlow: '#CC00CC',
+  cyan: '#00E5FF', cyanGlow: '#00BCD4',
+  white: '#FFFFFF', dim: 'rgba(255,255,255,0.4)',
+  gold: '#FFD740'
+};
+
+// === AUDIO ===
+let ac = null;
+function initAudio() {
+  if (ac) return;
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+}
+function tone(f, d, t, v, f2) {
+  if (!ac) return;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = t || 'sine';
+  o.frequency.setValueAtTime(f, ac.currentTime);
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, ac.currentTime + d);
+  g.gain.setValueAtTime(v || 0.1, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + d);
+  o.connect(g).connect(ac.destination);
+  o.start(); o.stop(ac.currentTime + d);
+}
+function sfxCollect(n) {
+  const b = 600 + Math.min(n, 30) * 25;
+  tone(b, 0.1, 'sine', 0.08); tone(b * 1.5, 0.08, 'sine', 0.05);
+}
+function sfxDeath() { tone(180, 0.4, 'sawtooth', 0.15, 30); tone(90, 0.3, 'square', 0.08, 20); }
+function sfxNear() { tone(1200, 0.04, 'sine', 0.04); }
+function sfxPower() { tone(500, 0.2, 'sine', 0.08, 1500); }
+function sfxLevel() { tone(800, 0.15, 'sine', 0.06, 1200); setTimeout(() => tone(1000, 0.2, 'sine', 0.06, 1400), 100); }
+function sfxCombo(n) {
+  const b = 400 + n * 8;
+  tone(b, 0.08, 'sine', 0.07);
+  setTimeout(() => tone(b*1.25, 0.08, 'sine', 0.06), 50);
+  setTimeout(() => tone(b*1.5, 0.12, 'sine', 0.06), 100);
+}
+function vibrate(ms) { if (navigator.vibrate) navigator.vibrate(ms); }
+
+// === PERSISTENCE ===
+const LS = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch(e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} }
+};
+let hi = LS.get('d_hi', []);
+let stats = LS.get('d_st', { g: 0, c: 0, bc: 0, ts: 0 });
+let skin = LS.get('d_sk', 0);
+
+// === GAME STATE ===
+let state = 'title'; // title | tut | play | dead
+let player = { x: W/2, y: H-100, trail: [] };
+resize();
+let objs = [], parts = [], floatTexts = [], bgLayers = [];
+let score, combo, bestCombo, depth, elapsed, spawnT, shakeT, shakeI, flashT, flashC;
+let tutStep = 0, tutTimer = 0, firstPlay = !LS.get('d_played', false);
+let deadTimer = 0;
+let shieldTimer = 0;
+let slowTimer = 0;
+let pulsePhase = 0;
+
+// === BACKGROUND ===
+// Nebula layers - creates beautiful depth
+function initBg() {
+  bgLayers = [];
+  // Far stars (tiny blue)
+  for (let i = 0; i < 60; i++) bgLayers.push({
+    t: 'star', x: Math.random()*W, y: Math.random()*H,
+    s: Math.random()*1.2+0.3, sp: Math.random()*0.15+0.05,
+    c: `rgba(${40+Math.random()*40},${80+Math.random()*60},255,${0.2+Math.random()*0.3})`
+  });
+  // Mid stars (magenta hints)
+  for (let i = 0; i < 25; i++) bgLayers.push({
+    t: 'star', x: Math.random()*W, y: Math.random()*H,
+    s: Math.random()*1+0.5, sp: Math.random()*0.25+0.1,
+    c: `rgba(${180+Math.random()*75},0,${150+Math.random()*105},${0.1+Math.random()*0.15})`
+  });
+  // Nebula blobs
+  for (let i = 0; i < 6; i++) bgLayers.push({
+    t: 'neb', x: Math.random()*W, y: Math.random()*H,
+    r: 60+Math.random()*120, sp: Math.random()*0.08+0.02,
+    c: i%2===0 ? [0,20,180] : [120,0,80], a: 0.02+Math.random()*0.02,
+    phase: Math.random()*Math.PI*2
+  });
+}
+initBg();
+
+function reset() {
+  player.x = W/2; player.y = H-100; player.trail = [];
+  objs = []; parts = []; floatTexts = [];
+  score = 0; combo = 0; bestCombo = 0; depth = 1;
+  elapsed = 0; spawnT = 0; shakeT = 0; shakeI = 0;
+  flashT = 0; deadTimer = 0; shieldTimer = 0; slowTimer = 0;
+}
+
+// === INPUT ===
+let inputX = W/2, inputActive = false, touchId = null;
+
+function onMove(x) { inputX = x; inputActive = true; }
+
+C.addEventListener('mousemove', e => { if (!isMobile) onMove(e.clientX); });
+C.addEventListener('mousedown', e => { if (!isMobile) { onMove(e.clientX); tap(); } });
+
+C.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  touchId = t.identifier;
+  onMove(t.clientX);
+  tap();
+}, {passive:false});
+
+C.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === touchId) {
+      onMove(e.changedTouches[i].clientX);
+    }
+  }
+}, {passive:false});
+
+C.addEventListener('touchend', e => {
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === touchId) touchId = null;
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') inputX = player.x - 40;
+  if (e.key === 'ArrowRight' || e.key === 'd') inputX = player.x + 40;
+  if (e.key === ' ' || e.key === 'Enter') tap();
+});
+
+function tap() {
+  initAudio();
+  if (state === 'title') {
+    if (firstPlay) { state = 'tut'; tutStep = 0; tutTimer = 0; reset(); firstPlay = false; LS.set('d_played', true); }
+    else { state = 'play'; reset(); }
+  } else if (state === 'tut') {
+    tutStep++;
+    if (tutStep >= 3) { state = 'play'; reset(); }
+  } else if (state === 'dead' && deadTimer > 0.6) {
+    state = 'play'; reset();
+  }
+}
+
+// === SPAWN ===
+function spawn() {
+  const sp = Math.min(2.5 + elapsed * 0.04, 10);
+  const rp = Math.min(0.38 + elapsed * 0.003, 0.65);
+  const r = Math.random();
+  const margin = 35;
+  const rx = () => margin + Math.random() * (W - margin*2);
+
+  if (depth >= 3 && r > 0.93) {
+    objs.push({ t:'cyan', x:rx(), y:-25, r:13, sp:sp*0.65, a:0, hit:false });
+    return;
+  }
+  if (depth >= 2 && r > 0.86) {
+    objs.push({ t:'mag', x:rx(), y:-25, r:15, sp:sp*0.8, a:0, ph:Math.random()*6.28, dang:false, hit:false });
+    return;
+  }
+
+  const isR = Math.random() < rp;
+  const x1 = rx();
+  if (isR) {
+    objs.push({ t:'red', x:x1, y:-25, r:16+Math.random()*6, sp:sp*(1+Math.random()*0.12), a:0, hit:false });
+  } else {
+    objs.push({ t:'blue', x:x1, y:-25, r:12+Math.random()*4, sp:sp*(0.75+Math.random()*0.1), a:0, hit:false });
+  }
+
+  // Adjacent pair for chromostereopsis
+  if (Math.random() < 0.4) {
+    const ct = isR ? 'blue' : 'red';
+    const ox = x1 + (Math.random()<0.5?-1:1)*(35+Math.random()*25);
+    const cx = Math.max(margin, Math.min(W-margin, ox));
+    if (ct === 'red') {
+      objs.push({ t:'red', x:cx, y:-25, r:16+Math.random()*6, sp:sp*(1+Math.random()*0.12), a:0, hit:false });
+    } else {
+      objs.push({ t:'blue', x:cx, y:-25, r:12+Math.random()*4, sp:sp*(0.75+Math.random()*0.1), a:0, hit:false });
+    }
+  }
+}
+
+// === PARTICLES ===
+function emitP(x, y, col, n, spd, sz, life) {
+  for (let i = 0; i < n && parts.length < 250; i++) {
+    const a = Math.random()*6.28, s = Math.random()*spd;
+    parts.push({ x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s,
+      l:1, dl:0.015+Math.random()*(1/(life||30)),
+      c:col, s:sz||2+Math.random()*3 });
+  }
+}
+// Ring burst
+function emitRing(x, y, col, n, r) {
+  for (let i = 0; i < n && parts.length < 250; i++) {
+    const a = (i/n)*6.28;
+    parts.push({ x:x+Math.cos(a)*r, y:y+Math.sin(a)*r,
+      vx:Math.cos(a)*1.5, vy:Math.sin(a)*1.5,
+      l:1, dl:0.03, c:col, s:2.5 });
+  }
+}
+
+// === UPDATE ===
+function update(dt) {
+  pulsePhase += dt * 2.5;
+
+  // Background
+  for (const b of bgLayers) {
+    if (b.t === 'star') {
+      b.y += b.sp * 60 * dt;
+      if (b.y > H + 5) { b.y = -5; b.x = Math.random()*W; }
+    } else {
+      b.y += b.sp * 60 * dt;
+      b.phase += dt * 0.3;
+      if (b.y > H + b.r*2) { b.y = -b.r*2; b.x = Math.random()*W; }
+    }
+  }
+
+  if (state === 'dead') {
+    deadTimer += dt;
+    updateParts(dt);
+    return;
+  }
+  if (state !== 'play') return;
+
+  elapsed += dt;
+  const dtm = slowTimer > 0 ? dt * 0.5 : dt; // slow-mo
+
+  // Depth level
+  const nl = Math.floor(elapsed / 12) + 1;
+  if (nl > depth) {
+    depth = nl;
+    flashT = 0.4; flashC = COL.cyan;
+    sfxLevel();
+    emitRing(W/2, H/2, COL.cyan, 30, Math.min(W,H)*0.3);
+    floatTexts.push({ x:W/2, y:H/2, t:'DEPTH '+depth, l:2, s:28, c:COL.cyan });
+  }
+
+  // Player movement - smooth lerp with easing
+  const lerp = Math.min(1, dt * 10);
+  player.x += (inputX - player.x) * lerp;
+  player.x = Math.max(20, Math.min(W - 20, player.x));
+
+  // Player trail
+  player.trail.unshift({ x: player.x, y: player.y });
+  if (player.trail.length > 12) player.trail.pop();
+
+  // Spawn
+  const si = Math.max(0.18, 0.7 - elapsed * 0.004);
+  spawnT -= dt;
+  if (spawnT <= 0) { spawn(); spawnT = si; }
+
+  // Timers
+  if (shakeT > 0) shakeT -= dt;
+  if (flashT > 0) flashT -= dt;
+  if (shieldTimer > 0) shieldTimer -= dt;
+  if (slowTimer > 0) slowTimer -= dt;
+
+  // Objects
+  let blueEsc = false;
+  for (let i = objs.length - 1; i >= 0; i--) {
+    const o = objs[i];
+    o.y += o.sp * 60 * dtm;
+    o.a += dt * 2.5;
+
+    if (o.t === 'mag') {
+      o.ph += dt * 2.8;
+      o.dang = Math.sin(o.ph) > 0.25;
+    }
+
+    if (o.y > H + 50) {
+      if (o.t === 'blue') blueEsc = true;
+      objs.splice(i, 1);
+      continue;
+    }
+
+    // Collision
+    const dx = o.x - player.x, dy = o.y - player.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const cd = o.r + 14; // player radius
+
+    if (dist < cd && !o.hit) {
+      if (o.t === 'red' || (o.t === 'mag' && o.dang)) {
+        if (shieldTimer > 0) {
+          // Shield absorbs hit
+          shieldTimer = 0;
+          o.hit = true;
+          emitP(o.x, o.y, COL.cyan, 12, 4, 3, 20);
+          objs.splice(i, 1);
+          continue;
+        }
+        die(); return;
+      }
+      if (o.t === 'blue') {
+        combo++;
+        if (combo > bestCombo) bestCombo = combo;
+        score += 10 * Math.min(combo, 50);
+        sfxCollect(combo);
+        vibrate(15);
+        emitP(o.x, o.y, COL.blue, 10, 3.5, 3, 25);
+        emitP(o.x, o.y, COL.blueLight, 5, 2, 2, 20);
+        if (combo > 0 && combo % 10 === 0) {
+          sfxCombo(combo);
+          emitRing(player.x, player.y, COL.gold, 20, 30);
+          floatTexts.push({ x:W/2, y:H/2-40, t:'x'+combo+' COMBO!', l:1.5, s:24, c:COL.gold });
+        }
+        floatTexts.push({ x:o.x, y:o.y, t:'+'+10*Math.min(combo,50), l:0.8, s:14, c:COL.blueLight });
+        objs.splice(i, 1); continue;
+      }
+      if (o.t === 'mag' && !o.dang) {
+        combo++;
+        score += 20 * Math.min(combo, 50);
+        sfxCollect(combo);
+        vibrate(20);
+        emitP(o.x, o.y, COL.mag, 12, 3.5, 3, 25);
+        floatTexts.push({ x:o.x, y:o.y, t:'+'+20*Math.min(combo,50), l:0.8, s:14, c:COL.mag });
+        objs.splice(i, 1); continue;
+      }
+      if (o.t === 'cyan') {
+        score += 50;
+        sfxPower();
+        vibrate([20,30,20]);
+        emitP(o.x, o.y, COL.cyan, 18, 5, 3, 30);
+        emitRing(o.x, o.y, COL.cyan, 16, 20);
+        floatTexts.push({ x:o.x, y:o.y, t:'POWER!', l:1.2, s:18, c:COL.cyan });
+        // Random power: shield or slow
+        if (Math.random() < 0.5) { shieldTimer = 5; }
+        else { slowTimer = 4; }
+        objs.splice(i, 1); continue;
+      }
+    }
+
+    // Near miss
+    if (!o.hit && !o.nearM && (o.t === 'red' || (o.t === 'mag' && o.dang))) {
+      if (dist < cd * 1.7 && dist >= cd) {
+        o.nearM = true;
+        score += 5;
+        sfxNear();
+        shakeT = 0.06; shakeI = 2.5;
+        floatTexts.push({ x:o.x, y:o.y-15, t:'CLOSE!', l:0.7, s:12, c:COL.gold });
+      }
+    }
+  }
+  if (blueEsc) combo = 0;
+
+  updateParts(dt);
+
+  // Float texts
+  for (let i = floatTexts.length-1; i >= 0; i--) {
+    floatTexts[i].y -= 35 * dt;
+    floatTexts[i].l -= dt;
+    if (floatTexts[i].l <= 0) floatTexts.splice(i, 1);
+  }
+}
+
+function updateParts(dt) {
+  for (let i = parts.length-1; i >= 0; i--) {
+    const p = parts[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.04;
+    p.vx *= 0.99; p.vy *= 0.99;
+    p.l -= p.dl;
+    if (p.l <= 0) parts.splice(i, 1);
+  }
+}
+
+function die() {
+  state = 'dead'; deadTimer = 0;
+  sfxDeath();
+  vibrate([50, 30, 100]);
+  emitP(player.x, player.y, COL.red, 35, 7, 4, 35);
+  emitP(player.x, player.y, COL.gold, 15, 5, 3, 25);
+  emitP(player.x, player.y, COL.white, 10, 3, 2, 20);
+  shakeT = 0.5; shakeI = 15;
+  flashT = 0.3; flashC = COL.red;
+
+  stats.g++; stats.ts += score;
+  if (bestCombo > stats.bc) stats.bc = bestCombo;
+  LS.set('d_st', stats);
+
+  hi.push({ s: score, d: Date.now() });
+  hi.sort((a,b) => b.s - a.s);
+  hi = hi.slice(0, 10);
+  LS.set('d_hi', hi);
+
+  const ts = stats.ts;
+  let ns = 0;
+  if (ts >= 100000) ns = 4;
+  else if (ts >= 25000) ns = 3;
+  else if (ts >= 5000) ns = 2;
+  else if (ts >= 1000) ns = 1;
+  if (ns > skin) { skin = ns; LS.set('d_sk', skin); }
+}
+
+// === RENDER HELPERS ===
+function glow(color, blur) { X.shadowColor = color; X.shadowBlur = blur; }
+function noGlow() { X.shadowColor = 'transparent'; X.shadowBlur = 0; }
+
+function drawGradCircle(x, y, r, c1, c2) {
+  const g = X.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, c1); g.addColorStop(1, c2);
+  X.fillStyle = g;
+  X.beginPath(); X.arc(x, y, r, 0, 6.28); X.fill();
+}
+
+// === RENDER ===
+function render() {
+  X.save();
+
+  // Shake
+  if (shakeT > 0) {
+    X.translate((Math.random()-0.5)*shakeI, (Math.random()-0.5)*shakeI);
+  }
+
+  // Background - deep dark with subtle radial gradient
+  const bgG = X.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
+  bgG.addColorStop(0, '#050510');
+  bgG.addColorStop(1, '#000005');
+  X.fillStyle = bgG;
+  X.fillRect(-20, -20, W+40, H+40);
+
+  // Nebula blobs
+  for (const b of bgLayers) {
+    if (b.t === 'neb') {
+      const pulse = 1 + Math.sin(b.phase) * 0.15;
+      const g = X.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * pulse);
+      g.addColorStop(0, `rgba(${b.c[0]},${b.c[1]},${b.c[2]},${b.a})`);
+      g.addColorStop(1, 'transparent');
+      X.fillStyle = g;
+      X.fillRect(b.x - b.r*2, b.y - b.r*2, b.r*4, b.r*4);
+    }
+  }
+
+  // Stars
+  for (const b of bgLayers) {
+    if (b.t === 'star') {
+      X.fillStyle = b.c;
+      X.fillRect(b.x, b.y, b.s, b.s);
+    }
+  }
+
+  // === STATE RENDERS ===
+  if (state === 'title') { renderTitle(); X.restore(); return; }
+  if (state === 'tut') { renderTut(); X.restore(); return; }
+
+  // Blue objects (far plane - behind player)
+  for (const o of objs) if (o.t === 'blue') drawObj(o);
+
+  // Player
+  drawPlayer();
+
+  // Red/mag/cyan (near plane - in front)
+  for (const o of objs) if (o.t !== 'blue') drawObj(o);
+
+  // Particles
+  X.save();
+  X.globalCompositeOperation = 'lighter';
+  for (const p of parts) {
+    X.globalAlpha = p.l * p.l; // quadratic fade for smoother look
+    X.fillStyle = p.c;
+    const s = p.s * p.l;
+    X.fillRect(p.x - s/2, p.y - s/2, s, s);
+  }
+  X.globalAlpha = 1;
+  X.restore();
+
+  // Float texts
+  X.textAlign = 'center';
+  for (const f of floatTexts) {
+    X.globalAlpha = Math.min(1, f.l * 2);
+    X.font = `bold ${f.s}px -apple-system,system-ui,sans-serif`;
+    glow(f.c, 10);
+    X.fillStyle = f.c;
+    X.fillText(f.t, f.x, f.y);
+  }
+  X.globalAlpha = 1; noGlow();
+
+  // Flash
+  if (flashT > 0) {
+    X.globalAlpha = flashT * 0.4;
+    X.fillStyle = flashC;
+    X.fillRect(-20, -20, W+40, H+40);
+    X.globalAlpha = 1;
+  }
+
+  renderHUD();
+  if (state === 'dead') renderDead();
+
+  X.restore();
+}
+
+function drawPlayer() {
+  const px = player.x, py = player.y;
+  X.save();
+
+  // Trail
+  X.globalCompositeOperation = 'lighter';
+  for (let i = 1; i < player.trail.length; i++) {
+    const t = player.trail[i];
+    const a = 1 - i / player.trail.length;
+    // Red trail (left) + Blue trail (right) = chromatic aberration
+    X.globalAlpha = a * 0.15;
+    X.fillStyle = COL.red;
+    drawDiamond(t.x - 2 - i*0.3, t.y, 10 - i*0.6);
+    X.fillStyle = COL.blue;
+    drawDiamond(t.x + 2 + i*0.3, t.y, 10 - i*0.6);
+  }
+  X.globalCompositeOperation = 'source-over';
+  X.globalAlpha = 1;
+
+  // Shield aura
+  if (shieldTimer > 0) {
+    const sa = shieldTimer < 1.5 ? 0.2 + Math.sin(pulsePhase*8)*0.1 : 0.3;
+    glow(COL.cyan, 25);
+    X.strokeStyle = COL.cyan;
+    X.globalAlpha = sa;
+    X.lineWidth = 2;
+    X.beginPath(); X.arc(px, py, 22, 0, 6.28); X.stroke();
+    X.globalAlpha = 1;
+  }
+
+  // Slow-mo visual
+  if (slowTimer > 0) {
+    X.globalAlpha = 0.15;
+    glow(COL.mag, 30);
+    X.fillStyle = COL.mag;
+    X.beginPath(); X.arc(px, py, 28, 0, 6.28); X.fill();
+    X.globalAlpha = 1;
+  }
+
+  // Main body
+  glow(COL.cyanGlow, 18);
+
+  const sk = skin;
+  if (sk === 0) {
+    X.fillStyle = COL.white;
+    drawDiamond(px, py, 16);
+  } else if (sk === 1) {
+    X.fillStyle = COL.cyan;
+    drawDiamond(px, py, 18);
+  } else if (sk === 2) {
+    X.strokeStyle = COL.mag;
+    X.lineWidth = 2.5;
+    glow(COL.magGlow, 20);
+    strokeDiamond(px, py, 18);
+  } else if (sk === 3) {
+    const hue = (Date.now()/8) % 360;
+    X.fillStyle = `hsl(${hue},100%,65%)`;
+    glow(`hsl(${hue},100%,50%)`, 20);
+    drawDiamond(px, py, 18);
+  } else {
+    X.fillStyle = COL.white;
+    glow(COL.cyanGlow, 22);
+    drawDiamond(px, py, 18);
+    X.globalAlpha = 0.5;
+    X.fillStyle = COL.red;
+    drawDiamond(px - 4, py, 14);
+    X.fillStyle = COL.blue;
+    drawDiamond(px + 4, py, 14);
+    X.globalAlpha = 1;
+  }
+
+  noGlow();
+  X.restore();
+}
+
+function drawDiamond(x, y, r) {
+  X.beginPath();
+  X.moveTo(x, y - r);
+  X.lineTo(x + r*0.65, y);
+  X.lineTo(x, y + r);
+  X.lineTo(x - r*0.65, y);
+  X.closePath();
+  X.fill();
+}
+
+function strokeDiamond(x, y, r) {
+  X.beginPath();
+  X.moveTo(x, y - r);
+  X.lineTo(x + r*0.65, y);
+  X.lineTo(x, y + r);
+  X.lineTo(x - r*0.65, y);
+  X.closePath();
+  X.stroke();
+}
+
+function drawObj(o) {
+  X.save();
+  const pulse = Math.sin(o.a) * 0.12;
+
+  if (o.t === 'red') {
+    const r = o.r * (1 + pulse);
+    glow(COL.redGlow, 22);
+    X.fillStyle = COL.red;
+    // Spiky rotating shape
+    X.beginPath();
+    const spikes = 5;
+    for (let i = 0; i < spikes; i++) {
+      const a = (i/spikes)*6.28 - 1.57 + o.a*0.4;
+      X.lineTo(o.x + Math.cos(a)*r, o.y + Math.sin(a)*r);
+      const a2 = a + 3.14/spikes;
+      X.lineTo(o.x + Math.cos(a2)*r*0.45, o.y + Math.sin(a2)*r*0.45);
+    }
+    X.closePath();
+    X.fill();
+    // Hot center
+    X.globalAlpha = 0.6;
+    drawGradCircle(o.x, o.y, r*0.4, 'rgba(255,200,100,0.8)', 'transparent');
+    X.globalAlpha = 1;
+  }
+
+  else if (o.t === 'blue') {
+    const r = o.r * (1 - pulse*0.3);
+    glow(COL.blueGlow, 18);
+    // Outer glow ring
+    X.globalAlpha = 0.3;
+    drawGradCircle(o.x, o.y, r*1.8, 'rgba(41,121,255,0.2)', 'transparent');
+    X.globalAlpha = 1;
+    // Main orb
+    const g = X.createRadialGradient(o.x-r*0.3, o.y-r*0.3, 0, o.x, o.y, r);
+    g.addColorStop(0, '#5C9CFF');
+    g.addColorStop(0.6, COL.blue);
+    g.addColorStop(1, '#0D47A1');
+    X.fillStyle = g;
+    X.beginPath(); X.arc(o.x, o.y, r, 0, 6.28); X.fill();
+    // Highlight
+    X.globalAlpha = 0.5;
+    X.fillStyle = '#fff';
+    X.beginPath(); X.arc(o.x - r*0.25, o.y - r*0.25, r*0.2, 0, 6.28); X.fill();
+    X.globalAlpha = 1;
+  }
+
+  else if (o.t === 'mag') {
+    const r = o.r;
+    const col = o.dang ? COL.red : COL.mag;
+    const glowCol = o.dang ? COL.redGlow : COL.magGlow;
+    glow(glowCol, 20);
+    X.strokeStyle = col;
+    X.lineWidth = 2.5;
+    // Hexagon
+    X.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i/6)*6.28 + o.a*0.6;
+      X.lineTo(o.x + Math.cos(a)*r, o.y + Math.sin(a)*r);
+    }
+    X.closePath();
+    X.stroke();
+    // Fill when dangerous
+    if (o.dang) {
+      X.fillStyle = 'rgba(255,20,60,0.2)';
+      X.fill();
+    } else {
+      X.fillStyle = 'rgba(255,0,255,0.1)';
+      X.fill();
+    }
+    // Center dot
+    X.fillStyle = col;
+    X.beginPath(); X.arc(o.x, o.y, 3, 0, 6.28); X.fill();
+  }
+
+  else if (o.t === 'cyan') {
+    const r = o.r * (1 + pulse*0.5);
+    glow(COL.cyanGlow, 25);
+    // Outer pulse
+    X.globalAlpha = 0.2 + Math.sin(o.a*2)*0.1;
+    drawGradCircle(o.x, o.y, r*2.5, 'rgba(0,229,255,0.15)', 'transparent');
+    X.globalAlpha = 1;
+    // Diamond
+    X.fillStyle = COL.cyan;
+    drawDiamond(o.x, o.y, r);
+    // Inner shine
+    X.globalAlpha = 0.6;
+    X.fillStyle = '#fff';
+    drawDiamond(o.x, o.y-r*0.15, r*0.35);
+    X.globalAlpha = 1;
+  }
+
+  noGlow();
+  X.restore();
+}
+
+function renderHUD() {
+  X.save(); noGlow();
+  const font = '-apple-system,system-ui,BlinkMacSystemFont,sans-serif';
+  const safeTop = 15;
+
+  // Score (top left)
+  X.textAlign = 'left';
+  X.font = `bold 22px ${font}`;
+  X.fillStyle = COL.white;
+  X.fillText(score.toLocaleString(), 16, safeTop + 22);
+
+  // Combo
+  if (combo > 1) {
+    const cc = combo >= 20 ? COL.gold : combo >= 10 ? COL.cyan : combo >= 5 ? COL.mag : COL.blueLight;
+    X.font = `bold 16px ${font}`;
+    X.fillStyle = cc;
+    X.globalAlpha = Math.min(1, 0.5 + combo*0.05);
+    X.fillText('x' + combo, 16, safeTop + 44);
+    X.globalAlpha = 1;
+  }
+
+  // Depth (top right)
+  X.textAlign = 'right';
+  X.font = `13px ${font}`;
+  X.fillStyle = COL.dim;
+  X.fillText('DEPTH ' + depth, W - 16, safeTop + 18);
+
+  // Best
+  const best = hi.length ? hi[0].s : 0;
+  if (best > 0) X.fillText('BEST ' + best.toLocaleString(), W - 16, safeTop + 36);
+
+  // Power indicators
+  if (shieldTimer > 0) {
+    X.textAlign = 'center';
+    X.font = `11px ${font}`;
+    X.fillStyle = COL.cyan;
+    X.fillText('SHIELD ' + Math.ceil(shieldTimer) + 's', W/2, safeTop + 18);
+  }
+  if (slowTimer > 0) {
+    X.textAlign = 'center';
+    X.font = `11px ${font}`;
+    X.fillStyle = COL.mag;
+    X.fillText('SLOW-MO ' + Math.ceil(slowTimer) + 's', W/2, safeTop + (shieldTimer > 0 ? 34 : 18));
+  }
+
+  X.restore();
+}
+
+// === TITLE ===
+function renderTitle() {
+  X.save();
+  X.textAlign = 'center';
+  const font = '-apple-system,system-ui,BlinkMacSystemFont,sans-serif';
+  const cy = H * 0.32;
+
+  // Animated chromostereopsis title
+  const sep = 4 + Math.sin(pulsePhase * 0.8) * 1.5;
+  const sz = Math.min(72, W * 0.15);
+
+  X.font = `800 ${sz}px ${font}`;
+
+  // Blue shadow (recedes)
+  glow(COL.blueGlow, 35);
+  X.fillStyle = COL.blue;
+  X.fillText('DEPTH', W/2 + sep, cy);
+
+  // Red shadow (advances)
+  glow(COL.redGlow, 35);
+  X.fillStyle = COL.red;
+  X.fillText('DEPTH', W/2 - sep, cy);
+
+  // White center
+  noGlow();
+  X.fillStyle = 'rgba(255,255,255,0.85)';
+  X.fillText('DEPTH', W/2, cy);
+
+  // Subtitle
+  X.font = `300 ${Math.min(15, W*0.035)}px ${font}`;
+  X.fillStyle = COL.dim;
+  X.fillText('A  C H R O M O S T E R E O P S I S  G A M E', W/2, cy + sz*0.55);
+
+  // Visual legend - intuitive icons
+  const ly = H * 0.52;
+  const iconS = 18;
+
+  // Red threat
+  glow(COL.redGlow, 15);
+  X.fillStyle = COL.red;
+  X.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = (i/5)*6.28 - 1.57;
+    X.lineTo(W/2 - 55 + Math.cos(a)*iconS, ly + Math.sin(a)*iconS);
+    const a2 = a + 3.14/5;
+    X.lineTo(W/2 - 55 + Math.cos(a2)*iconS*0.45, ly + Math.sin(a2)*iconS*0.45);
+  }
+  X.closePath(); X.fill();
+  noGlow();
+  X.font = `600 13px ${font}`;
+  X.fillStyle = 'rgba(255,255,255,0.6)';
+  X.fillText('ESQUIVA', W/2 - 55, ly + 35);
+
+  // Blue collect
+  glow(COL.blueGlow, 15);
+  X.fillStyle = COL.blue;
+  X.beginPath(); X.arc(W/2 + 55, ly, iconS, 0, 6.28); X.fill();
+  noGlow();
+  X.fillStyle = 'rgba(255,255,255,0.6)';
+  X.fillText('RECOGE', W/2 + 55, ly + 35);
+
+  // Tap to play
+  const blink = (Math.sin(pulsePhase * 3) + 1) * 0.5;
+  X.font = `500 ${Math.min(16, W*0.04)}px ${font}`;
+  X.globalAlpha = 0.5 + blink * 0.5;
+  X.fillStyle = COL.white;
+  X.fillText(isMobile ? 'TOCA PARA JUGAR' : 'CLICK PARA JUGAR', W/2, H * 0.7);
+  X.globalAlpha = 1;
+
+  // Move hint
+  X.font = `300 ${Math.min(12, W*0.03)}px ${font}`;
+  X.fillStyle = COL.dim;
+  X.fillText(isMobile ? 'desliza para moverte' : 'mueve el rat\u00F3n para esquivar', W/2, H * 0.7 + 28);
+
+  // High score
+  if (hi.length) {
+    X.font = `600 15px ${font}`;
+    glow(COL.cyanGlow, 8);
+    X.fillStyle = COL.cyan;
+    X.fillText('MEJOR  ' + hi[0].s.toLocaleString(), W/2, H * 0.82);
+    noGlow();
+  }
+
+  // Stats
+  if (stats.g > 0) {
+    X.font = `300 10px ${font}`;
+    X.fillStyle = 'rgba(255,255,255,0.2)';
+    X.fillText(`${stats.g} partidas  \u00B7  mejor combo ${stats.bc}  \u00B7  total ${stats.ts.toLocaleString()}`, W/2, H - 30);
+  }
+
+  X.restore();
+}
+
+// === TUTORIAL ===
+function renderTut() {
+  X.save();
+  X.textAlign = 'center';
+  const font = '-apple-system,system-ui,BlinkMacSystemFont,sans-serif';
+  const cy = H * 0.4;
+
+  if (tutStep === 0) {
+    // Show red = danger
+    glow(COL.redGlow, 30);
+    X.fillStyle = COL.red;
+    const r = 35 + Math.sin(pulsePhase * 2) * 5;
+    X.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (i/5)*6.28 - 1.57 + pulsePhase*0.3;
+      X.lineTo(W/2 + Math.cos(a)*r, cy + Math.sin(a)*r);
+      const a2 = a + 3.14/5;
+      X.lineTo(W/2 + Math.cos(a2)*r*0.45, cy + Math.sin(a2)*r*0.45);
+    }
+    X.closePath(); X.fill();
+    noGlow();
+    X.font = `700 22px ${font}`;
+    X.fillStyle = COL.red;
+    X.fillText('ROJO = PELIGRO', W/2, cy + 65);
+    X.font = `400 14px ${font}`;
+    X.fillStyle = COL.dim;
+    X.fillText('parece que salta hacia ti', W/2, cy + 90);
+  }
+
+  else if (tutStep === 1) {
+    // Show blue = collect
+    glow(COL.blueGlow, 30);
+    const r = 30 + Math.sin(pulsePhase * 2) * 3;
+    const g = X.createRadialGradient(W/2 - r*0.3, cy - r*0.3, 0, W/2, cy, r);
+    g.addColorStop(0, '#5C9CFF');
+    g.addColorStop(0.6, COL.blue);
+    g.addColorStop(1, '#0D47A1');
+    X.fillStyle = g;
+    X.beginPath(); X.arc(W/2, cy, r, 0, 6.28); X.fill();
+    noGlow();
+    X.font = `700 22px ${font}`;
+    X.fillStyle = COL.blue;
+    X.fillText('AZUL = PUNTOS', W/2, cy + 60);
+    X.font = `400 14px ${font}`;
+    X.fillStyle = COL.dim;
+    X.fillText('parece m\u00E1s lejos, rec\u00F3gelo', W/2, cy + 85);
+  }
+
+  else if (tutStep === 2) {
+    // Show movement
+    X.font = `400 16px ${font}`;
+    X.fillStyle = COL.white;
+    X.fillText(isMobile ? 'DESLIZA para moverte' : 'MUEVE EL RAT\u00D3N', W/2, cy);
+    X.font = `400 14px ${font}`;
+    X.fillStyle = COL.dim;
+    X.fillText('esquiva el rojo, recoge el azul', W/2, cy + 30);
+
+    // Animated arrow
+    const ax = W/2 + Math.sin(pulsePhase * 3) * 40;
+    glow(COL.cyan, 10);
+    X.fillStyle = COL.cyan;
+    drawDiamond(ax, cy + 80, 14);
+    noGlow();
+  }
+
+  // Tap to continue
+  const blink = (Math.sin(pulsePhase * 3) + 1) * 0.5;
+  X.globalAlpha = 0.4 + blink * 0.4;
+  X.font = `400 13px ${font}`;
+  X.fillStyle = COL.dim;
+  X.fillText('toca para continuar', W/2, H * 0.8);
+  X.globalAlpha = 1;
+
+  // Progress dots
+  for (let i = 0; i < 3; i++) {
+    X.fillStyle = i <= tutStep ? COL.white : 'rgba(255,255,255,0.2)';
+    X.beginPath(); X.arc(W/2 - 15 + i*15, H * 0.85, 3, 0, 6.28); X.fill();
+  }
+
+  X.restore();
+}
+
+// === DEATH SCREEN ===
+function renderDead() {
+  X.save();
+  const font = '-apple-system,system-ui,BlinkMacSystemFont,sans-serif';
+  const a = Math.min(1, deadTimer * 2);
+
+  // Overlay
+  X.globalAlpha = a * 0.7;
+  X.fillStyle = '#000';
+  X.fillRect(0, 0, W, H);
+  X.globalAlpha = a;
+
+  X.textAlign = 'center';
+  const cy = H * 0.28;
+
+  // Title
+  X.font = `800 ${Math.min(40, W*0.1)}px ${font}`;
+  glow(COL.redGlow, 20);
+  X.fillStyle = COL.red;
+  X.fillText('GAME OVER', W/2, cy);
+  noGlow();
+
+  // Score
+  X.font = `700 32px ${font}`;
+  X.fillStyle = COL.white;
+  X.fillText(score.toLocaleString(), W/2, cy + 55);
+
+  // Stats
+  X.font = `400 13px ${font}`;
+  X.fillStyle = COL.dim;
+  X.fillText(`depth ${depth}  \u00B7  combo ${bestCombo}`, W/2, cy + 85);
+
+  // High score
+  const best = hi.length ? hi[0].s : 0;
+  if (score >= best && score > 0) {
+    X.font = `700 18px ${font}`;
+    glow(COL.cyanGlow, 12);
+    X.fillStyle = COL.cyan;
+    X.fillText('NUEVO R\u00C9CORD!', W/2, cy + 120);
+    noGlow();
+  } else if (best > 0) {
+    X.font = `400 13px ${font}`;
+    X.fillStyle = COL.dim;
+    X.fillText('mejor ' + best.toLocaleString() + '  (faltan ' + (best-score).toLocaleString() + ')', W/2, cy + 120);
+  }
+
+  // Top 5
+  if (hi.length > 1) {
+    X.font = `300 11px ${font}`;
+    X.fillStyle = 'rgba(255,255,255,0.25)';
+    const show = hi.slice(0, 5);
+    for (let i = 0; i < show.length; i++) {
+      const me = show[i].s === score && i === show.findIndex(h => h.s === score);
+      X.fillStyle = me ? COL.cyan : 'rgba(255,255,255,0.25)';
+      X.fillText((i+1) + '.  ' + show[i].s.toLocaleString(), W/2, cy + 155 + i * 22);
+    }
+  }
+
+  // Retry
+  if (deadTimer > 0.6) {
+    const blink = (Math.sin(pulsePhase * 3) + 1) * 0.5;
+    X.globalAlpha = 0.5 + blink * 0.5;
+    X.font = `500 15px ${font}`;
+    X.fillStyle = COL.white;
+    X.fillText(isMobile ? 'TOCA PARA REINTENTAR' : 'CLICK PARA REINTENTAR', W/2, H - 70);
+  }
+
+  X.globalAlpha = 1;
+  X.restore();
+}
+
+// === LOOP ===
+let last = 0;
+function loop(t) {
+  const dt = Math.min((t - last) / 1000, 0.05);
+  last = t;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+reset();
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
