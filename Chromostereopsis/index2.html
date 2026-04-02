@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>CAPAS - Depth Layer Puzzle</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #000;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: 'Segoe UI', Arial, sans-serif;
+}
+canvas {
+  display: block;
+  width: 100%; height: 100%;
+}
+#ui-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; z-index: 10;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 18px;
+  pointer-events: none;
+}
+#ui-overlay > * { pointer-events: auto; }
+.ui-text {
+  color: #fff; font-size: 16px; text-shadow: 0 0 8px rgba(255,255,255,0.5);
+}
+#title-text { font-size: 22px; font-weight: bold; letter-spacing: 4px; }
+#layer-btn {
+  position: fixed; bottom: 18px; right: 18px; z-index: 10;
+  width: 56px; height: 56px; border-radius: 50%;
+  border: 2px solid #FF1744; background: rgba(255,23,68,0.15);
+  color: #FF1744; font-size: 22px; font-weight: bold;
+  cursor: pointer; text-shadow: 0 0 10px #FF1744;
+  box-shadow: 0 0 15px rgba(255,23,68,0.4);
+  transition: all 0.3s;
+}
+#layer-btn.blue {
+  border-color: #2979FF; background: rgba(41,121,255,0.15);
+  color: #2979FF; text-shadow: 0 0 10px #2979FF;
+  box-shadow: 0 0 15px rgba(41,121,255,0.4);
+}
+#restart-btn {
+  position: fixed; bottom: 18px; left: 18px; z-index: 10;
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.05);
+  color: #fff; font-size: 20px; cursor: pointer;
+}
+#msg-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  display: none; justify-content: center; align-items: center;
+  z-index: 20; background: rgba(0,0,0,0.7);
+}
+#msg-box {
+  text-align: center; color: #fff; padding: 30px;
+}
+#msg-box h2 { font-size: 36px; margin-bottom: 12px; }
+#msg-box p { font-size: 18px; margin-bottom: 20px; opacity: 0.8; }
+#msg-box button {
+  padding: 12px 32px; font-size: 18px; border: 2px solid #fff;
+  background: transparent; color: #fff; border-radius: 8px; cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div id="ui-overlay">
+  <span class="ui-text" id="title-text">CAPAS</span>
+  <span class="ui-text" id="level-text">Nivel 1</span>
+  <span class="ui-text" id="move-text">Movimientos: 0</span>
+</div>
+<button id="layer-btn" title="Cambiar capa">F</button>
+<button id="restart-btn" title="Reiniciar">&#8634;</button>
+<canvas id="game"></canvas>
+<div id="msg-overlay"><div id="msg-box"><h2 id="msg-title"></h2><p id="msg-body"></p><button id="msg-btn">Siguiente</button></div></div>
+
+<script>
+// ---- CONSTANTS ----
+const FRONT = 0, BACK = 1, BOTH = 2;
+const RED = '#FF1744', RED2 = '#FF0000', BLUE = '#2979FF', BLUE2 = '#0044FF';
+const MAGENTA = '#FF00FF', CYAN = '#00E5FF';
+const GRID_DIM = '#111';
+const DIM_ALPHA = 0.2, BRIGHT_ALPHA = 1.0;
+
+// Tile types: 0=empty, W=wall, P=player start, R=red block, B=blue block, M=magenta block(bridge)
+// Targets: r=red target, b=blue target, m=magenta target
+// Walls on layer: WF=front wall, WB=back wall, WA=wall both
+
+const LEVELS = [
+  // Level 1: Simple intro - push one red block to target
+  {
+    w: 6, h: 6,
+    grid: [
+      'WA','WA','WA','WA','WA','WA',
+      'WA','  ','  ','  ','  ','WA',
+      'WA','  ','P ','  ','  ','WA',
+      'WA','  ','R ','  ','  ','WA',
+      'WA','  ','  ','  ','r ','WA',
+      'WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'Empuja el bloque rojo a su objetivo'
+  },
+  // Level 2: Blue block intro
+  {
+    w: 6, h: 6,
+    grid: [
+      'WA','WA','WA','WA','WA','WA',
+      'WA','  ','  ','b ','  ','WA',
+      'WA','  ','P ','  ','  ','WA',
+      'WA','  ','B ','  ','  ','WA',
+      'WA','  ','  ','  ','  ','WA',
+      'WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: BACK,
+    hint: 'Cambia a la capa azul para mover el bloque'
+  },
+  // Level 3: Both layers
+  {
+    w: 7, h: 6,
+    grid: [
+      'WA','WA','WA','WA','WA','WA','WA',
+      'WA','  ','R ','  ','  ','r ','WA',
+      'WA','  ','  ','P ','  ','  ','WA',
+      'WA','  ','B ','  ','  ','b ','WA',
+      'WA','  ','  ','  ','  ','  ','WA',
+      'WA','WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'Usa ambas capas para resolver'
+  },
+  // Level 4: Layer-specific walls
+  {
+    w: 7, h: 7,
+    grid: [
+      'WA','WA','WA','WA','WA','WA','WA',
+      'WA','P ','  ','WF','  ','r ','WA',
+      'WA','  ','R ','  ','  ','  ','WA',
+      'WA','  ','  ','  ','  ','  ','WA',
+      'WA','  ','B ','  ','WB','  ','WA',
+      'WA','  ','  ','  ','  ','b ','WA',
+      'WA','WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'Algunas paredes solo existen en una capa'
+  },
+  // Level 5: Bridge block intro
+  {
+    w: 7, h: 7,
+    grid: [
+      'WA','WA','WA','WA','WA','WA','WA',
+      'WA','P ','  ','  ','  ','  ','WA',
+      'WA','  ','M ','  ','WF','  ','WA',
+      'WA','  ','  ','  ','  ','  ','WA',
+      'WA','  ','WB','  ','  ','  ','WA',
+      'WA','  ','  ','  ','  ','m ','WA',
+      'WA','WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'Los bloques magenta existen en ambas capas'
+  },
+  // Level 6: Two red blocks
+  {
+    w: 8, h: 7,
+    grid: [
+      'WA','WA','WA','WA','WA','WA','WA','WA',
+      'WA','  ','  ','  ','  ','  ','  ','WA',
+      'WA','  ','R ','  ','WF','R ','  ','WA',
+      'WA','P ','  ','  ','  ','  ','  ','WA',
+      'WA','  ','  ','  ','  ','  ','  ','WA',
+      'WA','r ','  ','  ','  ','  ','r ','WA',
+      'WA','WA','WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'Dos bloques rojos, dos objetivos'
+  },
+  // Level 7: Mixed challenge
+  {
+    w: 8, h: 8,
+    grid: [
+      'WA','WA','WA','WA','WA','WA','WA','WA',
+      'WA','P ','  ','  ','WF','  ','  ','WA',
+      'WA','  ','R ','  ','  ','  ','b ','WA',
+      'WA','  ','  ','  ','  ','B ','  ','WA',
+      'WA','  ','  ','WB','  ','  ','  ','WA',
+      'WA','  ','  ','  ','  ','  ','  ','WA',
+      'WA','r ','  ','  ','  ','  ','  ','WA',
+      'WA','WA','WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'Planifica el orden de movimientos'
+  },
+  // Level 8: Bridge and walls
+  {
+    w: 8, h: 8,
+    grid: [
+      'WA','WA','WA','WA','WA','WA','WA','WA',
+      'WA','  ','  ','  ','  ','  ','  ','WA',
+      'WA','  ','R ','WF','  ','M ','  ','WA',
+      'WA','P ','  ','  ','  ','  ','  ','WA',
+      'WA','  ','  ','  ','WB','  ','  ','WA',
+      'WA','  ','B ','  ','  ','  ','  ','WA',
+      'WA','r ','  ','m ','  ','  ','b ','WA',
+      'WA','WA','WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'Combina puentes y paredes de capa'
+  },
+  // Level 9: Tight corridors
+  {
+    w: 9, h: 8,
+    grid: [
+      'WA','WA','WA','WA','WA','WA','WA','WA','WA',
+      'WA','P ','  ','WF','  ','  ','  ','  ','WA',
+      'WA','  ','R ','  ','  ','WA','  ','r ','WA',
+      'WA','  ','  ','WA','  ','  ','  ','  ','WA',
+      'WA','  ','  ','  ','  ','WA','  ','  ','WA',
+      'WA','  ','WB','  ','B ','  ','  ','  ','WA',
+      'WA','b ','  ','  ','  ','M ','  ','m ','WA',
+      'WA','WA','WA','WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'Corredores estrechos requieren precision'
+  },
+  // Level 10: Grand finale
+  {
+    w: 9, h: 9,
+    grid: [
+      'WA','WA','WA','WA','WA','WA','WA','WA','WA',
+      'WA','  ','  ','  ','WF','  ','  ','r ','WA',
+      'WA','  ','R ','  ','  ','  ','  ','  ','WA',
+      'WA','  ','  ','WA','  ','R ','  ','  ','WA',
+      'WA','P ','  ','  ','  ','  ','WB','  ','WA',
+      'WA','  ','  ','WA','  ','B ','  ','  ','WA',
+      'WA','  ','B ','  ','  ','  ','  ','  ','WA',
+      'WA','r ','  ','  ','WF','  ','b ','b ','WA',
+      'WA','WA','WA','WA','WA','WA','WA','WA','WA',
+    ],
+    startLayer: FRONT,
+    hint: 'El desafio final. Buena suerte!'
+  },
+];
+
+// ---- AUDIO ENGINE ----
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function ensureAudio() { if (audioCtx.state === 'suspended') audioCtx.resume(); }
+
+function playTone(freq, dur, type, vol) {
+  ensureAudio();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type || 'sine';
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(vol || 0.1, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur);
+}
+
+function sfxMove() { playTone(220, 0.08, 'square', 0.06); }
+function sfxPush() { playTone(150, 0.12, 'sawtooth', 0.07); }
+function sfxLayerSwitch() {
+  playTone(440, 0.1, 'sine', 0.08);
+  setTimeout(() => playTone(660, 0.15, 'sine', 0.08), 60);
+}
+function sfxLevelComplete() {
+  [523, 659, 784, 1047].forEach((f, i) => {
+    setTimeout(() => playTone(f, 0.25, 'sine', 0.1), i * 120);
+  });
+}
+function sfxPlaced() { playTone(880, 0.2, 'triangle', 0.08); }
+
+// ---- GAME STATE ----
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+let W, H, cellSize, offsetX, offsetY;
+let currentLevel = 0, moves = 0, activeLayer = FRONT;
+let player = { x: 0, y: 0 };
+let blocks = []; // { x, y, layer: FRONT|BACK|BOTH }
+let targets = []; // { x, y, layer }
+let walls = []; // { x, y, layer }
+let animating = false;
+let animations = []; // { obj, fromX, fromY, toX, toY, t, duration }
+let particles = [];
+let levelComplete = false;
+let time = 0;
+
+// ---- RESIZE ----
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  W = canvas.width; H = canvas.height;
+  recalcGrid();
+}
+
+function recalcGrid() {
+  if (!LEVELS[currentLevel]) return;
+  const lv = LEVELS[currentLevel];
+  const maxW = W - 20, maxH = H - 80;
+  cellSize = Math.floor(Math.min(maxW / lv.w, maxH / lv.h));
+  if (cellSize < 20) cellSize = 20;
+  offsetX = Math.floor((W - lv.w * cellSize) / 2);
+  offsetY = Math.floor((H - lv.h * cellSize) / 2) + 20;
+}
+
+// ---- LEVEL LOADING ----
+function loadLevel(idx) {
+  if (idx >= LEVELS.length) {
+    showMessage('FELICIDADES!', 'Has completado todos los niveles!', 'Reiniciar', () => { currentLevel = 0; loadLevel(0); });
+    return;
+  }
+  currentLevel = idx;
+  moves = 0;
+  levelComplete = false;
+  particles = [];
+  animations = [];
+  animating = false;
+  const lv = LEVELS[idx];
+  activeLayer = lv.startLayer;
+  blocks = [];
+  targets = [];
+  walls = [];
+  player = { x: 0, y: 0 };
+
+  for (let i = 0; i < lv.grid.length; i++) {
+    const x = i % lv.w, y = Math.floor(i / lv.w);
+    const cell = lv.grid[i].trim();
+    if (cell === 'WA') walls.push({ x, y, layer: BOTH });
+    else if (cell === 'WF') walls.push({ x, y, layer: FRONT });
+    else if (cell === 'WB') walls.push({ x, y, layer: BACK });
+    else if (cell === 'P') player = { x, y };
+    else if (cell === 'R') blocks.push({ x, y, layer: FRONT });
+    else if (cell === 'B') blocks.push({ x, y, layer: BACK });
+    else if (cell === 'M') blocks.push({ x, y, layer: BOTH });
+    else if (cell === 'r') targets.push({ x, y, layer: FRONT });
+    else if (cell === 'b') targets.push({ x, y, layer: BACK });
+    else if (cell === 'm') targets.push({ x, y, layer: BOTH });
+  }
+
+  updateUI();
+  recalcGrid();
+}
+
+function updateUI() {
+  document.getElementById('level-text').textContent = 'Nivel ' + (currentLevel + 1);
+  document.getElementById('move-text').textContent = 'Movimientos: ' + moves;
+  const btn = document.getElementById('layer-btn');
+  if (activeLayer === FRONT) {
+    btn.textContent = 'F';
+    btn.classList.remove('blue');
+  } else {
+    btn.textContent = 'B';
+    btn.classList.add('blue');
+  }
+}
+
+// ---- COLLISION ----
+function isWall(x, y, layer) {
+  return walls.some(w => w.x === x && w.y === y && (w.layer === BOTH || w.layer === layer));
+}
+
+function getBlock(x, y, layer) {
+  return blocks.find(b => b.x === x && b.y === y && (b.layer === layer || b.layer === BOTH));
+}
+
+function isInBounds(x, y) {
+  const lv = LEVELS[currentLevel];
+  return x >= 0 && y >= 0 && x < lv.w && y < lv.h;
+}
+
+// ---- MOVE ----
+function tryMove(dx, dy) {
+  if (animating || levelComplete) return;
+  const nx = player.x + dx, ny = player.y + dy;
+  if (!isInBounds(nx, ny)) return;
+  if (isWall(nx, ny, activeLayer)) return;
+
+  const block = getBlock(nx, ny, activeLayer);
+  if (block) {
+    const bx = nx + dx, by = ny + dy;
+    if (!isInBounds(bx, by)) return;
+    if (isWall(bx, by, block.layer === BOTH ? activeLayer : block.layer)) return;
+    // Check if another block is in the way
+    const blockLayer = block.layer;
+    if (blocks.some(b => b.x === bx && b.y === by && (b.layer === blockLayer || b.layer === BOTH || blockLayer === BOTH))) return;
+
+    // Push block
+    startAnimation(block, block.x, block.y, bx, by, 0.12);
+    block.x = bx; block.y = by;
+    sfxPush();
+  } else {
+    sfxMove();
+  }
+
+  const oldX = player.x, oldY = player.y;
+  player.x = nx; player.y = ny;
+  moves++;
+  updateUI();
+
+  // Check if block landed on target
+  if (block) {
+    const onTarget = targets.some(t => t.x === block.x && t.y === block.y &&
+      (t.layer === block.layer || t.layer === BOTH || block.layer === BOTH));
+    if (onTarget) sfxPlaced();
+  }
+
+  checkWin();
+}
+
+function startAnimation(obj, fx, fy, tx, ty, dur) {
+  animations.push({ obj, fromX: fx, fromY: fy, toX: tx, toY: ty, t: 0, duration: dur });
+  animating = true;
+}
+
+function checkWin() {
+  const allPlaced = targets.every(t => {
+    return blocks.some(b => b.x === t.x && b.y === t.y &&
+      (b.layer === t.layer || b.layer === BOTH || t.layer === BOTH));
+  });
+  if (allPlaced && targets.length > 0) {
+    levelComplete = true;
+    sfxLevelComplete();
+    spawnVictoryParticles();
+    setTimeout(() => {
+      showMessage('Nivel Completado!', 'Movimientos: ' + moves, 'Siguiente', () => {
+        loadLevel(currentLevel + 1);
+      });
+    }, 1500);
+  }
+}
+
+// ---- LAYER SWITCH ----
+function switchLayer() {
+  if (animating || levelComplete) return;
+  activeLayer = activeLayer === FRONT ? BACK : FRONT;
+  sfxLayerSwitch();
+  updateUI();
+}
+
+// ---- PARTICLES ----
+function spawnVictoryParticles() {
+  for (let i = 0; i < 60; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    const colors = [RED, BLUE, MAGENTA, CYAN, '#fff'];
+    particles.push({
+      x: W / 2, y: H / 2,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.005 + Math.random() * 0.015,
+      size: 2 + Math.random() * 5,
+      color: colors[Math.floor(Math.random() * colors.length)]
+    });
+  }
+}
+
+// ---- MESSAGE OVERLAY ----
+function showMessage(title, body, btnText, cb) {
+  document.getElementById('msg-title').textContent = title;
+  document.getElementById('msg-body').textContent = body;
+  document.getElementById('msg-btn').textContent = btnText;
+  document.getElementById('msg-overlay').style.display = 'flex';
+  document.getElementById('msg-btn').onclick = () => {
+    document.getElementById('msg-overlay').style.display = 'none';
+    if (cb) cb();
+  };
+}
+
+// ---- DRAWING ----
+function drawGrid() {
+  const lv = LEVELS[currentLevel];
+  ctx.strokeStyle = GRID_DIM;
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= lv.w; x++) {
+    ctx.beginPath();
+    ctx.moveTo(offsetX + x * cellSize, offsetY);
+    ctx.lineTo(offsetX + x * cellSize, offsetY + lv.h * cellSize);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= lv.h; y++) {
+    ctx.beginPath();
+    ctx.moveTo(offsetX, offsetY + y * cellSize);
+    ctx.lineTo(offsetX + lv.w * cellSize, offsetY + y * cellSize);
+    ctx.stroke();
+  }
+}
+
+function cellToScreen(x, y) {
+  return { sx: offsetX + x * cellSize, sy: offsetY + y * cellSize };
+}
+
+function getAnimPos(obj) {
+  const anim = animations.find(a => a.obj === obj);
+  if (anim) {
+    const p = anim.t / anim.duration;
+    const ep = p < 1 ? p : 1;
+    const smooth = ep * ep * (3 - 2 * ep); // smoothstep
+    return {
+      x: anim.fromX + (anim.toX - anim.fromX) * smooth,
+      y: anim.fromY + (anim.toY - anim.fromY) * smooth
+    };
+  }
+  return null;
+}
+
+function drawWalls() {
+  walls.forEach(w => {
+    const { sx, sy } = cellToScreen(w.x, w.y);
+    const pad = 1;
+    let color, alpha;
+    if (w.layer === BOTH) {
+      color = '#444';
+      alpha = 0.9;
+    } else if (w.layer === FRONT) {
+      color = activeLayer === FRONT ? '#662222' : '#331111';
+      alpha = activeLayer === FRONT ? 0.8 : DIM_ALPHA;
+    } else {
+      color = activeLayer === BACK ? '#222266' : '#111133';
+      alpha = activeLayer === BACK ? 0.8 : DIM_ALPHA;
+    }
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(sx + pad, sy + pad, cellSize - pad * 2, cellSize - pad * 2);
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawTargets() {
+  const pulse = 0.5 + 0.5 * Math.sin(time * 3);
+  targets.forEach(t => {
+    const { sx, sy } = cellToScreen(t.x, t.y);
+    const pad = 6;
+    let color;
+    if (t.layer === FRONT) color = RED;
+    else if (t.layer === BACK) color = BLUE;
+    else color = MAGENTA;
+
+    const isActive = t.layer === BOTH || t.layer === activeLayer;
+    ctx.globalAlpha = isActive ? (0.3 + 0.4 * pulse) : (0.1 + 0.1 * pulse);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8 + 6 * pulse;
+    ctx.strokeRect(sx + pad, sy + pad, cellSize - pad * 2, cellSize - pad * 2);
+
+    // Draw small diamond in center
+    const cx = sx + cellSize / 2, cy = sy + cellSize / 2;
+    const ds = 4 + 2 * pulse;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - ds); ctx.lineTo(cx + ds, cy);
+    ctx.lineTo(cx, cy + ds); ctx.lineTo(cx - ds, cy);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawBlocks() {
+  blocks.forEach(b => {
+    const animPos = getAnimPos(b);
+    const bx = animPos ? animPos.x : b.x;
+    const by = animPos ? animPos.y : b.y;
+    const sx = offsetX + bx * cellSize;
+    const sy = offsetY + by * cellSize;
+    const pad = 3;
+
+    let color1, color2;
+    if (b.layer === FRONT) { color1 = RED; color2 = RED2; }
+    else if (b.layer === BACK) { color1 = BLUE; color2 = BLUE2; }
+    else { color1 = MAGENTA; color2 = CYAN; }
+
+    const isActive = b.layer === BOTH || b.layer === activeLayer;
+    const alpha = isActive ? BRIGHT_ALPHA : DIM_ALPHA;
+
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = color1;
+    ctx.shadowBlur = isActive ? 18 : 4;
+    ctx.fillStyle = color2;
+    ctx.fillRect(sx + pad, sy + pad, cellSize - pad * 2, cellSize - pad * 2);
+    ctx.fillStyle = color1;
+    ctx.fillRect(sx + pad + 2, sy + pad + 2, cellSize - pad * 2 - 4, cellSize - pad * 2 - 4);
+
+    // Inner highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fillRect(sx + pad + 4, sy + pad + 4, cellSize - pad * 2 - 8, (cellSize - pad * 2 - 8) / 3);
+
+    // Check if on target
+    const onTarget = targets.some(t => Math.round(bx) === t.x && Math.round(by) === t.y &&
+      (t.layer === b.layer || t.layer === BOTH || b.layer === BOTH));
+    if (onTarget && isActive) {
+      ctx.shadowBlur = 30;
+      ctx.shadowColor = '#fff';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx + pad, sy + pad, cellSize - pad * 2, cellSize - pad * 2);
+    }
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawPlayer() {
+  const px = player.x, py = player.y;
+  const { sx, sy } = cellToScreen(px, py);
+  const cx = sx + cellSize / 2, cy = sy + cellSize / 2;
+  const r = cellSize * 0.3;
+
+  const color = activeLayer === FRONT ? RED : BLUE;
+  const breathe = 1 + 0.05 * Math.sin(time * 4);
+
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * breathe, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Inner circle
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.15, cy - r * 0.15, r * 0.45 * breathe, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye direction indicator
+  ctx.fillStyle = '#fff';
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  });
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+function drawHint() {
+  const lv = LEVELS[currentLevel];
+  if (lv.hint && moves === 0) {
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 4;
+    ctx.fillText(lv.hint, W / 2, offsetY + LEVELS[currentLevel].h * cellSize + 28);
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---- UPDATE ----
+function update(dt) {
+  time += dt;
+
+  // Update animations
+  if (animations.length > 0) {
+    animations.forEach(a => a.t += dt);
+    animations = animations.filter(a => a.t < a.duration);
+    if (animations.length === 0) animating = false;
+  }
+
+  // Update particles
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.03;
+    p.life -= p.decay;
+  });
+  particles = particles.filter(p => p.life > 0);
+}
+
+// ---- MAIN LOOP ----
+let lastTime = 0;
+function loop(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+
+  update(dt);
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  drawGrid();
+  drawWalls();
+  drawTargets();
+  drawBlocks();
+  drawPlayer();
+  drawParticles();
+  drawHint();
+
+  requestAnimationFrame(loop);
+}
+
+// ---- INPUT ----
+document.addEventListener('keydown', e => {
+  ensureAudio();
+  switch (e.key) {
+    case 'ArrowUp': case 'w': case 'W': tryMove(0, -1); e.preventDefault(); break;
+    case 'ArrowDown': case 's': case 'S': tryMove(0, 1); e.preventDefault(); break;
+    case 'ArrowLeft': case 'a': case 'A': tryMove(-1, 0); e.preventDefault(); break;
+    case 'ArrowRight': case 'd': case 'D': tryMove(1, 0); e.preventDefault(); break;
+    case ' ': case 'Tab': switchLayer(); e.preventDefault(); break;
+    case 'r': case 'R': loadLevel(currentLevel); break;
+  }
+});
+
+// Touch / swipe
+let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+canvas.addEventListener('touchstart', e => {
+  ensureAudio();
+  const t = e.touches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+  touchStartTime = Date.now();
+  e.preventDefault();
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const elapsed = Date.now() - touchStartTime;
+
+  if (dist < 15 && elapsed < 300) {
+    // Tap = switch layer
+    switchLayer();
+  } else if (dist > 30) {
+    if (Math.abs(dx) > Math.abs(dy)) {
+      tryMove(dx > 0 ? 1 : -1, 0);
+    } else {
+      tryMove(0, dy > 0 ? 1 : -1);
+    }
+  }
+  e.preventDefault();
+}, { passive: false });
+
+// Mouse swipe support
+let mouseDown = false, mouseStartX = 0, mouseStartY = 0;
+canvas.addEventListener('mousedown', e => {
+  ensureAudio();
+  mouseDown = true;
+  mouseStartX = e.clientX;
+  mouseStartY = e.clientY;
+});
+canvas.addEventListener('mouseup', e => {
+  if (!mouseDown) return;
+  mouseDown = false;
+  const dx = e.clientX - mouseStartX;
+  const dy = e.clientY - mouseStartY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 10) {
+    switchLayer();
+  } else if (dist > 30) {
+    if (Math.abs(dx) > Math.abs(dy)) {
+      tryMove(dx > 0 ? 1 : -1, 0);
+    } else {
+      tryMove(0, dy > 0 ? 1 : -1);
+    }
+  }
+});
+
+document.getElementById('layer-btn').addEventListener('click', e => {
+  ensureAudio();
+  switchLayer();
+  e.stopPropagation();
+});
+document.getElementById('restart-btn').addEventListener('click', e => {
+  ensureAudio();
+  loadLevel(currentLevel);
+  e.stopPropagation();
+});
+
+window.addEventListener('resize', resize);
+
+// ---- INIT ----
+resize();
+loadLevel(0);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

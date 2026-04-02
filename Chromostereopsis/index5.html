@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>DEFENSA CROMATICA</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function(){
+"use strict";
+
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+
+let W,H,cellSize,gridCols,gridRows;
+let audioCtx=null;
+
+function initAudio(){
+  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+}
+
+function playSound(freq,dur,type,vol){
+  if(!audioCtx)return;
+  try{
+    const o=audioCtx.createOscillator();
+    const g=audioCtx.createGain();
+    o.type=type||'sine';
+    o.frequency.setValueAtTime(freq,audioCtx.currentTime);
+    g.gain.setValueAtTime((vol||0.15),audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
+    o.connect(g);g.connect(audioCtx.destination);
+    o.start();o.stop(audioCtx.currentTime+dur);
+  }catch(e){}
+}
+
+function sndPlace(){playSound(220,0.2,'triangle',0.12);playSound(330,0.15,'sine',0.1);}
+function sndShoot(){playSound(800,0.08,'square',0.06);}
+function sndKill(){playSound(150,0.3,'sawtooth',0.1);playSound(200,0.2,'sine',0.08);}
+function sndWave(){playSound(440,0.15,'sine',0.12);setTimeout(()=>playSound(550,0.15,'sine',0.12),120);setTimeout(()=>playSound(660,0.25,'sine',0.12),240);}
+function sndLoseLife(){playSound(200,0.4,'sawtooth',0.15);playSound(100,0.5,'square',0.1);}
+
+// Path definition as grid cells (col,row) - S-shaped winding path
+let pathCells=[];
+let pathSet=new Set();
+
+function buildPath(){
+  pathCells=[];
+  pathSet=new Set();
+  // S-shape path
+  const rows=gridRows, cols=gridCols;
+  let r=0,c=Math.floor(cols/2);
+  // enter from top center, go down a bit
+  for(let i=0;i<Math.floor(rows*0.2);i++){pathCells.push({c,r});r++;}
+  // go right
+  while(c<cols-2){pathCells.push({c,r});c++;}
+  // go down
+  for(let i=0;i<Math.floor(rows*0.2);i++){pathCells.push({c,r});r++;}
+  // go left
+  while(c>1){pathCells.push({c,r});c--;}
+  // go down
+  for(let i=0;i<Math.floor(rows*0.2);i++){pathCells.push({c,r});r++;}
+  // go right
+  while(c<cols-2){pathCells.push({c,r});c++;}
+  // go down to bottom
+  while(r<rows){pathCells.push({c,r});r++;}
+
+  pathSet.clear();
+  for(const p of pathCells) pathSet.add(p.c+','+p.r);
+}
+
+// Convert path cells to pixel waypoints (center of each cell)
+function getWaypoints(){
+  const wps=[];
+  // Deduplicate consecutive identical points
+  for(let i=0;i<pathCells.length;i++){
+    const px=pathCells[i].c*cellSize+cellSize/2;
+    const py=pathCells[i].r*cellSize+cellSize/2;
+    if(wps.length===0||wps[wps.length-1].x!==px||wps[wps.length-1].y!==py){
+      wps.push({x:px,y:py});
+    }
+  }
+  return wps;
+}
+
+let waypoints=[];
+
+// Game state
+let money=200, lives=20, wave=0, maxWaves=15;
+let enemies=[], towers=[], projectiles=[], particles=[];
+let waveEnemies=[], spawning=false, spawnTimer=0, spawnInterval=40;
+let gameOver=false, gameWon=false, waveActive=false, betweenWaves=true, betweenTimer=180;
+let selectedTowerType=0;
+let towerGrid={}; // "c,r" -> tower
+
+// Tower types
+const TOWER_TYPES=[
+  {name:'Pulso',color:'#00E5FF',glow:'#00E5FF',range:3.5,fireRate:50,damage:18,speed:4,cost:50,type:'pulse'},
+  {name:'Hielo',color:'#0044FF',glow:'#2244FF',range:3,fireRate:70,damage:8,speed:3,cost:60,type:'freeze'},
+  {name:'Cadena',color:'#82B1FF',glow:'#00E5FF',range:3,fireRate:65,damage:12,speed:5,cost:75,type:'chain'}
+];
+
+// Enemy types
+function enemyHP(base){return base+wave*3;}
+
+function createWaveEnemies(waveNum){
+  const list=[];
+  const n=5+waveNum*3;
+  for(let i=0;i<n;i++){
+    const roll=Math.random();
+    if(waveNum>=3 && roll<0.2){
+      // diamond
+      list.push({type:'diamond',hp:enemyHP(40),maxHp:enemyHP(40),speed:1.5+waveNum*0.05,size:0.35,color:'#FF00FF',glow:'#FF00FF',value:25,slow:0,slowTimer:0});
+    } else if(waveNum>=2 && roll<0.4){
+      // big square
+      list.push({type:'square',hp:enemyHP(70),maxHp:enemyHP(70),speed:0.8+waveNum*0.03,size:0.45,color:'#FF0000',glow:'#FF1744',value:20,slow:0,slowTimer:0});
+    } else {
+      // small circle
+      list.push({type:'circle',hp:enemyHP(20),maxHp:enemyHP(20),speed:2+waveNum*0.06,size:0.25,color:'#FF1744',glow:'#FF1744',value:10,slow:0,slowTimer:0});
+    }
+  }
+  return list;
+}
+
+function spawnEnemy(template){
+  const e=Object.assign({},template);
+  e.wpIndex=0;
+  const wp=waypoints[0];
+  e.x=wp.x;
+  e.y=wp.y;
+  e.alive=true;
+  enemies.push(e);
+}
+
+function resize(){
+  W=canvas.width=window.innerWidth;
+  H=canvas.height=window.innerHeight;
+  cellSize=Math.floor(Math.min(W/20,H/30));
+  if(cellSize<16) cellSize=16;
+  gridCols=Math.floor(W/cellSize);
+  gridRows=Math.floor(H/cellSize);
+  buildPath();
+  waypoints=getWaypoints();
+}
+
+window.addEventListener('resize',resize);
+resize();
+
+// Adjacent to path check (within 1 cell of path)
+function isNearPath(c,r){
+  for(let dc=-1;dc<=1;dc++){
+    for(let dr=-1;dr<=1;dr++){
+      if(pathSet.has((c+dc)+','+(r+dr))) return true;
+    }
+  }
+  return false;
+}
+
+function isOnPath(c,r){
+  return pathSet.has(c+','+r);
+}
+
+// Handle click/tap
+function handleInput(px,py){
+  initAudio();
+  if(gameOver||gameWon) {
+    // restart
+    money=200;lives=20;wave=0;enemies=[];towers=[];projectiles=[];particles=[];
+    towerGrid={};waveEnemies=[];spawning=false;waveActive=false;betweenWaves=true;betweenTimer=120;
+    gameOver=false;gameWon=false;
+    return;
+  }
+
+  const c=Math.floor(px/cellSize);
+  const r=Math.floor(py/cellSize);
+  if(c<0||c>=gridCols||r<0||r>=gridRows)return;
+  const key=c+','+r;
+
+  // If tower exists here, cycle type
+  if(towerGrid[key]){
+    // upgrade/cycle display only - show what type it is
+    return;
+  }
+
+  // Can't place on path
+  if(isOnPath(c,r))return;
+
+  // Must be near path
+  if(!isNearPath(c,r))return;
+
+  // Cycle tower type based on tap count at bottom HUD or just place cheapest affordable
+  // Find cheapest affordable tower type - try in order 0,1,2
+  let typeIdx=-1;
+  for(let i=0;i<TOWER_TYPES.length;i++){
+    const ti=(selectedTowerType+i)%TOWER_TYPES.length;
+    if(money>=TOWER_TYPES[ti].cost){typeIdx=ti;break;}
+  }
+  if(typeIdx===-1)return;
+
+  const tt=TOWER_TYPES[typeIdx];
+  money-=tt.cost;
+  const tower={
+    c,r,
+    x:c*cellSize+cellSize/2,
+    y:r*cellSize+cellSize/2,
+    type:typeIdx,
+    range:tt.range*cellSize,
+    fireRate:tt.fireRate,
+    damage:tt.damage,
+    projSpeed:tt.speed,
+    color:tt.color,
+    glow:tt.glow,
+    cooldown:0,
+    angle:0,
+    towerType:tt.type
+  };
+  towers.push(tower);
+  towerGrid[key]=tower;
+  sndPlace();
+}
+
+// Tower type selector at bottom
+let towerButtons=[];
+function buildButtons(){
+  towerButtons=[];
+  const bw=Math.min(100,W/4);
+  const bh=40;
+  const startX=W/2-(TOWER_TYPES.length*bw)/2;
+  const y=H-bh-10;
+  for(let i=0;i<TOWER_TYPES.length;i++){
+    towerButtons.push({x:startX+i*bw+5,y,w:bw-10,h:bh,idx:i});
+  }
+}
+
+function handleButtonClick(px,py){
+  for(const b of towerButtons){
+    if(px>=b.x&&px<=b.x+b.w&&py>=b.y&&py<=b.y+b.h){
+      selectedTowerType=b.idx;
+      initAudio();
+      playSound(600,0.08,'sine',0.08);
+      return true;
+    }
+  }
+  return false;
+}
+
+canvas.addEventListener('pointerdown',function(e){
+  e.preventDefault();
+  const rect=canvas.getBoundingClientRect();
+  const px=(e.clientX-rect.left)*(W/rect.width);
+  const py=(e.clientY-rect.top)*(H/rect.height);
+  if(!handleButtonClick(px,py)){
+    handleInput(px,py);
+  }
+});
+
+// Particles
+function spawnParticles(x,y,color,count){
+  for(let i=0;i<count;i++){
+    const angle=Math.random()*Math.PI*2;
+    const speed=1+Math.random()*3;
+    particles.push({
+      x,y,
+      vx:Math.cos(angle)*speed,
+      vy:Math.sin(angle)*speed,
+      life:30+Math.random()*20,
+      maxLife:50,
+      color,
+      size:2+Math.random()*3
+    });
+  }
+}
+
+// Projectile
+function fireProjectile(tower,target){
+  const dx=target.x-tower.x;
+  const dy=target.y-tower.y;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  const vx=(dx/dist)*tower.projSpeed;
+  const vy=(dy/dist)*tower.projSpeed;
+  projectiles.push({
+    x:tower.x,y:tower.y,vx,vy,
+    damage:tower.damage,
+    color:tower.color,
+    glow:tower.glow,
+    life:120,
+    towerType:tower.towerType,
+    trail:[],
+    targetId:null,
+    chainCount:tower.towerType==='chain'?3:0
+  });
+  sndShoot();
+}
+
+// Update
+function update(){
+  if(gameOver||gameWon)return;
+
+  // Between waves timer
+  if(betweenWaves){
+    betweenTimer--;
+    if(betweenTimer<=0){
+      wave++;
+      if(wave>maxWaves){gameWon=true;return;}
+      waveEnemies=createWaveEnemies(wave);
+      spawning=true;
+      spawnTimer=0;
+      waveActive=true;
+      betweenWaves=false;
+      sndWave();
+    }
+    return;
+  }
+
+  // Spawn enemies
+  if(spawning&&waveEnemies.length>0){
+    spawnTimer--;
+    if(spawnTimer<=0){
+      spawnEnemy(waveEnemies.shift());
+      spawnTimer=spawnInterval;
+      if(waveEnemies.length===0) spawning=false;
+    }
+  }
+
+  // Update enemies
+  for(const e of enemies){
+    if(!e.alive)continue;
+    // Slow effect
+    let speedMult=1;
+    if(e.slowTimer>0){e.slowTimer--;speedMult=0.4;}
+
+    const target=waypoints[e.wpIndex+1];
+    if(!target){
+      // reached end
+      e.alive=false;
+      lives--;
+      sndLoseLife();
+      if(lives<=0){gameOver=true;}
+      continue;
+    }
+    const dx=target.x-e.x;
+    const dy=target.y-e.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    const spd=e.speed*speedMult;
+    if(dist<spd){
+      e.x=target.x;e.y=target.y;e.wpIndex++;
+    } else {
+      e.x+=dx/dist*spd;
+      e.y+=dy/dist*spd;
+    }
+  }
+
+  // Update towers
+  for(const t of towers){
+    if(t.cooldown>0){t.cooldown--;continue;}
+    // Find closest enemy in range
+    let closest=null, closestDist=Infinity;
+    for(const e of enemies){
+      if(!e.alive)continue;
+      const dx=e.x-t.x,dy=e.y-t.y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<t.range&&d<closestDist){closest=e;closestDist=d;}
+    }
+    if(closest){
+      t.angle=Math.atan2(closest.y-t.y,closest.x-t.x);
+      fireProjectile(t,closest);
+      t.cooldown=t.fireRate;
+    }
+  }
+
+  // Update projectiles
+  for(const p of projectiles){
+    if(p.life<=0)continue;
+    p.trail.push({x:p.x,y:p.y});
+    if(p.trail.length>8)p.trail.shift();
+    p.x+=p.vx;p.y+=p.vy;
+    p.life--;
+
+    // Hit detection
+    for(const e of enemies){
+      if(!e.alive)continue;
+      const dx=e.x-p.x,dy=e.y-p.y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<cellSize*e.size+4){
+        e.hp-=p.damage;
+        if(p.towerType==='freeze'){e.slowTimer=90;}
+        // Chain
+        if(p.towerType==='chain'&&p.chainCount>0){
+          // Find next nearest enemy
+          let nextE=null,nd=Infinity;
+          for(const e2 of enemies){
+            if(!e2.alive||e2===e)continue;
+            const dx2=e2.x-p.x,dy2=e2.y-p.y;
+            const d2=Math.sqrt(dx2*dx2+dy2*dy2);
+            if(d2<cellSize*4&&d2<nd){nextE=e2;nd=d2;}
+          }
+          if(nextE){
+            const dx2=nextE.x-p.x,dy2=nextE.y-p.y;
+            const dist2=Math.sqrt(dx2*dx2+dy2*dy2);
+            projectiles.push({
+              x:p.x,y:p.y,
+              vx:(dx2/dist2)*5,vy:(dy2/dist2)*5,
+              damage:p.damage*0.7,
+              color:'#00E5FF',glow:'#00E5FF',
+              life:60,towerType:'chain',trail:[],chainCount:p.chainCount-1
+            });
+          }
+        }
+        p.life=0;
+
+        if(e.hp<=0){
+          e.alive=false;
+          money+=e.value;
+          spawnParticles(e.x,e.y,e.color,15);
+          sndKill();
+        }
+        break;
+      }
+    }
+  }
+
+  // Cleanup
+  enemies=enemies.filter(e=>e.alive);
+  projectiles=projectiles.filter(p=>p.life>0);
+
+  // Update particles
+  for(const p of particles){
+    p.x+=p.vx;p.y+=p.vy;
+    p.vx*=0.95;p.vy*=0.95;
+    p.life--;
+  }
+  particles=particles.filter(p=>p.life>0);
+
+  // Check wave end
+  if(waveActive&&!spawning&&enemies.length===0){
+    waveActive=false;
+    betweenWaves=true;
+    betweenTimer=120;
+  }
+}
+
+// Draw
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,W,H);
+
+  // Draw grid hints
+  ctx.strokeStyle='rgba(255,255,255,0.02)';
+  ctx.lineWidth=0.5;
+  for(let c=0;c<=gridCols;c++){
+    ctx.beginPath();ctx.moveTo(c*cellSize,0);ctx.lineTo(c*cellSize,H);ctx.stroke();
+  }
+  for(let r=0;r<=gridRows;r++){
+    ctx.beginPath();ctx.moveTo(0,r*cellSize);ctx.lineTo(W,r*cellSize);ctx.stroke();
+  }
+
+  // Draw path
+  ctx.save();
+  ctx.lineWidth=cellSize*0.85;
+  ctx.strokeStyle='rgba(30,30,60,0.25)';
+  ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.beginPath();
+  if(waypoints.length>0){
+    ctx.moveTo(waypoints[0].x,waypoints[0].y);
+    for(let i=1;i<waypoints.length;i++) ctx.lineTo(waypoints[i].x,waypoints[i].y);
+  }
+  ctx.stroke();
+
+  // Path border glow
+  ctx.lineWidth=cellSize*0.9;
+  ctx.strokeStyle='rgba(20,20,50,0.15)';
+  ctx.beginPath();
+  if(waypoints.length>0){
+    ctx.moveTo(waypoints[0].x,waypoints[0].y);
+    for(let i=1;i<waypoints.length;i++) ctx.lineTo(waypoints[i].x,waypoints[i].y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Draw placement hints (near path, empty)
+  for(let c=0;c<gridCols;c++){
+    for(let r=0;r<gridRows;r++){
+      if(!isOnPath(c,r)&&isNearPath(c,r)&&!towerGrid[c+','+r]){
+        ctx.fillStyle='rgba(41,121,255,0.04)';
+        ctx.fillRect(c*cellSize+1,r*cellSize+1,cellSize-2,cellSize-2);
+      }
+    }
+  }
+
+  // Draw towers
+  for(const t of towers){
+    ctx.save();
+    ctx.shadowColor=t.glow;
+    ctx.shadowBlur=15;
+    ctx.translate(t.x,t.y);
+
+    // Base
+    const s=cellSize*0.38;
+    ctx.fillStyle=t.color;
+    ctx.shadowBlur=20;
+
+    if(t.towerType==='pulse'){
+      // Octagon-ish
+      ctx.beginPath();
+      for(let i=0;i<8;i++){
+        const a=i*Math.PI/4;
+        ctx.lineTo(Math.cos(a)*s,Math.sin(a)*s);
+      }
+      ctx.closePath();ctx.fill();
+    } else if(t.towerType==='freeze'){
+      // Diamond
+      ctx.beginPath();
+      ctx.moveTo(0,-s);ctx.lineTo(s,0);ctx.lineTo(0,s);ctx.lineTo(-s,0);
+      ctx.closePath();ctx.fill();
+    } else {
+      // Triangle
+      ctx.beginPath();
+      ctx.moveTo(0,-s);ctx.lineTo(s*0.87,s*0.5);ctx.lineTo(-s*0.87,s*0.5);
+      ctx.closePath();ctx.fill();
+    }
+
+    // Turret line
+    ctx.strokeStyle=t.color;
+    ctx.lineWidth=3;
+    ctx.shadowBlur=12;
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(Math.cos(t.angle)*s*1.3,Math.sin(t.angle)*s*1.3);
+    ctx.stroke();
+
+    // Center dot
+    ctx.fillStyle='#fff';
+    ctx.shadowColor='#fff';
+    ctx.shadowBlur=6;
+    ctx.beginPath();ctx.arc(0,0,3,0,Math.PI*2);ctx.fill();
+
+    // Range indicator (very subtle)
+    ctx.strokeStyle='rgba(41,121,255,0.06)';
+    ctx.shadowBlur=0;
+    ctx.lineWidth=0.5;
+    ctx.beginPath();ctx.arc(0,0,t.range,0,Math.PI*2);ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // Draw enemies
+  for(const e of enemies){
+    if(!e.alive)continue;
+    ctx.save();
+    ctx.shadowColor=e.glow;
+    ctx.shadowBlur=18;
+    ctx.fillStyle=e.color;
+    const s=cellSize*e.size;
+
+    if(e.type==='circle'){
+      ctx.beginPath();ctx.arc(e.x,e.y,s,0,Math.PI*2);ctx.fill();
+      // Inner glow
+      ctx.shadowBlur=25;
+      ctx.fillStyle='rgba(255,80,80,0.5)';
+      ctx.beginPath();ctx.arc(e.x,e.y,s*0.5,0,Math.PI*2);ctx.fill();
+    } else if(e.type==='square'){
+      ctx.translate(e.x,e.y);
+      ctx.fillRect(-s,-s,s*2,s*2);
+      ctx.shadowBlur=25;
+      ctx.fillStyle='rgba(255,50,50,0.4)';
+      ctx.fillRect(-s*0.5,-s*0.5,s,s);
+    } else {
+      // Diamond
+      ctx.translate(e.x,e.y);
+      ctx.rotate(Math.PI/4);
+      ctx.fillRect(-s,-s,s*2,s*2);
+      ctx.shadowBlur=25;
+      ctx.fillStyle='rgba(255,0,200,0.4)';
+      ctx.fillRect(-s*0.4,-s*0.4,s*0.8,s*0.8);
+    }
+
+    ctx.restore();
+
+    // HP bar
+    if(e.hp<e.maxHp){
+      const bw=cellSize*e.size*2;
+      const bh=3;
+      const bx=e.x-bw/2;
+      const by=e.y-cellSize*e.size-6;
+      ctx.fillStyle='rgba(100,0,0,0.7)';
+      ctx.fillRect(bx,by,bw,bh);
+      ctx.fillStyle='#FF1744';
+      ctx.fillRect(bx,by,bw*(e.hp/e.maxHp),bh);
+    }
+
+    // Slow indicator
+    if(e.slowTimer>0){
+      ctx.save();
+      ctx.strokeStyle='rgba(0,68,255,0.6)';
+      ctx.shadowColor='#0044FF';
+      ctx.shadowBlur=8;
+      ctx.lineWidth=2;
+      ctx.beginPath();ctx.arc(e.x,e.y,cellSize*e.size+4,0,Math.PI*2);ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Draw projectiles
+  for(const p of projectiles){
+    if(p.life<=0)continue;
+    // Trail
+    ctx.save();
+    ctx.shadowColor=p.glow;
+    for(let i=0;i<p.trail.length;i++){
+      const alpha=(i/p.trail.length)*0.5;
+      ctx.fillStyle=p.color;
+      ctx.globalAlpha=alpha;
+      ctx.shadowBlur=8;
+      const sz=2+i*0.3;
+      ctx.beginPath();ctx.arc(p.trail[i].x,p.trail[i].y,sz,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    ctx.shadowBlur=14;
+    ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,4,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  // Draw particles
+  for(const p of particles){
+    ctx.save();
+    const alpha=p.life/p.maxLife;
+    ctx.globalAlpha=alpha;
+    ctx.shadowColor=p.color;
+    ctx.shadowBlur=10;
+    ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.size*alpha,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  // HUD
+  drawHUD();
+
+  // Tower selector buttons
+  drawButtons();
+
+  // Game over / win
+  if(gameOver){
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.7)';
+    ctx.fillRect(0,0,W,H);
+    ctx.shadowColor='#FF1744';
+    ctx.shadowBlur=30;
+    ctx.fillStyle='#FF1744';
+    ctx.font='bold '+Math.min(60,W/10)+'px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('DERROTA',W/2,H/2-30);
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#fff';
+    ctx.font=Math.min(20,W/25)+'px monospace';
+    ctx.fillText('Oleada alcanzada: '+wave,W/2,H/2+20);
+    ctx.fillText('Toca para reiniciar',W/2,H/2+50);
+    ctx.restore();
+  }
+  if(gameWon){
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.7)';
+    ctx.fillRect(0,0,W,H);
+    ctx.shadowColor='#00E5FF';
+    ctx.shadowBlur=30;
+    ctx.fillStyle='#00E5FF';
+    ctx.font='bold '+Math.min(60,W/10)+'px monospace';
+    ctx.textAlign='center';
+    ctx.fillText('VICTORIA',W/2,H/2-30);
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#FFD740';
+    ctx.font=Math.min(20,W/25)+'px monospace';
+    ctx.fillText('Todas las oleadas superadas!',W/2,H/2+20);
+    ctx.fillText('Toca para reiniciar',W/2,H/2+50);
+    ctx.restore();
+  }
+}
+
+function drawHUD(){
+  ctx.save();
+  // Background bar
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.fillRect(0,0,W,44);
+
+  const fontSize=Math.min(18,W/28);
+  ctx.font='bold '+fontSize+'px monospace';
+  ctx.textBaseline='middle';
+
+  // Title
+  ctx.shadowColor='#2979FF';
+  ctx.shadowBlur=12;
+  ctx.fillStyle='#2979FF';
+  ctx.textAlign='left';
+  ctx.fillText('DEFENSA CROMATICA',10,22);
+
+  // Wave
+  ctx.shadowColor='#fff';
+  ctx.shadowBlur=4;
+  ctx.fillStyle='#fff';
+  ctx.textAlign='center';
+  ctx.fillText('Oleada: '+wave+'/'+maxWaves,W/2,22);
+
+  // Money
+  ctx.shadowColor='#FFD740';
+  ctx.shadowBlur=8;
+  ctx.fillStyle='#FFD740';
+  ctx.textAlign='right';
+  ctx.fillText('$'+money,W-120,22);
+
+  // Lives
+  ctx.shadowColor='#FF1744';
+  ctx.shadowBlur=8;
+  ctx.fillStyle='#FF1744';
+  ctx.fillText('\u2665 '+lives,W-10,22);
+
+  // Between waves message
+  if(betweenWaves&&!gameOver&&!gameWon){
+    ctx.shadowBlur=0;
+    ctx.fillStyle='rgba(255,255,255,0.6)';
+    ctx.font=Math.min(14,W/35)+'px monospace';
+    ctx.textAlign='center';
+    const sec=Math.ceil(betweenTimer/60);
+    ctx.fillText('Siguiente oleada en '+sec+'s - Coloca torres!',W/2,60);
+  }
+
+  ctx.restore();
+}
+
+function drawButtons(){
+  buildButtons();
+  ctx.save();
+  for(const b of towerButtons){
+    const tt=TOWER_TYPES[b.idx];
+    const selected=b.idx===selectedTowerType;
+    // Background
+    ctx.fillStyle=selected?'rgba(41,121,255,0.25)':'rgba(255,255,255,0.06)';
+    ctx.strokeStyle=selected?tt.color:'rgba(255,255,255,0.15)';
+    ctx.lineWidth=selected?2:1;
+    ctx.shadowColor=selected?tt.glow:'transparent';
+    ctx.shadowBlur=selected?10:0;
+
+    ctx.beginPath();
+    ctx.roundRect(b.x,b.y,b.w,b.h,6);
+    ctx.fill();ctx.stroke();
+
+    // Text
+    ctx.shadowBlur=0;
+    ctx.fillStyle=selected?tt.color:'rgba(255,255,255,0.5)';
+    ctx.font='bold '+Math.min(11,b.w/8)+'px monospace';
+    ctx.textAlign='center';ctx.textBaseline='top';
+    ctx.fillText(tt.name,b.x+b.w/2,b.y+4);
+
+    ctx.fillStyle='#FFD740';
+    ctx.font=Math.min(10,b.w/9)+'px monospace';
+    ctx.fillText('$'+tt.cost,b.x+b.w/2,b.y+20);
+  }
+  ctx.restore();
+}
+
+// Main loop
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+
+})();
+</script>
+</body>
+</html>

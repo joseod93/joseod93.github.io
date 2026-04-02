@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MEDUSARIO</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none}
+canvas{display:block;width:100%;height:100%}
+#title{position:fixed;top:8%;left:50%;transform:translateX(-50%);font-family:'Georgia','Times New Roman',serif;font-size:clamp(28px,5vw,56px);letter-spacing:0.4em;color:#0af;text-shadow:0 0 30px #0af,0 0 60px #006aff,0 0 100px #003c8f;opacity:0;animation:titleIn 3s 0.5s forwards;pointer-events:none;z-index:2}
+#hint{position:fixed;bottom:12%;left:50%;transform:translateX(-50%);font-family:'Georgia','Times New Roman',serif;font-size:clamp(14px,2.5vw,22px);letter-spacing:0.25em;color:rgba(0,180,255,0.5);text-shadow:0 0 15px rgba(0,180,255,0.3);pointer-events:none;z-index:2;opacity:0;animation:hintIn 2s 3s forwards}
+@keyframes titleIn{0%{opacity:0;filter:blur(10px)}100%{opacity:1;filter:blur(0)}}
+@keyframes hintIn{0%{opacity:0}50%{opacity:0.7}100%{opacity:0.7}}
+.fade-out{transition:opacity 2s ease-out!important;opacity:0!important}
+</style>
+</head>
+<body>
+<div id="title">MEDUSARIO</div>
+<div id="hint">Toca el agua</div>
+<canvas id="c"></canvas>
+<script>
+(function(){
+"use strict";
+
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+let W,H,dpr;
+
+function resize(){
+  dpr=window.devicePixelRatio||1;
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=W*dpr;canvas.height=H*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+resize();
+window.addEventListener('resize',resize);
+
+// --- Audio ---
+let audioCtx=null,masterGain=null,droneOsc=null,droneGain=null,audioStarted=false;
+
+function initAudio(){
+  if(audioStarted)return;
+  audioStarted=true;
+  audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  masterGain=audioCtx.createGain();
+  masterGain.gain.value=0.35;
+  masterGain.connect(audioCtx.destination);
+
+  // Deep ocean drone
+  droneGain=audioCtx.createGain();
+  droneGain.gain.value=0;
+  droneGain.connect(masterGain);
+
+  droneOsc=audioCtx.createOscillator();
+  droneOsc.type='sine';
+  droneOsc.frequency.value=42;
+  droneOsc.connect(droneGain);
+
+  const drone2=audioCtx.createOscillator();
+  drone2.type='sine';
+  drone2.frequency.value=56;
+  const d2g=audioCtx.createGain();
+  d2g.gain.value=0;
+  drone2.connect(d2g);
+  d2g.connect(masterGain);
+
+  const drone3=audioCtx.createOscillator();
+  drone3.type='triangle';
+  drone3.frequency.value=28;
+  const d3g=audioCtx.createGain();
+  d3g.gain.value=0;
+  drone3.connect(d3g);
+  d3g.connect(masterGain);
+
+  droneOsc.start();drone2.start();drone3.start();
+
+  // Fade drone in
+  const t=audioCtx.currentTime;
+  droneGain.gain.linearRampToValueAtTime(0.18,t+4);
+  d2g.gain.linearRampToValueAtTime(0.10,t+5);
+  d3g.gain.linearRampToValueAtTime(0.07,t+6);
+}
+
+function playChime(freq){
+  if(!audioCtx)return;
+  const osc=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  osc.type='sine';
+  osc.frequency.value=freq||( 400+Math.random()*600);
+  g.gain.value=0.04;
+  osc.connect(g);g.connect(masterGain);
+  const t=audioCtx.currentTime;
+  g.gain.exponentialRampToValueAtTime(0.001,t+1.8);
+  osc.start(t);osc.stop(t+2);
+}
+
+function playBubble(){
+  if(!audioCtx)return;
+  const osc=audioCtx.createOscillator();
+  const g=audioCtx.createGain();
+  osc.type='sine';
+  const base=200+Math.random()*300;
+  osc.frequency.value=base;
+  g.gain.value=0.08;
+  osc.connect(g);g.connect(masterGain);
+  const t=audioCtx.currentTime;
+  osc.frequency.exponentialRampToValueAtTime(base*2.5,t+0.15);
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.25);
+  osc.start(t);osc.stop(t+0.3);
+}
+
+// --- Utility ---
+function lerp(a,b,t){return a+(b-a)*t}
+function rand(a,b){return a+Math.random()*(b-a)}
+function dist(x1,y1,x2,y2){const dx=x1-x2,dy=y1-y2;return Math.sqrt(dx*dx+dy*dy)}
+
+// --- Plankton ---
+const plankton=[];
+function initPlankton(){
+  for(let i=0;i<80;i++){
+    plankton.push({x:rand(0,W),y:rand(0,H),s:rand(0.5,2),sp:rand(0.1,0.4),
+      dx:rand(-0.15,0.15),a:rand(0.1,0.4),phase:rand(0,Math.PI*2)});
+  }
+}
+initPlankton();
+
+function updatePlankton(dt){
+  for(const p of plankton){
+    p.y-=p.sp*dt*30;
+    p.x+=Math.sin(p.phase+performance.now()*0.0005)*0.15+p.dx;
+    if(p.y<-10){p.y=H+10;p.x=rand(0,W)}
+    if(p.x<-10)p.x=W+10;
+    if(p.x>W+10)p.x=-10;
+  }
+}
+
+function drawPlankton(){
+  for(const p of plankton){
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.s,0,Math.PI*2);
+    ctx.fillStyle=`rgba(0,200,220,${p.a*0.5})`;
+    ctx.shadowColor='#0af';
+    ctx.shadowBlur=4;
+    ctx.fill();
+  }
+  ctx.shadowBlur=0;
+}
+
+// --- God Rays ---
+const godRays=[];
+for(let i=0;i<5;i++){
+  godRays.push({x:rand(W*0.1,W*0.9),w:rand(30,80),a:rand(0.01,0.03),
+    speed:rand(0.0001,0.0003),phase:rand(0,Math.PI*2),drift:rand(-0.02,0.02)});
+}
+
+function drawGodRays(time){
+  for(const r of godRays){
+    const alpha=r.a*(0.5+0.5*Math.sin(time*r.speed*1000+r.phase));
+    if(alpha<0.003)continue;
+    const grd=ctx.createLinearGradient(r.x,-20,r.x+r.drift*H,H*0.7);
+    grd.addColorStop(0,`rgba(255,250,230,${alpha*1.5})`);
+    grd.addColorStop(0.5,`rgba(200,220,255,${alpha*0.5})`);
+    grd.addColorStop(1,'rgba(200,220,255,0)');
+    ctx.save();
+    ctx.globalCompositeOperation='screen';
+    ctx.beginPath();
+    ctx.moveTo(r.x-r.w/2,0);
+    ctx.lineTo(r.x+r.w/2,0);
+    ctx.lineTo(r.x+r.w*1.5+r.drift*H,H*0.7);
+    ctx.lineTo(r.x-r.w*0.5+r.drift*H,H*0.7);
+    ctx.closePath();
+    ctx.fillStyle=grd;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// --- Background Jellyfish (distant) ---
+const bgJellies=[];
+for(let i=0;i<12;i++){
+  bgJellies.push({x:rand(0,W),y:rand(H*0.15,H*0.85),s:rand(4,12),
+    sp:rand(0.05,0.15),dx:rand(-0.1,0.1),pulse:rand(0,Math.PI*2),
+    pulseRate:rand(0.8,1.6),a:rand(0.08,0.2)});
+}
+
+function drawBgJellies(time){
+  for(const j of bgJellies){
+    j.y-=j.sp*0.5;
+    j.x+=j.dx+Math.sin(time*0.0003+j.pulse)*0.2;
+    if(j.y<-20){j.y=H+20;j.x=rand(0,W)}
+    const p=0.85+0.15*Math.sin(time*0.001*j.pulseRate+j.pulse);
+    ctx.save();
+    ctx.globalAlpha=j.a;
+    ctx.shadowColor='#0066cc';
+    ctx.shadowBlur=8;
+    // bell
+    ctx.beginPath();
+    ctx.ellipse(j.x,j.y,j.s*p,j.s*0.7*p,0,Math.PI,0);
+    ctx.fillStyle='rgba(0,60,180,0.5)';
+    ctx.fill();
+    // tentacles
+    ctx.strokeStyle='rgba(180,0,80,0.3)';
+    ctx.lineWidth=0.5;
+    for(let t=0;t<3;t++){
+      const tx=j.x-j.s*0.5+j.s*t*0.5;
+      ctx.beginPath();
+      ctx.moveTo(tx,j.y);
+      ctx.quadraticCurveTo(tx+Math.sin(time*0.002+t)*2,j.y+j.s*0.8,tx+Math.sin(time*0.001+t)*3,j.y+j.s*1.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.shadowBlur=0;
+}
+
+// --- Bioluminescent Particles ---
+class BioParticle{
+  constructor(x,y,color){
+    this.x=x;this.y=y;
+    this.vx=rand(-0.5,0.5);this.vy=rand(-1.2,-0.2);
+    this.life=1;this.decay=rand(0.005,0.02);
+    this.r=rand(1,3);
+    this.color=color||'#00e5ff';
+  }
+  update(){
+    this.x+=this.vx;this.y+=this.vy;
+    this.vy-=0.003;
+    this.life-=this.decay;
+  }
+  draw(){
+    if(this.life<=0)return;
+    ctx.save();
+    ctx.globalAlpha=this.life*0.7;
+    ctx.shadowColor=this.color;
+    ctx.shadowBlur=10;
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.r*this.life,0,Math.PI*2);
+    ctx.fillStyle=this.color;
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+const bioParticles=[];
+
+// --- Jellyfish ---
+const bellColors=['#0044FF','#2979FF','#00BCD4','#00E5FF'];
+const tentColors=['#FF1744','#FF0000','#FF00FF','#CC00CC'];
+
+class Jellyfish{
+  constructor(x,y,size){
+    this.x=x||rand(W*0.1,W*0.9);
+    this.y=y||rand(H*0.2,H*0.7);
+    this.size=size||rand(28,65);
+    this.vx=0;this.vy=0;
+    this.driftVx=rand(-0.15,0.15);
+    this.driftVy=rand(-0.25,-0.05);
+    this.pulsePhase=rand(0,Math.PI*2);
+    this.pulseRate=rand(0.7,1.4);
+    this.bellColor=bellColors[Math.floor(rand(0,bellColors.length))];
+    this.tentColor=tentColors[Math.floor(rand(0,tentColors.length))];
+    this.tentCount=Math.floor(rand(5,9));
+    this.tentSegments=Math.floor(rand(8,14));
+    this.glowIntensity=rand(0.5,1);
+    this.age=0;
+    this.bellHue=rand(-10,10);
+  }
+
+  update(dt,time){
+    this.age+=dt;
+    const pulse=Math.sin(time*0.001*this.pulseRate+this.pulsePhase);
+
+    // Swimming impulse on contraction
+    if(pulse>0.95 && Math.random()<0.06){
+      playChime(300+this.size*5+rand(-50,50));
+    }
+
+    // Pulse-based upward thrust
+    const thrust=Math.max(0,pulse)*0.008*this.size*0.5;
+    this.vy-=thrust*dt;
+
+    // Gravity-like sink
+    this.vy+=0.012*dt*30;
+
+    // Drift
+    this.vx+=this.driftVx*0.01*dt*30;
+
+    // Damping
+    this.vx*=0.995;
+    this.vy*=0.995;
+
+    this.x+=this.vx*dt*30;
+    this.y+=this.vy*dt*30;
+
+    // Bounds
+    if(this.x<-this.size)this.x=W+this.size;
+    if(this.x>W+this.size)this.x=-this.size;
+    if(this.y<-this.size*2)this.y=H+this.size;
+    if(this.y>H+this.size*2){this.y=-this.size;this.vy=-0.3}
+
+    // Emit bio particles
+    if(Math.random()<0.08){
+      const angle=rand(0,Math.PI*2);
+      const r=rand(0,this.size*0.4);
+      bioParticles.push(new BioParticle(
+        this.x+Math.cos(angle)*r,
+        this.y-this.size*0.2+Math.sin(angle)*r*0.5,
+        Math.random()>0.5?'#00e5ff':'#82b1ff'
+      ));
+    }
+  }
+
+  draw(time){
+    const pulse=0.8+0.2*Math.sin(time*0.001*this.pulseRate+this.pulsePhase);
+    const squeeze=1+0.12*Math.sin(time*0.001*this.pulseRate+this.pulsePhase+Math.PI*0.3);
+    const s=this.size;
+    const bw=s*pulse;    // bell width
+    const bh=s*0.65*squeeze; // bell height
+
+    ctx.save();
+    ctx.translate(this.x,this.y);
+
+    // --- Outer glow ---
+    ctx.save();
+    ctx.globalCompositeOperation='screen';
+    ctx.shadowColor=this.bellColor;
+    ctx.shadowBlur=40*this.glowIntensity;
+    ctx.beginPath();
+    ctx.ellipse(0,-bh*0.3,bw*0.7,bh*0.5,0,0,Math.PI*2);
+    ctx.fillStyle=`rgba(0,100,255,0.03)`;
+    ctx.fill();
+    ctx.restore();
+
+    // --- TENTACLES (drawn first, behind bell) ---
+    // Red/magenta tentacles with chromostereopsis forward pop
+    ctx.save();
+    ctx.globalCompositeOperation='screen';
+    for(let i=0;i<this.tentCount;i++){
+      const tx=(i/(this.tentCount-1)-0.5)*bw*1.4;
+      const baseY=0;
+      ctx.beginPath();
+      ctx.moveTo(tx,baseY);
+
+      let cx=tx,cy=baseY;
+      const segLen=s*0.18;
+      for(let j=1;j<=this.tentSegments;j++){
+        const t=j/this.tentSegments;
+        const waveAmp=8+t*15;
+        const waveFreq=2+i*0.3;
+        const offset=Math.sin(time*0.0015*this.pulseRate+j*0.7+i*1.1)*waveAmp;
+        const drag=Math.sin(time*0.0008+i+j*0.4)*3;
+        cx=tx+offset+drag;
+        cy=baseY+j*segLen;
+        ctx.lineTo(cx,cy);
+      }
+
+      const alpha=0.25+0.15*(1-Math.abs(i/(this.tentCount-1)-0.5)*2);
+      ctx.strokeStyle=this.tentColor;
+      ctx.globalAlpha=alpha;
+      ctx.shadowColor=this.tentColor;
+      ctx.shadowBlur=18*this.glowIntensity;
+      ctx.lineWidth=1.2+Math.sin(i)*0.5;
+      ctx.lineCap='round';
+      ctx.stroke();
+    }
+
+    // Thicker central tentacles
+    for(let i=1;i<this.tentCount-1;i+=2){
+      const tx=(i/(this.tentCount-1)-0.5)*bw*1.0;
+      ctx.beginPath();
+      ctx.moveTo(tx,0);
+      let cx=tx,cy=0;
+      const segLen=s*0.22;
+      for(let j=1;j<=this.tentSegments+2;j++){
+        const t=j/(this.tentSegments+2);
+        const offset=Math.sin(time*0.0012+j*0.6+i*0.9)*10*(0.5+t);
+        cx=tx+offset;
+        cy=j*segLen;
+        ctx.lineTo(cx,cy);
+      }
+      ctx.globalAlpha=0.12;
+      ctx.shadowBlur=25*this.glowIntensity;
+      ctx.lineWidth=2.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // --- BELL (dome) ---
+    // Blue/cyan bell with chromostereopsis depth recession
+    ctx.save();
+
+    // Bell gradient (main body)
+    const bellGrad=ctx.createRadialGradient(0,-bh*0.4,0, 0,-bh*0.2,bw);
+    bellGrad.addColorStop(0,`rgba(0,180,255,0.35)`);
+    bellGrad.addColorStop(0.4,`rgba(0,80,200,0.2)`);
+    bellGrad.addColorStop(0.8,`rgba(0,40,150,0.12)`);
+    bellGrad.addColorStop(1,'rgba(0,20,80,0)');
+
+    ctx.shadowColor=this.bellColor;
+    ctx.shadowBlur=30*this.glowIntensity;
+
+    // Draw bell dome
+    ctx.beginPath();
+    ctx.moveTo(-bw,0);
+    ctx.quadraticCurveTo(-bw,-bh*1.6, 0,-bh*1.4);
+    ctx.quadraticCurveTo(bw,-bh*1.6, bw,0);
+    // Underside scallop
+    const scallops=6;
+    for(let i=0;i<=scallops;i++){
+      const t=i/scallops;
+      const sx=bw-t*bw*2;
+      const sy=Math.sin(t*Math.PI)*s*0.08;
+      if(i===0)continue;
+      ctx.lineTo(sx,sy);
+    }
+    ctx.closePath();
+    ctx.fillStyle=bellGrad;
+    ctx.fill();
+
+    // Inner bell structure
+    const innerGrad=ctx.createRadialGradient(0,-bh*0.6,s*0.05,0,-bh*0.5,bw*0.6);
+    innerGrad.addColorStop(0,'rgba(0,220,255,0.2)');
+    innerGrad.addColorStop(0.5,'rgba(0,100,220,0.08)');
+    innerGrad.addColorStop(1,'rgba(0,50,150,0)');
+
+    ctx.beginPath();
+    ctx.moveTo(-bw*0.7,0);
+    ctx.quadraticCurveTo(-bw*0.7,-bh*1.2, 0,-bh*1.1);
+    ctx.quadraticCurveTo(bw*0.7,-bh*1.2, bw*0.7,0);
+    ctx.closePath();
+    ctx.fillStyle=innerGrad;
+    ctx.shadowBlur=15;
+    ctx.fill();
+
+    // Rim highlight
+    ctx.beginPath();
+    ctx.moveTo(-bw,0);
+    ctx.quadraticCurveTo(-bw,-bh*1.6, 0,-bh*1.4);
+    ctx.quadraticCurveTo(bw,-bh*1.6, bw,0);
+    ctx.strokeStyle=`rgba(0,200,255,${0.15+0.1*Math.sin(time*0.002+this.pulsePhase)})`;
+    ctx.shadowColor='#00e5ff';
+    ctx.shadowBlur=20*this.glowIntensity;
+    ctx.lineWidth=1.5;
+    ctx.stroke();
+
+    // Veins/radial lines inside bell
+    ctx.globalAlpha=0.06+0.03*Math.sin(time*0.001);
+    for(let i=0;i<6;i++){
+      const angle=-Math.PI*0.8+i*(Math.PI*0.6/5);
+      ctx.beginPath();
+      ctx.moveTo(0,-bh*0.1);
+      const ex=Math.cos(angle)*bw*0.8;
+      const ey=-bh*0.9+Math.sin(angle)*bh*0.4;
+      ctx.quadraticCurveTo(ex*0.5,ey*0.6,ex,ey);
+      ctx.strokeStyle='#00aaff';
+      ctx.lineWidth=0.8;
+      ctx.shadowBlur=6;
+      ctx.stroke();
+    }
+
+    // Central bright spot (bioluminescence core)
+    ctx.globalAlpha=0.4+0.2*Math.sin(time*0.0015*this.pulseRate+this.pulsePhase);
+    const coreGrad=ctx.createRadialGradient(0,-bh*0.6,0,0,-bh*0.6,s*0.25);
+    coreGrad.addColorStop(0,'rgba(0,255,255,0.3)');
+    coreGrad.addColorStop(0.5,'rgba(0,150,255,0.1)');
+    coreGrad.addColorStop(1,'rgba(0,50,150,0)');
+    ctx.fillStyle=coreGrad;
+    ctx.shadowColor='#00ffff';
+    ctx.shadowBlur=20;
+    ctx.beginPath();
+    ctx.arc(0,-bh*0.6,s*0.25,0,Math.PI*2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // --- Oral arms (short frilly bits under bell) ---
+    ctx.save();
+    ctx.globalCompositeOperation='screen';
+    for(let i=0;i<4;i++){
+      const ox=(i/3-0.5)*bw*0.8;
+      ctx.beginPath();
+      ctx.moveTo(ox,0);
+      for(let j=1;j<=5;j++){
+        const jx=ox+Math.sin(time*0.002+i*2+j)*4;
+        const jy=j*s*0.06;
+        ctx.lineTo(jx,jy);
+      }
+      ctx.strokeStyle=`rgba(180,0,255,0.15)`;
+      ctx.shadowColor='#cc00ff';
+      ctx.shadowBlur=8;
+      ctx.lineWidth=2;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.restore();
+  }
+}
+
+// --- Initialize Jellyfish ---
+const jellyfish=[];
+const MAX_JELLY=15;
+
+for(let i=0;i<6;i++){
+  jellyfish.push(new Jellyfish());
+}
+
+// --- Interaction ---
+let pointerDown=false;
+let pointerX=0,pointerY=0;
+let holdTime=0;
+let interacted=false;
+const hintEl=document.getElementById('hint');
+const titleEl=document.getElementById('title');
+
+// Ripple effects
+const ripples=[];
+class Ripple{
+  constructor(x,y){this.x=x;this.y=y;this.r=0;this.maxR=80+Math.random()*40;this.life=1}
+  update(dt){this.r+=dt*120;this.life=1-this.r/this.maxR}
+  draw(){
+    if(this.life<=0)return;
+    ctx.save();
+    ctx.globalAlpha=this.life*0.3;
+    ctx.strokeStyle='#0af';
+    ctx.shadowColor='#0af';
+    ctx.shadowBlur=10;
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function onPointerDown(e){
+  e.preventDefault();
+  initAudio();
+  const t=e.touches?e.touches[0]:e;
+  pointerX=t.clientX;pointerY=t.clientY;
+  pointerDown=true;holdTime=0;
+
+  if(!interacted){
+    interacted=true;
+    hintEl.classList.add('fade-out');
+    setTimeout(()=>{titleEl.classList.add('fade-out')},8000);
+  }
+
+  playBubble();
+  ripples.push(new Ripple(pointerX,pointerY));
+
+  // Push nearby jellyfish away
+  for(const j of jellyfish){
+    const d=dist(j.x,j.y,pointerX,pointerY);
+    if(d<200){
+      const force=1.5*(1-d/200);
+      const angle=Math.atan2(j.y-pointerY,j.x-pointerX);
+      j.vx+=Math.cos(angle)*force;
+      j.vy+=Math.sin(angle)*force;
+    }
+  }
+}
+
+function onPointerMove(e){
+  e.preventDefault();
+  const t=e.touches?e.touches[0]:e;
+  pointerX=t.clientX;pointerY=t.clientY;
+}
+
+function onPointerUp(e){
+  e.preventDefault();
+  // If it was a quick tap and not near any jellyfish, spawn new one
+  if(holdTime<0.3 && jellyfish.length<MAX_JELLY){
+    let nearJelly=false;
+    for(const j of jellyfish){
+      if(dist(j.x,j.y,pointerX,pointerY)<j.size*2){nearJelly=true;break}
+    }
+    if(!nearJelly){
+      const nj=new Jellyfish(pointerX,pointerY,rand(18,40));
+      nj.vy=-1;
+      jellyfish.push(nj);
+      // Spawn particles at birth
+      for(let i=0;i<8;i++){
+        bioParticles.push(new BioParticle(pointerX+rand(-10,10),pointerY+rand(-10,10),'#00e5ff'));
+      }
+    }
+  }
+  pointerDown=false;holdTime=0;
+}
+
+canvas.addEventListener('mousedown',onPointerDown);
+canvas.addEventListener('mousemove',onPointerMove);
+canvas.addEventListener('mouseup',onPointerUp);
+canvas.addEventListener('touchstart',onPointerDown,{passive:false});
+canvas.addEventListener('touchmove',onPointerMove,{passive:false});
+canvas.addEventListener('touchend',onPointerUp,{passive:false});
+
+// --- Background Gradient (cached) ---
+let bgGrad=null,bgW=0,bgH=0;
+function getBgGrad(){
+  if(bgW===W&&bgH===H&&bgGrad)return bgGrad;
+  bgGrad=ctx.createLinearGradient(0,0,0,H);
+  bgGrad.addColorStop(0,'#000005');
+  bgGrad.addColorStop(0.5,'#000010');
+  bgGrad.addColorStop(0.85,'#000825');
+  bgGrad.addColorStop(1,'#001040');
+  bgW=W;bgH=H;
+  return bgGrad;
+}
+
+// --- Main Loop ---
+let lastTime=performance.now();
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min((now-lastTime)/1000,0.05);
+  lastTime=now;
+
+  // Resize check
+  if(W!==window.innerWidth||H!==window.innerHeight)resize();
+
+  // Hold interaction
+  if(pointerDown){
+    holdTime+=dt;
+    if(holdTime>0.35){
+      // Gentle attraction
+      for(const j of jellyfish){
+        const d=dist(j.x,j.y,pointerX,pointerY);
+        if(d>10&&d<350){
+          const force=0.3*(1-d/350);
+          const angle=Math.atan2(pointerY-j.y,pointerX-j.x);
+          j.vx+=Math.cos(angle)*force*dt*30;
+          j.vy+=Math.sin(angle)*force*dt*30;
+        }
+      }
+    }
+  }
+
+  // --- Draw ---
+  // Background
+  ctx.fillStyle=getBgGrad();
+  ctx.fillRect(0,0,W,H);
+
+  // God rays
+  drawGodRays(now);
+
+  // Background jellyfish
+  drawBgJellies(now);
+
+  // Plankton
+  updatePlankton(dt);
+  drawPlankton();
+
+  // Bio particles
+  for(let i=bioParticles.length-1;i>=0;i--){
+    bioParticles[i].update();
+    bioParticles[i].draw();
+    if(bioParticles[i].life<=0)bioParticles.splice(i,1);
+  }
+  // Cap particles
+  while(bioParticles.length>300)bioParticles.shift();
+
+  // Ripples
+  for(let i=ripples.length-1;i>=0;i--){
+    ripples[i].update(dt);
+    ripples[i].draw();
+    if(ripples[i].life<=0)ripples.splice(i,1);
+  }
+
+  // Jellyfish
+  for(const j of jellyfish){
+    j.update(dt,now);
+    j.draw(now);
+  }
+
+  // Subtle vignette
+  const vig=ctx.createRadialGradient(W/2,H/2,W*0.25,W/2,H/2,W*0.75);
+  vig.addColorStop(0,'rgba(0,0,0,0)');
+  vig.addColorStop(1,'rgba(0,0,0,0.5)');
+  ctx.fillStyle=vig;
+  ctx.fillRect(0,0,W,H);
+}
+
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

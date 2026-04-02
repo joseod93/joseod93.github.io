@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>JARD&Iacute;N DE LUZ</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #000;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+canvas {
+  display: block;
+  width: 100%; height: 100%;
+}
+#title {
+  position: fixed; top: 28px; left: 0; right: 0;
+  text-align: center;
+  font-family: 'Georgia', serif;
+  font-size: 2.2em;
+  letter-spacing: 0.35em;
+  color: #FF1744;
+  text-shadow: 0 0 30px #FF1744, 0 0 60px #FF004488, 0 0 4px #fff;
+  pointer-events: none;
+  opacity: 0.85;
+  z-index: 2;
+}
+#hint {
+  position: fixed; bottom: 36px; left: 0; right: 0;
+  text-align: center;
+  font-family: 'Georgia', serif;
+  font-size: 1.1em;
+  letter-spacing: 0.18em;
+  color: #2979FF;
+  text-shadow: 0 0 18px #2979FF, 0 0 40px #0044FF88;
+  pointer-events: none;
+  opacity: 0.9;
+  transition: opacity 1.8s ease;
+  z-index: 2;
+}
+#hint.hidden { opacity: 0; }
+</style>
+</head>
+<body>
+<div id="title">JARD&Iacute;N DE LUZ</div>
+<div id="hint">Toca para plantar</div>
+<canvas id="c"></canvas>
+<script>
+(function() {
+"use strict";
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const hint = document.getElementById('hint');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Color palettes ---
+const stemColors = ['#0044FF','#2979FF','#00BCD4','#1565C0','#0091EA'];
+const petalColors = ['#FF1744','#FF0000','#FF00FF','#CC00CC','#FF4081','#FF1744'];
+const pollenColors = ['#FFD740','#FFECB3','#FFF8E1','#FFE082','#FFAB00'];
+
+function pick(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
+function lerp(a,b,t) { return a+(b-a)*t; }
+function rand(a,b) { return a+Math.random()*(b-a); }
+function clamp(v,lo,hi) { return v<lo?lo:v>hi?hi:v; }
+
+// --- Web Audio ambient music ---
+let audioCtx = null;
+let masterGain = null;
+let reverbNode = null;
+let musicStarted = false;
+
+function initAudio() {
+  if (musicStarted) return;
+  musicStarted = true;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.18;
+
+  // Simple convolver reverb via feedback delay
+  reverbNode = audioCtx.createConvolver();
+  const len = audioCtx.sampleRate * 2.5;
+  const impulse = audioCtx.createBuffer(2, len, audioCtx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = impulse.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      d[i] = (Math.random()*2-1) * Math.pow(1 - i/len, 1.8);
+    }
+  }
+  reverbNode.buffer = impulse;
+
+  const reverbGain = audioCtx.createGain();
+  reverbGain.gain.value = 0.35;
+
+  masterGain.connect(audioCtx.destination);
+  masterGain.connect(reverbNode);
+  reverbNode.connect(reverbGain);
+  reverbGain.connect(audioCtx.destination);
+
+  // Ambient drone pad
+  startDrone();
+}
+
+function startDrone() {
+  const notes = [110, 146.83, 164.81, 220]; // A2, D3, E3, A3
+  notes.forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.012;
+    const lfo = audioCtx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.08 + i * 0.03;
+    const lfoGain = audioCtx.createGain();
+    lfoGain.gain.value = 0.006;
+    lfo.connect(lfoGain);
+    lfoGain.connect(g.gain);
+    lfo.start();
+    osc.connect(g);
+    g.connect(masterGain);
+    osc.start();
+  });
+}
+
+function playGrowthTone(x) {
+  if (!audioCtx) return;
+  const pentatonic = [261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25];
+  const idx = Math.floor((x / W) * pentatonic.length);
+  const freq = pentatonic[clamp(idx,0,pentatonic.length-1)];
+
+  const osc = audioCtx.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.value = freq * (Math.random() > 0.5 ? 1 : 0.5);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.08, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 2.5);
+  osc.connect(g);
+  g.connect(masterGain);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 2.5);
+
+  // Harmonic shimmer
+  const osc2 = audioCtx.createOscillator();
+  osc2.type = 'sine';
+  osc2.frequency.value = freq * 2.01;
+  const g2 = audioCtx.createGain();
+  g2.gain.setValueAtTime(0.025, audioCtx.currentTime);
+  g2.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3.5);
+  osc2.connect(g2);
+  g2.connect(masterGain);
+  osc2.start();
+  osc2.stop(audioCtx.currentTime + 3.5);
+}
+
+function playBloomTone(x) {
+  if (!audioCtx) return;
+  const freq = 500 + (x/W) * 300;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.045, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.8);
+  osc.connect(g);
+  g.connect(masterGain);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 1.8);
+}
+
+// --- Entities ---
+const plants = [];
+const particles = [];
+const nebulae = [];
+
+// --- Nebula background blobs ---
+function spawnNebula() {
+  for (let i = 0; i < 6; i++) {
+    nebulae.push({
+      x: rand(0, W), y: rand(H*0.3, H),
+      r: rand(120, 300),
+      color: pick(['#0044FF','#001177','#000D33','#001A66','#0D47A1']),
+      alpha: rand(0.015, 0.045),
+      dx: rand(-0.08, 0.08),
+      dy: rand(-0.04, 0.04),
+      phase: rand(0, Math.PI*2)
+    });
+  }
+}
+
+// --- Plant / Flower class ---
+class Plant {
+  constructor(x, y) {
+    this.x = x;
+    this.baseY = y;
+    this.stemHeight = rand(80, 220);
+    this.stemColor = pick(stemColors);
+    this.petalColor = pick(petalColors);
+    this.petalCount = Math.floor(rand(5,9));
+    this.petalSize = rand(12, 28);
+    this.growthProgress = 0; // 0-1 for stem, 1-2 for bloom
+    this.growthSpeed = rand(0.006, 0.012);
+    this.swayPhase = rand(0, Math.PI * 2);
+    this.swayAmp = rand(4, 12);
+    this.swaySpeed = rand(0.3, 0.8);
+    this.leaves = [];
+    this.bloomTriggered = false;
+    this.thickness = rand(1.8, 3.5);
+
+    const leafCount = Math.floor(rand(2, 5));
+    for (let i = 0; i < leafCount; i++) {
+      this.leaves.push({
+        atProgress: rand(0.25, 0.75),
+        side: Math.random() > 0.5 ? 1 : -1,
+        size: rand(10, 22),
+        angle: rand(0.3, 0.8),
+        color: pick(stemColors)
+      });
+    }
+
+    // Flower variant
+    this.variant = Math.floor(rand(0, 3)); // 0: radial petals, 1: dahlia, 2: tulip
+  }
+
+  update(dt) {
+    if (this.growthProgress < 2) {
+      this.growthProgress += this.growthSpeed;
+      if (this.growthProgress > 1 && !this.bloomTriggered) {
+        this.bloomTriggered = true;
+        playBloomTone(this.x);
+        // Burst pollen
+        for (let i = 0; i < 8; i++) {
+          spawnPollen(this.x + rand(-5,5), this.baseY - this.stemHeight + rand(-5,5));
+        }
+      }
+    }
+    this.swayPhase += this.swaySpeed * dt;
+  }
+
+  draw(time) {
+    const stemProg = clamp(this.growthProgress, 0, 1);
+    const bloomProg = clamp(this.growthProgress - 1, 0, 1);
+    const sway = Math.sin(this.swayPhase) * this.swayAmp * stemProg;
+
+    const currentHeight = this.stemHeight * stemProg;
+    const topX = this.x + sway;
+    const topY = this.baseY - currentHeight;
+
+    // Draw stem with glow
+    ctx.save();
+    ctx.strokeStyle = this.stemColor;
+    ctx.lineWidth = this.thickness;
+    ctx.shadowColor = this.stemColor;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.baseY);
+    ctx.quadraticCurveTo(this.x + sway * 0.5, this.baseY - currentHeight * 0.5, topX, topY);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Leaves
+    this.leaves.forEach(leaf => {
+      if (stemProg < leaf.atProgress) return;
+      const leafProg = clamp((stemProg - leaf.atProgress) / 0.2, 0, 1);
+      const ly = this.baseY - this.stemHeight * leaf.atProgress;
+      const lx = this.x + sway * leaf.atProgress;
+      const sz = leaf.size * leafProg;
+
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.rotate(leaf.side * leaf.angle + Math.sin(this.swayPhase + leaf.atProgress) * 0.15);
+      ctx.fillStyle = leaf.color;
+      ctx.shadowColor = leaf.color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.ellipse(leaf.side * sz * 0.5, 0, sz * 0.7, sz * 0.25, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
+
+    // Flower head
+    if (bloomProg > 0) {
+      ctx.save();
+      ctx.translate(topX, topY);
+
+      const bp = easeOutBack(bloomProg);
+
+      if (this.variant === 0) {
+        // Radial petals
+        for (let i = 0; i < this.petalCount; i++) {
+          const angle = (i / this.petalCount) * Math.PI * 2 + Math.sin(time * 0.3 + i) * 0.05;
+          const ps = this.petalSize * bp;
+          ctx.save();
+          ctx.rotate(angle);
+          ctx.fillStyle = this.petalColor;
+          ctx.shadowColor = this.petalColor;
+          ctx.shadowBlur = 22;
+          ctx.beginPath();
+          ctx.ellipse(ps * 0.55, 0, ps * 0.6, ps * 0.28, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        // Center glow
+        const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, 8 * bp);
+        cg.addColorStop(0, '#FFD740');
+        cg.addColorStop(1, 'transparent');
+        ctx.fillStyle = cg;
+        ctx.shadowColor = '#FFD740';
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(0, 0, 8 * bp, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (this.variant === 1) {
+        // Dahlia - layered petals
+        for (let ring = 2; ring >= 0; ring--) {
+          const count = this.petalCount + ring * 2;
+          const rOff = ring * 0.3;
+          for (let i = 0; i < count; i++) {
+            const angle = (i / count) * Math.PI * 2 + rOff + Math.sin(time * 0.25) * 0.04;
+            const ps = (this.petalSize - ring * 4) * bp;
+            ctx.save();
+            ctx.rotate(angle);
+            ctx.fillStyle = ring === 0 ? '#FF00FF' : this.petalColor;
+            ctx.shadowColor = ctx.fillStyle;
+            ctx.shadowBlur = 18;
+            ctx.globalAlpha = 0.8;
+            ctx.beginPath();
+            ctx.ellipse(ps * 0.45, 0, ps * 0.45, ps * 0.18, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      } else {
+        // Tulip
+        const ps = this.petalSize * bp * 1.3;
+        for (let i = 0; i < 5; i++) {
+          const angle = (i / 5) * Math.PI - Math.PI * 0.5;
+          ctx.save();
+          ctx.rotate(angle);
+          ctx.fillStyle = this.petalColor;
+          ctx.shadowColor = this.petalColor;
+          ctx.shadowBlur = 20;
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(-ps * 0.3, -ps * 0.7, 0, -ps);
+          ctx.quadraticCurveTo(ps * 0.3, -ps * 0.7, 0, 0);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+}
+
+function easeOutBack(t) {
+  const c = 1.4;
+  return 1 + (t - 1) * (t - 1) * ((c + 1) * (t - 1) + c);
+}
+
+// --- Particles ---
+class Particle {
+  constructor(x, y, type) {
+    this.x = x;
+    this.y = y;
+    this.type = type; // 'pollen' or 'firefly'
+    if (type === 'pollen') {
+      this.vx = rand(-0.6, 0.6);
+      this.vy = rand(-1.2, -0.3);
+      this.life = rand(80, 200);
+      this.maxLife = this.life;
+      this.size = rand(1.5, 3.5);
+      this.color = pick(pollenColors);
+    } else {
+      this.x = rand(0, W);
+      this.y = rand(0, H);
+      this.vx = rand(-0.3, 0.3);
+      this.vy = rand(-0.3, 0.3);
+      this.life = rand(200, 600);
+      this.maxLife = this.life;
+      this.size = rand(1.5, 3);
+      this.color = pick([...pollenColors, '#FFFFFF']);
+      this.phase = rand(0, Math.PI * 2);
+      this.pulseSpeed = rand(1.5, 3);
+    }
+  }
+
+  update() {
+    this.life--;
+    if (this.type === 'pollen') {
+      this.x += this.vx + Math.sin(this.life * 0.05) * 0.2;
+      this.y += this.vy;
+      this.vy *= 0.997;
+    } else {
+      this.phase += 0.02;
+      this.x += this.vx + Math.sin(this.phase) * 0.15;
+      this.y += this.vy + Math.cos(this.phase * 0.7) * 0.1;
+      if (this.x < 0) this.x = W;
+      if (this.x > W) this.x = 0;
+      if (this.y < 0) this.y = H;
+      if (this.y > H) this.y = 0;
+    }
+    return this.life > 0;
+  }
+
+  draw() {
+    const alpha = this.type === 'firefly'
+      ? (this.life / this.maxLife) * 0.5 * (0.5 + 0.5 * Math.sin(this.phase * this.pulseSpeed))
+      : (this.life / this.maxLife) * 0.8;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = this.type === 'firefly' ? 18 : 10;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function spawnPollen(x, y) {
+  for (let i = 0; i < 3; i++) {
+    particles.push(new Particle(x + rand(-8,8), y + rand(-8,8), 'pollen'));
+  }
+}
+
+function spawnFireflies() {
+  if (particles.filter(p => p.type === 'firefly').length < 30) {
+    particles.push(new Particle(0, 0, 'firefly'));
+  }
+}
+
+// --- Interaction ---
+let firstInteraction = true;
+
+function handleInteraction(px, py) {
+  initAudio();
+  if (firstInteraction) {
+    firstInteraction = false;
+    hint.classList.add('hidden');
+  }
+  const plant = new Plant(px, py);
+  plants.push(plant);
+  playGrowthTone(px);
+
+  // Spawn some ground particles
+  for (let i = 0; i < 5; i++) {
+    particles.push(new Particle(px + rand(-15,15), py + rand(-5,5), 'pollen'));
+  }
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  handleInteraction(e.clientX, e.clientY);
+});
+
+// Support multi-touch
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    const t = e.changedTouches[i];
+    handleInteraction(t.clientX, t.clientY);
+  }
+}, { passive: false });
+
+// --- Nebula draw ---
+function drawNebulae(time) {
+  nebulae.forEach(n => {
+    n.x += n.dx + Math.sin(time * 0.1 + n.phase) * 0.1;
+    n.y += n.dy + Math.cos(time * 0.08 + n.phase) * 0.05;
+    if (n.x < -n.r) n.x = W + n.r;
+    if (n.x > W + n.r) n.x = -n.r;
+
+    const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    grad.addColorStop(0, n.color + '18');
+    grad.addColorStop(0.5, n.color + '08');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(n.x - n.r, n.y - n.r, n.r * 2, n.r * 2);
+  });
+}
+
+// --- Ground glow ---
+function drawGround() {
+  const grad = ctx.createLinearGradient(0, H, 0, H - 60);
+  grad.addColorStop(0, '#0044FF08');
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, H - 60, W, 60);
+}
+
+// --- Main loop ---
+let lastTime = 0;
+spawnNebula();
+
+function frame(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 16.67, 3);
+  lastTime = timestamp;
+  const time = timestamp * 0.001;
+
+  // Clear
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, W, H);
+
+  // Background nebulae (deep blue, recedes)
+  drawNebulae(time);
+  drawGround();
+
+  // Update and draw plants
+  plants.forEach(p => {
+    p.update(dt);
+    p.draw(time);
+  });
+
+  // Update and draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    if (!particles[i].update()) {
+      particles.splice(i, 1);
+    } else {
+      particles[i].draw();
+    }
+  }
+
+  // Ambient fireflies
+  if (Math.random() < 0.03) spawnFireflies();
+
+  // Occasional ambient pollen from existing plants
+  if (plants.length > 0 && Math.random() < 0.02) {
+    const p = pick(plants);
+    if (p.growthProgress > 1) {
+      const sway = Math.sin(p.swayPhase) * p.swayAmp;
+      spawnPollen(p.x + sway, p.baseY - p.stemHeight);
+    }
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

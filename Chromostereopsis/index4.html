@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<title>PINTOR DE LUZ</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    font-family: 'Segoe UI', Arial, sans-serif;
+  }
+
+  #title {
+    position: fixed;
+    top: 14px;
+    left: 0; right: 0;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 300;
+    letter-spacing: 8px;
+    color: rgba(255,255,255,0.25);
+    pointer-events: none;
+    z-index: 10;
+    text-transform: uppercase;
+    transition: opacity 0.6s;
+  }
+  #title.hidden { opacity: 0; }
+
+  #bgCanvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+  }
+
+  #drawCanvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+    cursor: crosshair;
+  }
+
+  #toolbar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(0,0,0,0.8);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 10px 12px 14px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .toolbar-section {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .toolbar-section.colors {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .divider {
+    width: 1px;
+    height: 28px;
+    background: rgba(255,255,255,0.15);
+    margin: 0 4px;
+  }
+
+  .color-swatch {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+    flex-shrink: 0;
+  }
+  .color-swatch:hover { transform: scale(1.15); }
+  .color-swatch.selected {
+    border-color: #fff;
+    box-shadow: 0 0 8px rgba(255,255,255,0.5);
+    transform: scale(1.15);
+  }
+
+  .size-btn {
+    background: none;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s, transform 0.15s;
+    padding: 0;
+  }
+  .size-btn:hover { transform: scale(1.1); }
+  .size-btn.selected {
+    border-color: #fff;
+    box-shadow: 0 0 6px rgba(255,255,255,0.4);
+  }
+  .size-btn .dot {
+    border-radius: 50%;
+    background: #fff;
+  }
+  .size-btn.s { width: 28px; height: 28px; }
+  .size-btn.s .dot { width: 6px; height: 6px; }
+  .size-btn.m { width: 28px; height: 28px; }
+  .size-btn.m .dot { width: 12px; height: 12px; }
+  .size-btn.l { width: 28px; height: 28px; }
+  .size-btn.l .dot { width: 18px; height: 18px; }
+
+  .tool-btn {
+    background: none;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    color: rgba(255,255,255,0.7);
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    text-transform: uppercase;
+    font-family: inherit;
+  }
+  .tool-btn:hover {
+    border-color: rgba(255,255,255,0.5);
+    color: #fff;
+  }
+  .tool-btn.active {
+    border-color: #fff;
+    color: #fff;
+    background: rgba(255,255,255,0.1);
+  }
+  .tool-btn.danger:hover {
+    border-color: #FF1744;
+    color: #FF1744;
+  }
+
+  @media (max-width: 600px) {
+    #toolbar { padding: 8px 6px 12px; gap: 5px; }
+    .color-swatch { width: 26px; height: 26px; }
+    .divider { height: 22px; margin: 0 2px; }
+    .tool-btn { font-size: 10px; padding: 4px 7px; }
+    #title { font-size: 14px; letter-spacing: 5px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="title">PINTOR DE LUZ</div>
+
+<canvas id="bgCanvas"></canvas>
+<canvas id="drawCanvas"></canvas>
+
+<div id="toolbar">
+  <div class="toolbar-section colors" id="colorPalette"></div>
+  <div class="divider"></div>
+  <div class="toolbar-section" id="sizePalette"></div>
+  <div class="divider"></div>
+  <div class="toolbar-section">
+    <button class="tool-btn" id="btnGlow">Glow</button>
+    <button class="tool-btn" id="btnSymmetry">Simetria</button>
+    <button class="tool-btn" id="btnUndo">Deshacer</button>
+    <button class="tool-btn danger" id="btnClear">Limpiar</button>
+    <button class="tool-btn" id="btnSave">Guardar</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  // --- CONFIG ---
+  const COLORS = [
+    { color: '#FF1744', glow: '#FF1744', label: 'Deep Red' },
+    { color: '#FF0000', glow: '#FF0000', label: 'Red' },
+    { color: '#FF00FF', glow: '#FF00FF', label: 'Magenta' },
+    { color: '#00E5FF', glow: '#00E5FF', label: 'Cyan' },
+    { color: '#2979FF', glow: '#2979FF', label: 'Blue' },
+    { color: '#0044FF', glow: '#0044FF', label: 'Deep Blue' },
+    { color: '#FFD740', glow: '#FFD740', label: 'Gold' },
+    { color: '#FFFFFF', glow: '#FFFFFF', label: 'White' },
+  ];
+  const SIZES = [
+    { name: 's', radius: 3, cls: 's' },
+    { name: 'm', radius: 10, cls: 'm' },
+    { name: 'l', radius: 22, cls: 'l' },
+  ];
+  const MAX_UNDO = 25;
+
+  // --- STATE ---
+  let currentColor = 0;
+  let currentSize = 1;
+  let glowOn = true;
+  let symmetryOn = false;
+  let drawing = false;
+  let points = [];
+  let undoStack = [];
+
+  // --- CANVASES ---
+  const bgCanvas = document.getElementById('bgCanvas');
+  const bgCtx = bgCanvas.getContext('2d');
+  const drawCanvas = document.getElementById('drawCanvas');
+  const drawCtx = drawCanvas.getContext('2d');
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    bgCanvas.width = w * dpr;
+    bgCanvas.height = h * dpr;
+    bgCanvas.style.width = w + 'px';
+    bgCanvas.style.height = h + 'px';
+    bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // For the draw canvas, save current image, resize, then restore
+    let imgData = null;
+    if (drawCanvas.width > 0 && drawCanvas.height > 0) {
+      imgData = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+    }
+    drawCanvas.width = w * dpr;
+    drawCanvas.height = h * dpr;
+    drawCanvas.style.width = w + 'px';
+    drawCanvas.style.height = h + 'px';
+    drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (imgData) {
+      drawCtx.putImageData(imgData, 0, 0);
+    }
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // --- BREATHING BACKGROUND ---
+  let bgTime = 0;
+  function drawBackground() {
+    bgTime += 0.003;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    bgCtx.fillStyle = '#000';
+    bgCtx.fillRect(0, 0, w, h);
+
+    // Subtle nebula blobs
+    const blobs = [
+      { x: 0.3, y: 0.4, r: 0.35, hue: 260, phase: 0 },
+      { x: 0.7, y: 0.6, r: 0.3, hue: 230, phase: 2 },
+      { x: 0.5, y: 0.3, r: 0.25, hue: 280, phase: 4 },
+      { x: 0.2, y: 0.7, r: 0.2, hue: 240, phase: 1.5 },
+    ];
+    for (const b of blobs) {
+      const pulse = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(bgTime + b.phase));
+      const alpha = 0.025 * pulse;
+      const cx = b.x * w + Math.sin(bgTime * 0.5 + b.phase) * 30;
+      const cy = b.y * h + Math.cos(bgTime * 0.4 + b.phase) * 20;
+      const rad = b.r * Math.min(w, h);
+      const grad = bgCtx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      grad.addColorStop(0, `hsla(${b.hue}, 70%, 20%, ${alpha})`);
+      grad.addColorStop(1, 'transparent');
+      bgCtx.fillStyle = grad;
+      bgCtx.fillRect(0, 0, w, h);
+    }
+    requestAnimationFrame(drawBackground);
+  }
+  drawBackground();
+
+  // --- BUILD TOOLBAR ---
+  const colorPalette = document.getElementById('colorPalette');
+  COLORS.forEach((c, i) => {
+    const el = document.createElement('div');
+    el.className = 'color-swatch' + (i === currentColor ? ' selected' : '');
+    el.style.background = c.color;
+    if (c.color === '#FFFFFF') {
+      el.style.boxShadow = 'inset 0 0 0 1px rgba(255,255,255,0.3)';
+    }
+    el.dataset.index = i;
+    el.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      selectColor(i);
+    });
+    colorPalette.appendChild(el);
+  });
+
+  const sizePalette = document.getElementById('sizePalette');
+  SIZES.forEach((s, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'size-btn ' + s.cls + (i === currentSize ? ' selected' : '');
+    btn.dataset.index = i;
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    btn.appendChild(dot);
+    btn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      selectSize(i);
+    });
+    sizePalette.appendChild(btn);
+  });
+
+  function selectColor(i) {
+    currentColor = i;
+    document.querySelectorAll('.color-swatch').forEach((el, idx) => {
+      el.classList.toggle('selected', idx === i);
+    });
+  }
+  function selectSize(i) {
+    currentSize = i;
+    document.querySelectorAll('.size-btn').forEach((el, idx) => {
+      el.classList.toggle('selected', idx === i);
+    });
+  }
+
+  // Glow toggle
+  const btnGlow = document.getElementById('btnGlow');
+  btnGlow.classList.toggle('active', glowOn);
+  btnGlow.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    glowOn = !glowOn;
+    btnGlow.classList.toggle('active', glowOn);
+  });
+
+  // Symmetry toggle
+  const btnSymmetry = document.getElementById('btnSymmetry');
+  btnSymmetry.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    symmetryOn = !symmetryOn;
+    btnSymmetry.classList.toggle('active', symmetryOn);
+  });
+
+  // Undo
+  document.getElementById('btnUndo').addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    undo();
+  });
+
+  // Clear
+  document.getElementById('btnClear').addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    if (confirm('Limpiar todo el lienzo?')) {
+      saveUndo();
+      drawCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    }
+  });
+
+  // Save / Export
+  document.getElementById('btnSave').addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    exportCanvas();
+  });
+
+  // --- UNDO ---
+  function saveUndo() {
+    const dpr = window.devicePixelRatio || 1;
+    const data = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
+    undoStack.push(data);
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+  }
+  function undo() {
+    if (undoStack.length === 0) return;
+    const data = undoStack.pop();
+    drawCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    drawCtx.putImageData(data, 0, 0);
+  }
+
+  // --- EXPORT ---
+  function exportCanvas() {
+    // Composite bg + drawing
+    const dpr = window.devicePixelRatio || 1;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = w * dpr;
+    tmpCanvas.height = h * dpr;
+    const tmpCtx = tmpCanvas.getContext('2d');
+    tmpCtx.drawImage(bgCanvas, 0, 0);
+    tmpCtx.drawImage(drawCanvas, 0, 0);
+    const link = document.createElement('a');
+    link.download = 'pintor_de_luz_' + Date.now() + '.png';
+    link.href = tmpCanvas.toDataURL('image/png');
+    link.click();
+  }
+
+  // --- DRAWING ---
+  function getPos(e) {
+    if (e.touches && e.touches.length > 0) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  function isToolbar(e) {
+    const toolbar = document.getElementById('toolbar');
+    return toolbar.contains(e.target) || e.target === toolbar;
+  }
+
+  function startStroke(e) {
+    if (isToolbar(e)) return;
+    e.preventDefault();
+    drawing = true;
+    saveUndo();
+    const pos = getPos(e);
+    points = [pos];
+    // Hide title on first draw
+    document.getElementById('title').classList.add('hidden');
+  }
+
+  function moveStroke(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const pos = getPos(e);
+    points.push(pos);
+    renderStroke();
+  }
+
+  function endStroke(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    drawing = false;
+    // Final render with all points then flatten
+    renderStroke();
+    points = [];
+  }
+
+  function renderStroke() {
+    if (points.length < 2) return;
+
+    const c = COLORS[currentColor];
+    const r = SIZES[currentSize].radius;
+    const ctx = drawCtx;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = r * 2;
+    ctx.strokeStyle = c.color;
+
+    // Glow
+    if (glowOn) {
+      ctx.shadowColor = c.glow;
+      ctx.shadowBlur = r * 3 + 10;
+    } else {
+      ctx.shadowColor = c.glow;
+      ctx.shadowBlur = r * 0.8;
+    }
+
+    // Draw smooth curve through last few points (incremental)
+    // We re-draw the last segment for smoothness
+    const len = points.length;
+    if (len === 2) {
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      ctx.lineTo(points[1].x, points[1].y);
+      ctx.stroke();
+      if (symmetryOn) {
+        drawMirror(ctx, points[0], points[1], null, r);
+      }
+    } else {
+      // Quadratic bezier between last 3 points
+      const p0 = points[len - 3];
+      const p1 = points[len - 2];
+      const p2 = points[len - 1];
+      const mx1 = (p0.x + p1.x) / 2;
+      const my1 = (p0.y + p1.y) / 2;
+      const mx2 = (p1.x + p2.x) / 2;
+      const my2 = (p1.y + p2.y) / 2;
+      ctx.beginPath();
+      ctx.moveTo(mx1, my1);
+      ctx.quadraticCurveTo(p1.x, p1.y, mx2, my2);
+      ctx.stroke();
+      if (symmetryOn) {
+        drawMirror(ctx, {x: mx1, y: my1}, {x: mx2, y: my2}, {x: p1.x, y: p1.y}, r);
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawMirror(ctx, from, to, cp, r) {
+    const w = window.innerWidth;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = r * 2;
+    ctx.strokeStyle = COLORS[currentColor].color;
+    if (glowOn) {
+      ctx.shadowColor = COLORS[currentColor].glow;
+      ctx.shadowBlur = r * 3 + 10;
+    } else {
+      ctx.shadowColor = COLORS[currentColor].glow;
+      ctx.shadowBlur = r * 0.8;
+    }
+    ctx.beginPath();
+    ctx.moveTo(w - from.x, from.y);
+    if (cp) {
+      ctx.quadraticCurveTo(w - cp.x, cp.y, w - to.x, to.y);
+    } else {
+      ctx.lineTo(w - to.x, to.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // --- EVENT LISTENERS ---
+  // Pointer events for unified mouse+touch
+  drawCanvas.addEventListener('pointerdown', startStroke, { passive: false });
+  drawCanvas.addEventListener('pointermove', moveStroke, { passive: false });
+  drawCanvas.addEventListener('pointerup', endStroke, { passive: false });
+  drawCanvas.addEventListener('pointercancel', endStroke, { passive: false });
+  drawCanvas.addEventListener('pointerleave', endStroke, { passive: false });
+
+  // Prevent context menu on long press
+  drawCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Keyboard shortcut for undo
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+      e.preventDefault();
+      undo();
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
