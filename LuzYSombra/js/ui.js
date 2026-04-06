@@ -323,7 +323,7 @@ export function updateTags() {
     updateStreakDisplay();
     updateTabBadges();
     updateTimeClass();
-    updateStarfield();
+   // updateStarfield();
 }
 
 // ===== TAB BADGES =====
@@ -622,7 +622,7 @@ export function playActionScene(key) {
     actionSceneEl.classList.remove('hidden', 'fade-out');
 
     // spawn floating particles around the scene
-    spawnSceneParticles(key);
+    //spawnSceneParticles(key);
 
     sceneTimer = setTimeout(() => {
         actionSceneEl.classList.add('fade-out');
