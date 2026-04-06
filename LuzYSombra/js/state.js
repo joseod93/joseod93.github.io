@@ -23,7 +23,17 @@ const blank = () => ({
     weather: 'clear',
     discoveries: { lenia: false, agua: false, aceitunas: false, hierbas: false, piedra: false, hierro: false, trigo: false, sal: false },
     streak: { current: 0, best: 0, lastLoginDate: null, totalLogins: 0, claimedToday: false, lastSpinDate: null },
-    lastSessionEnd: null
+    lastSessionEnd: null,
+    // New systems
+    skills: {},         // skill key -> level
+    skillPoints: 0,
+    equipment: { espada: 0, armadura: 0, escudo: 0 },
+    consumables: { pocion: 0, bomba: 0, pan: 0 },
+    market: null,       // dynamic trade session
+    waveMode: null,     // { wave: N, active: bool, hp: N }
+    theme: 'dark',      // dark | light
+    tutorialTips: {},   // tipKey -> shown bool
+    enemiesDefeated: 0
 });
 
 export let S = blank();
@@ -54,6 +64,14 @@ export function loadState() {
             if (!S.player.xp && S.player.xp !== 0) S.player.xp = 0;
             if (!S.player.level) S.player.level = 1;
             if (!S.streak) S.streak = blank().streak;
+            // New systems migration
+            if (!S.skills) S.skills = {};
+            if (S.skillPoints === undefined) S.skillPoints = 0;
+            if (!S.equipment) S.equipment = { espada: 0, armadura: 0, escudo: 0 };
+            if (!S.consumables) S.consumables = { pocion: 0, bomba: 0, pan: 0 };
+            if (!S.tutorialTips) S.tutorialTips = {};
+            if (S.enemiesDefeated === undefined) S.enemiesDefeated = 0;
+            if (!S.theme) S.theme = 'dark';
         }
     } catch (e) {
         console.error('Error al cargar estado:', e);

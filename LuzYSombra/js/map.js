@@ -25,7 +25,7 @@ function lootSummary(region) {
 
 export function renderMap() {
     if (!mapBody) return;
-    const w = 300, h = 220;
+    const w = 310, h = 230;
     const unlocked = REGIONS.filter(r => (r.unlockDay || 1) <= S.time.day);
     const locked = REGIONS.filter(r => (r.unlockDay || 1) > S.time.day);
 
@@ -58,7 +58,10 @@ export function renderMap() {
         ['Huelva', 'Sevilla'], ['Sevilla', 'Córdoba'], ['Sevilla', 'Cádiz'],
         ['Córdoba', 'Jaén'], ['Jaén', 'Granada'], ['Granada', 'Almería'],
         ['Granada', 'Málaga'], ['Cádiz', 'Málaga'], ['Córdoba', 'Toledo'],
-        ['Toledo', 'Madrid']
+        ['Toledo', 'Madrid'], ['Madrid', 'Zaragoza'], ['Zaragoza', 'Barcelona'],
+        ['Madrid', 'Valencia'], ['Valencia', 'Barcelona'], ['Bilbao', 'Zaragoza'],
+        ['Santiago', 'Bilbao'], ['Huelva', 'Lisboa'], ['Almería', 'Roma'],
+        ['Roma', 'Constantinopla']
     ];
     const lines = connections.map(([a, b]) => {
         const pa = REGION_POS[a]; const pb = REGION_POS[b];
@@ -198,12 +201,14 @@ function sendExpedition(regionName) {
 }
 
 function updateBodyBg(regionName) {
-    document.body.classList.remove('bg-sevilla', 'bg-granada', 'bg-cadiz', 'bg-almeria', 'time-morning', 'time-afternoon', 'time-sunset', 'time-night');
+    document.body.classList.remove('bg-sevilla', 'bg-granada', 'bg-cadiz', 'bg-almeria', 'bg-norte', 'bg-europa', 'time-morning', 'time-afternoon', 'time-sunset', 'time-night');
     const key = regionName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (['sevilla', 'jaen', 'cordoba'].includes(key)) document.body.classList.add('bg-sevilla');
-    else if (['granada', 'malaga'].includes(key)) document.body.classList.add('bg-granada');
-    else if (['cadiz', 'huelva'].includes(key)) document.body.classList.add('bg-cadiz');
+    else if (['granada', 'malaga', 'valencia'].includes(key)) document.body.classList.add('bg-granada');
+    else if (['cadiz', 'huelva', 'lisboa'].includes(key)) document.body.classList.add('bg-cadiz');
     else if (['almeria'].includes(key)) document.body.classList.add('bg-almeria');
+    else if (['bilbao', 'santiago', 'zaragoza'].includes(key)) document.body.classList.add('bg-norte');
+    else if (['barcelona', 'roma', 'constantinopla', 'madrid', 'toledo'].includes(key)) document.body.classList.add('bg-europa');
 }
 
 export function getRandomRegion() {

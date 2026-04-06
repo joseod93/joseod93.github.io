@@ -4,8 +4,8 @@ import { S, loadState, saveState, resetState } from './state.js';
 import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics, initTabs, addXP, xpFlash, screenFlash, fireConfetti, updateStreakDisplay, updateWeatherVisuals, showPassiveGain, showEventBanner } from './ui.js';
 import { renderActions, tryUnlocks, checkAchievements } from './actions.js';
 import { renderMap } from './map.js';
-import { showEncounterPrompt } from './combat.js';
-import { BOSSES } from './constants.js';
+import { showEncounterPrompt, startEnemyEncounter } from './combat.js';
+import { BOSSES, ENEMIES } from './constants.js';
 import integrator from './integrator.js';
 
 const startOverlay = $('#startOverlay');
@@ -58,7 +58,8 @@ function gameTick() {
     }
 
     if (S.fire.lit) {
-        let fuelCons = 0.05;
+        const fuelReduction = (S.skills?.efficientFire || 0) * 0.15;
+        let fuelCons = 0.05 * (1 - fuelReduction);
         let heatGain = 0.2 + (S.unlocked.molino ? 0.05 : 0);
 
         if (S.weather === 'rain') heatGain -= 0.1;
@@ -102,6 +103,7 @@ function gameTick() {
     if (S.unlocked.forge && Math.random() < 0.02 * levelBonus) { addRes('hierro', 1 * doubleProd); showPassiveGain('hierro', 1 * doubleProd); }
 
     if (S.people.villagers > 0) {
+        const leaderBonus = 1 + ((S.skills?.leadership || 0) * 0.15);
         let needed = S.people.villagers * 0.1;
         if (S.resources.trigo >= needed) {
             S.resources.trigo -= needed;
@@ -126,11 +128,11 @@ function gameTick() {
         }
 
         if (S.people.jobs) {
-            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus) { addRes('lenia', 1 * doubleProd); showPassiveGain('lenia', 1 * doubleProd); }
+            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus * leaderBonus) { addRes('lenia', 1 * doubleProd); showPassiveGain('lenia', 1 * doubleProd); }
             if (S.people.jobs.farmer > 0) {
                 let farmChance = 0.08 + (heatBonus * 2);
                 if (S.weather === 'rain') farmChance += 0.05;
-                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus) { addRes('trigo', 1 * doubleProd); showPassiveGain('trigo', 1 * doubleProd); }
+                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus * leaderBonus) { addRes('trigo', 1 * doubleProd); showPassiveGain('trigo', 1 * doubleProd); }
             }
             if (S.people.jobs.miner > 0) {
                 const mineChance = 0.05 * S.people.jobs.miner * levelBonus;
@@ -320,8 +322,262 @@ function startGame() {
     });
 }
 
+// ===== THEME TOGGLE =====
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    S.theme = theme;
+}
+
+// ===== SKILLS UI =====
+function renderSkills() {
+    const body = $('#skillsBody');
+    const badge = $('#skillPointsBadge');
+    if (!body) return;
+    if (badge) badge.textContent = `${S.skillPoints || 0} pts`;
+
+    let html = '<div class="skills-grid">';
+    const categories = { gather: 'Recolección', combat: 'Combate', production: 'Producción' };
+
+    // Lazy-load SKILLS from constants
+    import('./constants.js').then(({ SKILLS }) => {
+        for (const [cat, catLabel] of Object.entries(categories)) {
+            html += `<div class="skill-category-title">${catLabel}</div>`;
+            for (const [key, skill] of Object.entries(SKILLS)) {
+                if (skill.category !== cat) continue;
+                const lvl = S.skills[key] || 0;
+                const maxed = lvl >= skill.maxLevel;
+                const canLearn = S.skillPoints >= skill.cost && !maxed;
+                html += `
+                <div class="skill-item">
+                    <span class="skill-icon">${skill.icon}</span>
+                    <div class="skill-info">
+                        <div class="skill-name">${skill.name}</div>
+                        <div class="skill-desc">${skill.desc}</div>
+                        <div class="skill-level">${maxed ? 'MAX' : `Nivel ${lvl}/${skill.maxLevel}`} — Coste: ${skill.cost} pts</div>
+                    </div>
+                    <button class="skill-btn" data-skill="${key}" ${canLearn ? '' : 'disabled'}>+</button>
+                </div>`;
+            }
+        }
+        html += '</div>';
+        body.innerHTML = html;
+
+        body.querySelectorAll('.skill-btn').forEach(btn => {
+            btn.onclick = () => {
+                const sk = btn.dataset.skill;
+                const skill = SKILLS[sk];
+                if (!skill || S.skillPoints < skill.cost) return;
+                if ((S.skills[sk] || 0) >= skill.maxLevel) return;
+                S.skills[sk] = (S.skills[sk] || 0) + 1;
+                S.skillPoints -= skill.cost;
+                log(`Habilidad mejorada: ${skill.name} (Nivel ${S.skills[sk]})`, 'good');
+                toast(`${skill.icon} ${skill.name} Nivel ${S.skills[sk]}`);
+                saveState();
+                renderSkills();
+            };
+        });
+    });
+}
+
+// ===== MARKET UI =====
+function renderMarket() {
+    const body = $('#marketBody');
+    if (!body) return;
+
+    import('./constants.js').then(({ TRADE_GOODS, RES_META }) => {
+        // Generate prices (fluctuate based on game time)
+        const seed = S.time.day * 7 + Math.floor(S.time.minutes / 360);
+        let html = '<div class="market-grid">';
+        TRADE_GOODS.forEach(good => {
+            const meta = RES_META[good.key];
+            if (!meta) return;
+            const fluctuation = Math.sin(seed * 0.7 + good.key.length) * good.volatility;
+            const buyPrice = Math.max(1, Math.round(good.basePrice * (1 + fluctuation)));
+            const sellPrice = Math.max(1, Math.round(buyPrice * 0.6));
+            const trend = fluctuation > 0.1 ? 'up' : fluctuation < -0.1 ? 'down' : '';
+            const trendArrow = trend === 'up' ? '▲' : trend === 'down' ? '▼' : '—';
+
+            const tradeDiscount = (S.skills?.tradeSkill || 0) * 0.15;
+            const discountedBuy = Math.max(1, Math.round(buyPrice * (1 - tradeDiscount)));
+            const playerHas = Math.floor(S.resources[good.key] || 0);
+            const canBuy = S.stats.renown >= discountedBuy;
+            const canSell = playerHas >= 1;
+
+            html += `
+            <div class="market-item">
+                <span class="market-resource">${meta.icon} ${meta.label} (${playerHas})</span>
+                <span class="market-price ${trend}">${trendArrow} ${discountedBuy}R</span>
+                <div class="market-actions">
+                    <button class="market-btn buy" data-key="${good.key}" data-price="${discountedBuy}" ${canBuy ? '' : 'disabled'}>Comprar</button>
+                    <button class="market-btn sell" data-key="${good.key}" data-price="${sellPrice}" ${canSell ? '' : 'disabled'}>Vender</button>
+                </div>
+            </div>`;
+        });
+        html += '</div>';
+        html += '<p style="font-size:0.72rem;color:var(--muted);margin:8px 0 0;text-align:center">Los precios cambian según el día. R = Renombre.</p>';
+        body.innerHTML = html;
+
+        body.querySelectorAll('.market-btn.buy').forEach(btn => {
+            btn.onclick = () => {
+                const key = btn.dataset.key;
+                const price = parseInt(btn.dataset.price);
+                if (S.stats.renown < price) return;
+                S.stats.renown -= price;
+                S.resources[key] = (S.resources[key] || 0) + 1;
+                log(`Compraste 1 ${RES_META[key]?.label} por ${price} renombre.`, '');
+                saveState(); renderResources(); renderMarket();
+            };
+        });
+        body.querySelectorAll('.market-btn.sell').forEach(btn => {
+            btn.onclick = () => {
+                const key = btn.dataset.key;
+                const price = parseInt(btn.dataset.price);
+                if ((S.resources[key] || 0) < 1) return;
+                S.resources[key]--;
+                S.stats.renown += price;
+                log(`Vendiste 1 ${RES_META[key]?.label} por ${price} renombre.`, '');
+                saveState(); renderResources(); renderMarket();
+            };
+        });
+    });
+}
+
+// ===== EXPANDED CRAFTING UI =====
+function renderCrafting() {
+    const body = $('#craftingBody');
+    if (!body) return;
+
+    import('./constants.js').then(({ CRAFT_RECIPES, RES_META }) => {
+        let html = '<div class="craft-grid">';
+        for (const [key, recipe] of Object.entries(CRAFT_RECIPES)) {
+            if (recipe.requires && !S.unlocked[recipe.requires]) continue;
+            const costStr = Object.entries(recipe.cost).map(([r, n]) => `${RES_META[r]?.icon || r}${n}`).join(' ');
+            const canCraft = Object.entries(recipe.cost).every(([r, n]) => (S.resources[r] || 0) >= n);
+            html += `
+            <div class="craft-item">
+                <span class="craft-icon">${recipe.icon}</span>
+                <div class="craft-info">
+                    <div class="craft-name">${recipe.name}</div>
+                    <div class="craft-cost">${costStr}</div>
+                    ${recipe.desc ? `<div class="craft-desc">${recipe.desc}</div>` : ''}
+                </div>
+                <button class="skill-btn" data-craft="${key}" ${canCraft ? '' : 'disabled'}>+</button>
+            </div>`;
+        }
+        html += '</div>';
+        body.innerHTML = html;
+
+        body.querySelectorAll('[data-craft]').forEach(btn => {
+            btn.onclick = () => {
+                const rk = btn.dataset.craft;
+                const recipe = CRAFT_RECIPES[rk];
+                if (!recipe) return;
+                // Check costs
+                for (const [r, n] of Object.entries(recipe.cost)) {
+                    if ((S.resources[r] || 0) < n) return;
+                }
+                // Deduct costs
+                for (const [r, n] of Object.entries(recipe.cost)) {
+                    S.resources[r] -= n;
+                }
+                // Give items
+                for (const [r, n] of Object.entries(recipe.gives)) {
+                    if (['espada', 'armadura', 'escudo'].includes(r)) {
+                        S.equipment[r] = (S.equipment[r] || 0) + n;
+                    } else if (['pocion', 'bomba', 'pan'].includes(r)) {
+                        S.consumables[r] = (S.consumables[r] || 0) + n;
+                    } else {
+                        S.resources[r] = (S.resources[r] || 0) + n;
+                    }
+                }
+                addXP(recipe.xp || 3);
+                xpFlash();
+                log(`Has fabricado: ${recipe.name}`, 'good');
+                toast(`${recipe.icon} ${recipe.name}`);
+                integrator.onItemCrafted(S, rk, 1, log);
+                saveState(); renderResources(); renderCrafting();
+            };
+        });
+    });
+}
+
+// ===== WAVE MODE =====
+function initWaveMode() {
+    const section = $('#waveSection');
+    const body = $('#waveBody');
+    const btnStart = $('#btnStartWave');
+    if (!section || !btnStart) return;
+
+    // Show wave section after defeating 5 bosses
+    if (S.stats.bossesDefeated >= 5) {
+        section.style.display = '';
+    }
+
+    btnStart.onclick = () => {
+        const wave = (S.waveMode?.wave || 0) + 1;
+        import('./constants.js').then(({ WAVE_CONFIG }) => {
+            const hp = Math.floor(WAVE_CONFIG.baseHp + WAVE_CONFIG.hpPerWave * wave);
+            const atk = Math.floor(WAVE_CONFIG.baseAtk + WAVE_CONFIG.atkPerWave * wave);
+            const icon = WAVE_CONFIG.icons[Math.min(wave - 1, WAVE_CONFIG.icons.length - 1)];
+            const name = WAVE_CONFIG.names[Math.min(Math.floor((wave - 1) / 2), WAVE_CONFIG.names.length - 1)] + ` (Oleada ${wave})`;
+
+            S.waveMode = { wave, active: true };
+            saveState();
+
+            import('./combat.js').then(({ startEnemyEncounter }) => {
+                startEnemyEncounter({
+                    name, icon, hp, atk, level: wave * 2,
+                    loot: [{ k: 'hierro', n: [wave, wave + 2] }]
+                });
+            });
+
+            btnStart.textContent = `Comenzar Oleada ${wave + 1}`;
+        });
+    };
+
+    if (S.waveMode?.wave) {
+        btnStart.textContent = `Comenzar Oleada ${(S.waveMode.wave || 0) + 1}`;
+    }
+}
+
+// ===== CONTEXTUAL TIPS =====
+function showContextTip(tipKey, message) {
+    if (S.tutorialTips[tipKey]) return;
+    S.tutorialTips[tipKey] = true;
+    saveState();
+
+    const tip = document.createElement('div');
+    tip.className = 'context-tip';
+    tip.textContent = message;
+    tip.onclick = () => tip.remove();
+    document.body.appendChild(tip);
+    setTimeout(() => tip.remove(), 6000);
+}
+
+function checkContextualTips() {
+    if (S.unlocked.crafting && !S.tutorialTips.crafting) {
+        showContextTip('crafting', 'Has desbloqueado la artesanía. Visita "Más" para fabricar objetos.');
+    }
+    if (S.unlocked.village && !S.tutorialTips.village) {
+        showContextTip('village', 'Puedes reclutar aldeanos para producción pasiva de recursos.');
+    }
+    if (S.unlocked.expedition && !S.tutorialTips.expedition) {
+        showContextTip('expedition', 'Las expediciones te permiten explorar regiones lejanas. Visita el Mapa.');
+    }
+    if (S.stats.bossesDefeated >= 1 && !S.tutorialTips.equipment) {
+        showContextTip('equipment', 'Fabrica armas y armaduras en el Taller para mejorar en combate.');
+    }
+    if (S.player.level >= 3 && S.skillPoints > 0 && !S.tutorialTips.skills) {
+        showContextTip('skills', 'Tienes puntos de habilidad. Visita "Más" para mejorar tus habilidades.');
+    }
+    if (S.stats.bossesDefeated >= 5 && !S.tutorialTips.waves) {
+        showContextTip('waves', 'Has desbloqueado las Oleadas Infinitas. ¿Hasta dónde llegarás?');
+    }
+}
+
 function init() {
     loadState();
+    applyTheme(S.theme || 'dark');
     integrator.initializeSystems(S);
     initTabs();
     checkStreak();
@@ -334,13 +590,18 @@ function init() {
     updateTags();
     renderNotes();
     renderMap();
+    renderSkills();
+    renderMarket();
+    renderCrafting();
+    initWaveMode();
     updateWeatherVisuals(S.weather);
 
     setInterval(gameTick, 1000);
     setInterval(saveState, 10000);
     setInterval(updateCooldownVisuals, 100);
+    setInterval(() => { renderMarket(); renderCrafting(); }, 30000);
 
-    window.addEventListener('lys-actions-refresh', renderActions);
+    window.addEventListener('lys-actions-refresh', () => { renderActions(); renderCrafting(); });
     document.body.addEventListener('click', (e) => {
         if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
             AudioSystem.playTone('click');
@@ -350,6 +611,9 @@ function init() {
     if (S.started) {
         startOverlay.classList.add('hidden');
     }
+
+    // Check contextual tips periodically
+    setInterval(checkContextualTips, 5000);
 }
 
 startBtn.addEventListener('click', startGame);
@@ -362,6 +626,17 @@ if (audioBtn) {
         audioBtn.textContent = isMuted ? '🔈' : '🔊';
         if (!isMuted && !AudioSystem.audio) AudioSystem.playMusic('audio1.mp3');
     });
+}
+
+// Theme toggle
+const btnTheme = $('#btnTheme');
+if (btnTheme) {
+    btnTheme.onclick = () => {
+        const next = S.theme === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+        saveState();
+        toast(`Tema: ${next === 'dark' ? 'Oscuro' : 'Claro'}`);
+    };
 }
 
 const btnExport = $('#btnExport');

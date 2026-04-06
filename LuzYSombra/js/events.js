@@ -107,6 +107,115 @@ export const RANDOM_EVENTS = [
             S.resources.antorchas = (S.resources.antorchas || 0) + 2;
             return { message: 'Un aldeano hábil fabrica antorchas extra.', type: 'good' };
         }
+    },
+    {
+        id: 'drought',
+        weight: 0.04,
+        condition: (S) => S.time.day >= 5 && S.weather === 'clear',
+        execute: (S) => {
+            S.resources.agua = Math.max(0, (S.resources.agua || 0) - 2);
+            return { message: 'El sol implacable seca tus reservas de agua. -2 agua.', type: 'bad' };
+        }
+    },
+    {
+        id: 'merchant_caravan',
+        weight: 0.03,
+        condition: (S) => S.stats.renown >= 15,
+        execute: (S) => {
+            const resources = ['trigo', 'piedra', 'hierro', 'sal', 'hierbas', 'lenia'];
+            const resource = randomChoice(resources);
+            const amount = randomRange(3, 5);
+            S.resources[resource] = (S.resources[resource] || 0) + amount;
+            S.stats.renown += 2;
+            return { message: `Una caravana de tierras lejanas te ofrece ${amount} ${resource}. +2 Renombre.`, type: 'good' };
+        }
+    },
+    {
+        id: 'allied_village',
+        weight: 0.03,
+        condition: (S) => S.people.villagers >= 3,
+        execute: (S) => {
+            const trigo = randomRange(2, 4);
+            const medicina = randomRange(1, 2);
+            S.resources.trigo = (S.resources.trigo || 0) + trigo;
+            S.resources.medicina = (S.resources.medicina || 0) + medicina;
+            return { message: `Una aldea vecina propone una alianza. +${trigo} trigo, +${medicina} medicina.`, type: 'good' };
+        }
+    },
+    {
+        id: 'mine_discovery',
+        weight: 0.04,
+        condition: (S) => S.unlocked.forge,
+        execute: (S) => {
+            const hierro = randomRange(3, 5);
+            const piedra = randomRange(2, 3);
+            S.resources.hierro = (S.resources.hierro || 0) + hierro;
+            S.resources.piedra = (S.resources.piedra || 0) + piedra;
+            return { message: `Descubren una veta en las minas profundas. +${hierro} hierro, +${piedra} piedra.`, type: 'good' };
+        }
+    },
+    {
+        id: 'plague',
+        weight: 0.03,
+        condition: (S) => S.people.villagers >= 5,
+        execute: (S) => {
+            const damage = randomRange(10, 20);
+            const hierbas = randomRange(1, 3);
+            S.player.hp = Math.max(0, S.player.hp - damage);
+            S.resources.hierbas = Math.max(0, (S.resources.hierbas || 0) - hierbas);
+            return { message: `Una plaga se extiende por el asentamiento. -${damage} HP, -${hierbas} hierbas.`, type: 'bad' };
+        }
+    },
+    {
+        id: 'traveling_bard',
+        weight: 0.05,
+        condition: (S) => S.time.day >= 4,
+        execute: (S) => {
+            const renown = randomRange(2, 4);
+            S.stats.renown += renown;
+            return { message: `Un bardo errante canta tus hazañas por los caminos. +${renown} Renombre.`, type: 'good' };
+        }
+    },
+    {
+        id: 'olive_harvest_festival',
+        weight: 0.04,
+        condition: (S) => (S.resources.aceitunas || 0) >= 10,
+        execute: (S) => {
+            const aceitunas = randomRange(5, 8);
+            S.resources.aceitunas = (S.resources.aceitunas || 0) + aceitunas;
+            S.stats.renown += 2;
+            return { message: `¡Festival de la cosecha de aceitunas! +${aceitunas} aceitunas, +2 Renombre.`, type: 'good' };
+        }
+    },
+    {
+        id: 'iron_vein',
+        weight: 0.03,
+        condition: (S) => S.unlocked.forge && S.stats.explore >= 15,
+        execute: (S) => {
+            const hierro = randomRange(4, 6);
+            S.resources.hierro = (S.resources.hierro || 0) + hierro;
+            return { message: `Descubres una rica veta de hierro en las montañas. +${hierro} hierro.`, type: 'good' };
+        }
+    },
+    {
+        id: 'flood',
+        weight: 0.03,
+        condition: (S) => S.weather === 'rain' && S.time.day >= 3,
+        execute: (S) => {
+            const lenia = randomRange(3, 5);
+            S.resources.lenia = Math.max(0, (S.resources.lenia || 0) - lenia);
+            return { message: `Una inundación daña tus suministros. -${lenia} leña.`, type: 'bad' };
+        }
+    },
+    {
+        id: 'hermit_wisdom',
+        weight: 0.04,
+        condition: (S) => S.stats.explore >= 20,
+        execute: (S) => {
+            S.resources.medicina = (S.resources.medicina || 0) + 3;
+            S.player.xp = (S.player.xp || 0) + 15;
+            return { message: 'Un ermitaño te enseña remedios ancestrales. +3 medicina, +15 XP.', type: 'good' };
+        }
     }
 ];
 
@@ -131,6 +240,46 @@ export const REGION_EVENTS = {
         { message: 'Mar de olivos hasta el horizonte.', effect: (S) => S.resources.aceitunas += 5 },
         { message: 'Aceite de oliva de calidad suprema.', effect: (S) => S.resources.aceitunas += 3 },
         { message: 'Aprende técnicas de poda.', effect: (S) => S.stats.renown += 1 }
+    ],
+    'Valencia': [
+        { message: 'Los campos de naranjos perfuman el aire.', effect: (S) => { S.resources.trigo += 3; S.stats.renown += 1; } },
+        { message: 'Mercaderes de seda ofrecen sus tejidos.', effect: (S) => S.stats.renown += 2 },
+        { message: 'La huerta valenciana da frutos abundantes.', effect: (S) => S.resources.trigo += 4 }
+    ],
+    'Barcelona': [
+        { message: 'El puerto bulle de comercio mediterráneo.', effect: (S) => { S.resources.sal += 3; S.stats.renown += 2; } },
+        { message: 'Artesanos catalanes comparten su oficio.', effect: (S) => S.resources.hierro += 3 },
+        { message: 'Las murallas romanas inspiran respeto.', effect: (S) => { S.resources.piedra += 4; S.stats.renown += 1; } }
+    ],
+    'Zaragoza': [
+        { message: 'El Ebro riega las tierras fértiles.', effect: (S) => S.resources.agua += 3 },
+        { message: 'Forjas aragonesas producen buen acero.', effect: (S) => S.resources.hierro += 4 },
+        { message: 'Los muros de alabastro brillan al sol.', effect: (S) => { S.resources.piedra += 3; S.stats.renown += 1; } }
+    ],
+    'Bilbao': [
+        { message: 'Minerales vascos enriquecen tu forja.', effect: (S) => { S.resources.hierro += 5; S.resources.piedra += 2; } },
+        { message: 'Pescadores del Cantábrico comparten provisiones.', effect: (S) => { S.resources.trigo += 2; S.resources.sal += 3; } },
+        { message: 'La niebla del norte oculta caminos secretos.', effect: (S) => S.stats.renown += 2 }
+    ],
+    'Santiago': [
+        { message: 'Peregrinos comparten sus provisiones.', effect: (S) => { S.resources.trigo += 3; S.resources.medicina += 2; } },
+        { message: 'La catedral inspira devoción y renombre.', effect: (S) => S.stats.renown += 3 },
+        { message: 'Hierbas gallegas de gran poder curativo.', effect: (S) => S.resources.hierbas += 4 }
+    ],
+    'Lisboa': [
+        { message: 'Navegantes portugueses traen especias exóticas.', effect: (S) => { S.resources.sal += 4; S.stats.renown += 2; } },
+        { message: 'El comercio atlántico florece.', effect: (S) => { S.resources.trigo += 3; S.resources.hierro += 2; } },
+        { message: 'Los astilleros ofrecen madera sobrante.', effect: (S) => S.resources.lenia += 5 }
+    ],
+    'Roma': [
+        { message: 'Las ruinas del Foro revelan tesoros ocultos.', effect: (S) => { S.resources.piedra += 5; S.stats.renown += 3; } },
+        { message: 'Legionarios veteranos comparten tácticas.', effect: (S) => { S.resources.hierro += 3; S.stats.renown += 2; } },
+        { message: 'Médicos romanos enseñan artes curativas.', effect: (S) => S.resources.medicina += 4 }
+    ],
+    'Constantinopla': [
+        { message: 'El Gran Bazar ofrece riquezas sin fin.', effect: (S) => { S.resources.sal += 3; S.resources.hierro += 3; S.stats.renown += 2; } },
+        { message: 'Sabios bizantinos comparten conocimiento ancestral.', effect: (S) => { S.resources.medicina += 3; S.stats.renown += 3; } },
+        { message: 'Las murallas de Teodosio impresionan al viajero.', effect: (S) => { S.resources.piedra += 6; S.stats.renown += 1; } }
     ]
 };
 

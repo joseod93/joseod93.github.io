@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 
 <head>
   <meta charset="utf-8" />
@@ -15,9 +15,9 @@
 
 <body>
   <div id="weatherOverlay" class="weather-overlay"></div>
-  <header>
+  <header role="banner">
     <div class="header-top">
-      <h1><span class="fire-indicator" id="fireIndicator">🔥</span> Luz y Sombra</h1>
+      <h1><span class="fire-indicator" id="fireIndicator" aria-label="Estado del fuego">🔥</span> Luz y Sombra</h1>
       <div class="header-right">
         <div class="level-badge" id="levelBadge" title="Nivel">
           <span class="level-num" id="levelNum">1</span>
@@ -95,6 +95,35 @@
   <!-- Tab Content: Más -->
   <main class="tab-content" id="tabMas">
     <div class="wrap-single">
+      <!-- Skills Section -->
+      <section class="card skills-card" id="skillsSection">
+        <h2>Habilidades <span class="skill-points-badge" id="skillPointsBadge">0 pts</span></h2>
+        <div class="body" id="skillsBody"></div>
+      </section>
+
+      <!-- Market Section -->
+      <section class="card market-card" id="marketSection">
+        <h2>Mercado</h2>
+        <div class="body" id="marketBody">
+          <p style="color:#666;text-align:center;padding:8px;font-size:0.85rem">Compra y vende recursos a precios dinámicos.</p>
+        </div>
+      </section>
+
+      <!-- Crafting Section -->
+      <section class="card crafting-card" id="craftingSection">
+        <h2>Taller de Artesanía</h2>
+        <div class="body" id="craftingBody"></div>
+      </section>
+
+      <!-- Wave Mode -->
+      <section class="card wave-card" id="waveSection" style="display:none">
+        <h2>Oleadas Infinitas</h2>
+        <div class="body" id="waveBody">
+          <p style="color:#aaa;font-size:0.85rem;margin:0 0 12px">Enfrenta oleadas de enemigos cada vez más fuertes. ¿Hasta dónde llegarás?</p>
+          <button id="btnStartWave" class="action glow-btn">Comenzar Oleada 1</button>
+        </div>
+      </section>
+
       <section class="card notes-card" id="notesSection">
         <h2>Notas</h2>
         <div class="body" id="notesBody"></div>
@@ -109,6 +138,7 @@
         <h2>Sistema</h2>
         <div class="body sys-buttons">
           <button id="btnStats" class="action">📊 Estadísticas</button>
+          <button id="btnTheme" class="action" aria-label="Cambiar tema">🌗 Cambiar Tema</button>
           <button id="btnExport" class="action">📤 Exportar</button>
           <button id="btnImport" class="action">📥 Importar</button>
           <button id="btnWipe" class="action danger">🗑️ Borrar Datos</button>
@@ -121,24 +151,24 @@
   </main>
 
   <!-- Bottom Tab Bar (Mobile) -->
-  <nav class="tab-bar" id="tabBar">
-    <button class="tab active" data-tab="tabAldea">
-      <span class="tab-icon">⚔️</span>
+  <nav class="tab-bar" id="tabBar" role="tablist" aria-label="Navegación principal">
+    <button class="tab active" data-tab="tabAldea" role="tab" aria-selected="true" aria-controls="tabAldea">
+      <span class="tab-icon" aria-hidden="true">⚔️</span>
       <span class="tab-label">Aldea</span>
-      <span class="tab-badge hidden" id="aldeaBadge">!</span>
+      <span class="tab-badge hidden" id="aldeaBadge" aria-live="polite">!</span>
     </button>
-    <button class="tab" data-tab="tabDiario">
-      <span class="tab-icon">📖</span>
+    <button class="tab" data-tab="tabDiario" role="tab" aria-selected="false" aria-controls="tabDiario">
+      <span class="tab-icon" aria-hidden="true">📖</span>
       <span class="tab-label">Diario</span>
-      <span class="tab-badge hidden" id="logBadge">!</span>
+      <span class="tab-badge hidden" id="logBadge" aria-live="polite">!</span>
     </button>
-    <button class="tab" data-tab="tabMapa">
-      <span class="tab-icon">🗺️</span>
+    <button class="tab" data-tab="tabMapa" role="tab" aria-selected="false" aria-controls="tabMapa">
+      <span class="tab-icon" aria-hidden="true">🗺️</span>
       <span class="tab-label">Mapa</span>
-      <span class="tab-badge hidden" id="mapaBadge">!</span>
+      <span class="tab-badge hidden" id="mapaBadge" aria-live="polite">!</span>
     </button>
-    <button class="tab" data-tab="tabMas">
-      <span class="tab-icon">⭐</span>
+    <button class="tab" data-tab="tabMas" role="tab" aria-selected="false" aria-controls="tabMas">
+      <span class="tab-icon" aria-hidden="true">⭐</span>
       <span class="tab-label">Más</span>
     </button>
   </nav>
@@ -176,6 +206,12 @@
         <button id="btnDefend" class="action combat-btn def">🛡️ Defender</button>
         <button id="btnHeal" class="action combat-btn heal">💊 Curar</button>
       </div>
+      <div class="combat-actions combat-secondary">
+        <button id="btnDodge" class="action combat-btn dodge">💨 Esquivar</button>
+        <button id="btnPotion" class="action combat-btn atk">🧪 Poción</button>
+        <button id="btnBomb" class="action combat-btn def">💣 Huir</button>
+      </div>
+      <div class="combat-difficulty" id="combatDifficulty"></div>
       <div class="footer" id="fightFooter"></div>
     </div>
   </div>

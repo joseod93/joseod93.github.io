@@ -746,3 +746,68 @@ body.screen-shake { animation: screenShake 0.4s ease-out; }
   100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
 }
 .tutorial-complete { animation: tutorialComplete 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+/* ===== CSS FEEDBACK EFFECTS (replacing emoji particles) ===== */
+@keyframes actionRipple {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0.6; }
+  100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
+}
+
+.action-ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: actionRipple 0.6s ease-out forwards;
+}
+.action-ripple.gold { background: radial-gradient(circle, rgba(242,166,90,0.5), transparent); }
+.action-ripple.green { background: radial-gradient(circle, rgba(154,208,110,0.5), transparent); }
+.action-ripple.blue { background: radial-gradient(circle, rgba(77,171,247,0.5), transparent); }
+.action-ripple.red { background: radial-gradient(circle, rgba(255,107,107,0.5), transparent); }
+
+@keyframes sparkBurst {
+  0% { opacity: 1; width: 4px; height: 4px; }
+  100% { opacity: 0; width: 0; height: 0; }
+}
+
+.spark-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  pointer-events: none;
+  z-index: 9;
+}
+
+.spark {
+  position: absolute;
+  border-radius: 50%;
+  animation: sparkBurst 0.5s ease-out forwards;
+}
+.spark.gold { background: var(--accent); }
+.spark.green { background: var(--ok); }
+.spark.blue { background: #4dabf7; }
+
+@keyframes glowPulse {
+  0% { box-shadow: 0 0 0 0 var(--glow-color, rgba(242,166,90,0.4)); }
+  50% { box-shadow: 0 0 20px 4px var(--glow-color, rgba(242,166,90,0.3)); }
+  100% { box-shadow: 0 0 0 0 var(--glow-color, rgba(242,166,90,0)); }
+}
+
+.glow-feedback {
+  animation: glowPulse 0.6s ease-out;
+}
+
+/* ===== SVG ICON STYLES ===== */
+.svg-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  fill: currentColor;
+}
+
+.svg-icon-lg { width: 1.5em; height: 1.5em; }
+.svg-icon-xl { width: 2em; height: 2em; }

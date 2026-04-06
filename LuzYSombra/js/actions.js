@@ -1,9 +1,9 @@
 
 import { S, saveState } from './state.js';
-import { REGIONS, BOSSES, RES_META } from './constants.js';
+import { REGIONS, BOSSES, RES_META, ENEMIES } from './constants.js';
 import { now, fmtMs, $, randomRange, randomChoice, vibrate } from './utils.js';
 import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash, incrementCombo, fireConfetti, playActionScene } from './ui.js';
-import { openCombat, showEncounterPrompt } from './combat.js';
+import { openCombat, showEncounterPrompt, startEnemyEncounter } from './combat.js';
 import { renderMap, getRandomRegion } from './map.js';
 import { AudioSystem } from './audio.js';
 import { spawnBoss } from './game.js';
@@ -227,8 +227,9 @@ export function renderActions() {
     btnWood.textContent = '🪵 Cortar leña';
     btnWood.disabled = !can('cut');
     btnWood.onclick = () => {
-        addRes('lenia', 1);
-        log('Cortas leña del bosque.', '');
+        const bonus = S.skills?.sharpAxe || 0;
+        addRes('lenia', 1 + bonus);
+        log(`Cortas leña del bosque.${bonus > 0 ? ` (+${bonus} bonus)` : ''}`, '');
         playActionScene('cut');
         AudioSystem.playTone('wood');
         vibrate(30);
@@ -247,8 +248,9 @@ export function renderActions() {
         btnWater.textContent = '💧 Buscar agua';
         btnWater.disabled = !can('fetch');
         btnWater.onclick = () => {
-            addRes('agua', 1);
-            log('Llenas un odre con agua fresca.', '');
+            const wBonus = S.skills?.deepWells || 0;
+            addRes('agua', 1 + wBonus);
+            log(`Llenas un odre con agua fresca.${wBonus > 0 ? ` (+${wBonus} bonus)` : ''}`, '');
             playActionScene('water');
             AudioSystem.playTone('water');
             vibrate(20);
@@ -268,8 +270,9 @@ export function renderActions() {
         btnHerb.textContent = '🌿 Forrajear';
         btnHerb.disabled = !can('forage');
         btnHerb.onclick = () => {
+            const herbBonus = (S.skills?.herbalLore || 0) * 0.15;
             const roll = Math.random();
-            if (roll < 0.6) { addRes('hierbas', 1); log('Recolectas hierbas aromáticas.', ''); }
+            if (roll < 0.6 + herbBonus) { addRes('hierbas', 1); log('Recolectas hierbas aromáticas.', ''); }
             else { addRes('aceitunas', 1); log('Encuentras aceitunas maduras.', ''); }
             playActionScene('forage');
             AudioSystem.playTone('herb');
@@ -401,6 +404,18 @@ export function renderActions() {
                 screenFlash('green');
                 vibrate([30, 30, 60]);
                 refreshAll(); updateTags(); saveState(); renderMap();
+
+                // Random enemy encounter (25% chance)
+                if (Math.random() < 0.25) {
+                    const eligible = ENEMIES.filter(e => e.level <= S.player.level + 2);
+                    if (eligible.length > 0) {
+                        const enemy = randomChoice(eligible);
+                        setTimeout(() => {
+                            log(`Un ${enemy.name} te embosca en el camino de vuelta.`, 'bad');
+                            startEnemyEncounter(enemy);
+                        }, 1500);
+                    }
+                }
             };
             actionsEl.appendChild(bx);
         }
@@ -436,6 +451,22 @@ export function renderActions() {
         };
         div.appendChild(btnTrade);
         actionsEl.appendChild(div);
+    }
+
+    // Consume bread for healing outside combat
+    if (S.consumables?.pan > 0 && S.player.hp < S.player.maxHp) {
+        const bPan = document.createElement('button');
+        bPan.className = 'action';
+        bPan.textContent = `🍞 Comer pan (+15 HP) x${S.consumables.pan}`;
+        bPan.onclick = () => {
+            S.consumables.pan--;
+            const heal = 15;
+            S.player.hp = Math.min(S.player.maxHp, S.player.hp + heal);
+            log(`Comes pan y recuperas ${heal} HP.`, 'good');
+            vibrate(20);
+            refreshAll(); updateTags(); saveState();
+        };
+        actionsEl.appendChild(bPan);
     }
 
     // Boss

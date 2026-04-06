@@ -52,13 +52,19 @@ export function initTabs() {
 export function switchTab(tabId) {
     activeTab = tabId;
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el => {
+        el.classList.remove('active');
+        el.setAttribute('aria-selected', 'false');
+    });
 
     const content = document.getElementById(tabId);
     if (content) content.classList.add('active');
 
     const btn = document.querySelector(`.tab[data-tab="${tabId}"]`);
-    if (btn) btn.classList.add('active');
+    if (btn) {
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+    }
 
     if (tabId === 'tabDiario' && logBadge) logBadge.classList.add('hidden');
     if (tabId === 'tabMapa' && mapaBadge) mapaBadge.classList.add('hidden');
@@ -164,6 +170,10 @@ function onLevelUp(level) {
         levelBadge.classList.add('level-up');
     }
 
+    // Skill points
+    const skillPts = (level % 5 === 0) ? 2 : 1;
+    S.skillPoints = (S.skillPoints || 0) + skillPts;
+
     const overlay = $('#levelUpOverlay');
     const text = $('#levelUpText');
     const bonus = $('#levelUpBonus');
@@ -174,6 +184,7 @@ function onLevelUp(level) {
         const bonuses = [];
         if (level % 3 === 0) bonuses.push('+10 HP máximos');
         if (level % 5 === 0) bonuses.push('+1 Renombre');
+        bonuses.push(`+${skillPts} punto${skillPts > 1 ? 's' : ''} de habilidad`);
         bonuses.push(`+${Math.floor(level * 0.5)} a producción pasiva`);
 
         if (bonus) {
@@ -323,7 +334,7 @@ export function updateTags() {
     updateStreakDisplay();
     updateTabBadges();
     updateTimeClass();
-   // updateStarfield();
+    // updateStarfield();
 }
 
 // ===== TAB BADGES =====
@@ -621,8 +632,8 @@ export function playActionScene(key) {
     actionSceneEl.className = 'action-scene';
     actionSceneEl.classList.remove('hidden', 'fade-out');
 
-    // spawn floating particles around the scene
-    //spawnSceneParticles(key);
+    // CSS-based spark feedback
+    spawnCSSParticles(key);
 
     sceneTimer = setTimeout(() => {
         actionSceneEl.classList.add('fade-out');
@@ -668,6 +679,44 @@ function spawnSceneParticles(key) {
         container.appendChild(p);
         setTimeout(() => p.remove(), 1000);
     }
+}
+
+// ===== CSS FEEDBACK PARTICLES =====
+function spawnCSSParticles(key) {
+    const colorMap = {
+        cut: 'gold', water: 'blue', forage: 'green', explore: 'gold',
+        fire_light: 'gold', fire_stoke: 'gold', craft_torch: 'gold',
+        craft_medicine: 'green', build_molino: 'gold', build_acequia: 'blue',
+        build_fragua: 'gold', recruit: 'green', expedition: 'blue',
+        expedition_claim: 'gold', trade: 'gold', explore_adv: 'gold',
+    };
+    const color = colorMap[key] || 'gold';
+    const container = actionSceneEl;
+    if (!container) return;
+
+    // Ripple effect
+    const ripple = document.createElement('div');
+    ripple.className = `action-ripple ${color}`;
+    container.appendChild(ripple);
+    setTimeout(() => ripple.remove(), 600);
+
+    // Spark burst (8 sparks)
+    const sparkContainer = document.createElement('div');
+    sparkContainer.className = 'spark-container';
+    for (let i = 0; i < 8; i++) {
+        const spark = document.createElement('div');
+        spark.className = `spark ${color}`;
+        const angle = (i / 8) * Math.PI * 2;
+        const dist = 20 + Math.random() * 30;
+        spark.style.setProperty('--tx', `${Math.cos(angle) * dist}px`);
+        spark.style.setProperty('--ty', `${Math.sin(angle) * dist}px`);
+        spark.style.left = '0px';
+        spark.style.top = '0px';
+        spark.style.animationDelay = `${Math.random() * 0.1}s`;
+        sparkContainer.appendChild(spark);
+    }
+    container.appendChild(sparkContainer);
+    setTimeout(() => sparkContainer.remove(), 600);
 }
 
 // ===== WEATHER VISUALS (Mejora 1) =====

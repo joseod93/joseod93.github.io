@@ -4,6 +4,7 @@ import { AudioSystem } from './audio.js';
 import { S, saveState } from './state.js';
 import { log, toast, updateTags, renderResources, addXP, xpFlash, screenFlash, fireConfetti } from './ui.js';
 import integrator from './integrator.js';
+import { ENEMIES } from './constants.js';
 
 const fightOverlay = $('#fightOverlay');
 const fightTitle = $('#fightTitle');
@@ -22,6 +23,11 @@ const encounterCountdown = $('#encounterCountdown');
 const encounterTimerBar = $('#encounterTimerBar');
 const btnEncAccept = $('#btnEncAccept');
 const btnEncDecline = $('#btnEncDecline');
+
+const btnDodge = $('#btnDodge');
+const btnPotion = $('#btnPotion');
+const btnBomb = $('#btnBomb');
+const combatDifficulty = $('#combatDifficulty');
 
 let combatState = null;
 let encounterTimer = null;
@@ -68,24 +74,56 @@ function renderCombatUI() {
     }
 }
 
-export function openCombat() {
-    if (!S.threat) return;
+function getDifficultyLabel(bossLevel) {
+    const playerLevel = S.player.level;
+    const diff = bossLevel - playerLevel;
+    if (diff <= -3) return { text: 'Fácil', cls: 'difficulty-easy' };
+    if (diff <= 0)  return { text: 'Normal', cls: 'difficulty-medium' };
+    if (diff <= 3)  return { text: 'Difícil', cls: 'difficulty-hard' };
+    return { text: 'Extremo', cls: 'difficulty-extreme' };
+}
+
+function getSkillEffects() {
+    try {
+        // Dynamic import not ideal but avoids circular deps at load time
+        const skills = S.skills || {};
+        const effects = {};
+        // Manually aggregate from state — no import needed
+        if (skills.swordMastery) effects.bonusAtk = skills.swordMastery;
+        if (skills.ironSkin) effects.dmgReduction = skills.ironSkin * 0.1;
+        if (skills.criticalEye) effects.critBonus = skills.criticalEye * 0.05;
+        if (skills.dodgeReflex) effects.dodgeChance = skills.dodgeReflex * 0.08;
+        return effects;
+    } catch { return {}; }
+}
+
+export function openCombat(enemy = null) {
+    const target = enemy || S.threat;
+    if (!target) return;
     combatState = {
-        boss: S.threat,
+        boss: target,
+        isRegularEnemy: !!enemy,
         turn: 'player',
         totalDamageDealt: 0,
         totalDamageTaken: 0,
-        startTime: Date.now()
+        startTime: Date.now(),
+        potionUsed: false
     };
-    fightTitle.textContent = `⚔️ ${S.threat.name}`;
+    fightTitle.textContent = `⚔️ ${target.name}`;
     fightInfo.textContent = 'Tu turno. ¡Elige una acción!';
     fightFooter.textContent = '';
+
+    // Difficulty indicator
+    const bossLevel = target.level || Math.ceil(target.max / 5);
+    const diff = getDifficultyLabel(bossLevel);
+    if (combatDifficulty) {
+        combatDifficulty.textContent = `Nivel recomendado: ${bossLevel} — ${diff.text}`;
+        combatDifficulty.className = `combat-difficulty ${diff.cls}`;
+    }
+
     fightOverlay.classList.remove('hidden');
     renderCombatUI();
-
-    btnAttack.disabled = false;
-    btnDefend.disabled = false;
-    btnHeal.disabled = false;
+    enableCombatBtns();
 }
 
 function closeCombat() {
@@ -108,15 +146,52 @@ function enableCombatBtns() {
     btnAttack.disabled = false;
     btnDefend.disabled = false;
     btnHeal.disabled = false;
+    if (btnDodge) btnDodge.disabled = false;
+    if (btnPotion) {
+        btnPotion.disabled = !(S.consumables?.pocion > 0) || combatState.potionUsed;
+        btnPotion.textContent = `🧪 Poción (${S.consumables?.pocion || 0})`;
+    }
+    if (btnBomb) {
+        btnBomb.disabled = !(S.consumables?.bomba > 0);
+        btnBomb.textContent = `💣 Huir (${S.consumables?.bomba || 0})`;
+    }
+}
+
+function disableAllCombatBtns() {
+    disableCombatBtns();
+    if (btnDodge) btnDodge.disabled = true;
+    if (btnPotion) btnPotion.disabled = true;
+    if (btnBomb) btnBomb.disabled = true;
 }
 
 function enemyTurn() {
     if (!combatState) return;
     AudioSystem.playTone('fight');
-    const base = 6 + Math.floor(Math.random() * 4);
+
+    const enemyAtk = combatState.boss.atk || (6 + Math.floor(Math.random() * 4));
+    const base = enemyAtk + Math.floor(Math.random() * 3);
     let dmg = base;
+
+    // Armor reduction
+    const armorReduction = (S.equipment?.armadura || 0) * 0.2;
+    const effects = getSkillEffects();
+    const skillReduction = effects.dmgReduction || 0;
+    dmg = Math.max(1, Math.floor(dmg * (1 - armorReduction - skillReduction)));
+
+    if (S.player.guard === 'dodge') {
+        dmg = 0;
+        fightInfo.textContent = '💨 ¡Esquivaste el ataque!';
+        S.player.guard = false;
+        renderCombatUI();
+        combatState.turn = 'player';
+        enableCombatBtns();
+        fightInfo.textContent += ' ¡Tu turno!';
+        return;
+    }
+
     if (S.player.guard) {
-        dmg = Math.max(0, Math.floor(base * 0.3));
+        const shieldBonus = (S.equipment?.escudo || 0) * 0.1;
+        dmg = Math.max(0, Math.floor(base * (0.3 - shieldBonus)));
         if (Math.random() < 0.3) {
             const enemyEl = document.querySelector('#enemy');
             if (enemyEl) enemyEl.classList.add('hit');
@@ -167,12 +242,17 @@ function enemyTurn() {
 
 btnAttack.addEventListener('click', () => {
     if (!combatState || combatState.turn !== 'player') return;
-    disableCombatBtns();
+    disableAllCombatBtns();
 
-    const isCrit = Math.random() < 0.15;
+    const effects = getSkillEffects();
+    const critChance = 0.15 + (effects.critBonus || 0);
+    const isCrit = Math.random() < critChance;
     let atk = 1 + (S.resources.antorchas > 0 ? 1 : 0) + (S.unlocked.forge ? 1 : 0);
+    atk += (effects.bonusAtk || 0);
+    atk += (S.equipment?.espada || 0) * 2;
     const levelBonus = Math.floor(S.player.level / 5);
     atk += levelBonus;
+    if (combatState.potionUsed) { atk *= 2; combatState.potionUsed = false; }
     if (isCrit) atk *= 2;
 
     if (S.resources.antorchas > 0) S.resources.antorchas--;
@@ -212,22 +292,43 @@ btnAttack.addEventListener('click', () => {
 
     if (combatState.boss.hp <= 0) {
         const t = combatState.boss;
-        log(`${t.name} ha sido derrotado.`, 'good');
-        S.stats.bossesDefeated++;
-        window.dispatchEvent(new CustomEvent('lys-unlock-achievement', { detail: { key: t.key, mk: `Derrotaste a ${t.name}` } }));
+        const isRegular = combatState.isRegularEnemy;
 
-        const duration = Date.now() - combatState.startTime;
-        integrator.onBossDefeated(S, t.name, combatState.totalDamageDealt, combatState.totalDamageTaken, duration, log);
+        if (isRegular) {
+            // Regular enemy rewards
+            log(`${t.name} ha sido derrotado.`, 'good');
+            S.enemiesDefeated = (S.enemiesDefeated || 0) + 1;
+            if (t.loot) {
+                t.loot.forEach(l => {
+                    const n = l.n[0] + Math.floor(Math.random() * (l.n[1] - l.n[0] + 1));
+                    S.resources[l.k] = (S.resources[l.k] || 0) + n;
+                });
+            }
+            const xpReward = 5 + Math.floor((t.max || t.hp) / 2);
+            addXP(xpReward);
+            xpFlash();
+            screenFlash('green');
+            toast(`Victoria: ${t.name} +${xpReward} XP`);
+        } else {
+            // Boss rewards
+            log(`${t.name} ha sido derrotado.`, 'good');
+            S.stats.bossesDefeated++;
+            window.dispatchEvent(new CustomEvent('lys-unlock-achievement', { detail: { key: t.key, mk: `Derrotaste a ${t.name}` } }));
 
-        const xpReward = 15 + Math.floor(t.max / 2);
-        addXP(xpReward);
-        xpFlash();
-        screenFlash('gold');
-        fireConfetti();
+            const duration = Date.now() - combatState.startTime;
+            integrator.onBossDefeated(S, t.name, combatState.totalDamageDealt, combatState.totalDamageTaken, duration, log);
 
-        S.threat = null;
-        bossTag.textContent = '👁️ Sin amenaza';
-        toast(`🏆 ¡Victoria! +${xpReward} XP`);
+            const xpReward = 15 + Math.floor(t.max / 2);
+            addXP(xpReward);
+            xpFlash();
+            screenFlash('gold');
+            fireConfetti();
+
+            S.threat = null;
+            if (bossTag) bossTag.textContent = '👁️ Sin amenaza';
+            toast(`🏆 ¡Victoria! +${xpReward} XP`);
+        }
+
         closeCombat();
         return;
     }
@@ -290,8 +391,11 @@ btnHeal.addEventListener('click', () => {
 // Encounter
 export function showEncounterPrompt() {
     if (!S.threat) return;
+    const bossLevel = S.threat.level || Math.ceil(S.threat.max / 5);
+    const diff = getDifficultyLabel(bossLevel);
     encounterTitle.textContent = S.threat.name;
     encounterInfo.textContent = `${S.threat.icon} ¿Deseas enfrentarte?`;
+    encounterInfo.innerHTML += `<br><small class="${diff.cls}">Nivel ${bossLevel} — ${diff.text}</small>`;
     let remain = 10;
     encounterCountdown.textContent = String(remain);
     if (encounterTimerBar) encounterTimerBar.style.width = '100%';
@@ -307,6 +411,69 @@ export function showEncounterPrompt() {
             encounterOverlay.classList.add('hidden');
         }
     }, 1000);
+}
+
+// Dodge action
+if (btnDodge) btnDodge.addEventListener('click', () => {
+    if (!combatState || combatState.turn !== 'player') return;
+    disableAllCombatBtns();
+
+    const effects = getSkillEffects();
+    const dodgeChance = 0.4 + (effects.dodgeChance || 0);
+    const escaped = Math.random() < dodgeChance;
+
+    if (escaped) {
+        fightInfo.textContent = '💨 ¡Esquivas el siguiente ataque!';
+        S.player.guard = 'dodge';
+    } else {
+        fightInfo.textContent = '💨 Intentas esquivar pero fallas...';
+    }
+    AudioSystem.playTone('explore');
+    vibrate(20);
+    combatState.turn = 'enemy';
+    setTimeout(enemyTurn, 600);
+});
+
+// Potion (strength boost)
+if (btnPotion) btnPotion.addEventListener('click', () => {
+    if (!combatState || combatState.turn !== 'player') return;
+    if (!S.consumables?.pocion || S.consumables.pocion <= 0) return;
+    S.consumables.pocion--;
+    combatState.potionUsed = true;
+    fightInfo.textContent = '🧪 ¡Poción de fuerza! Tu próximo ataque hará x2 daño.';
+    AudioSystem.playTone('heal');
+    vibrate(30);
+    enableCombatBtns();
+    // Don't end turn — player still needs to attack
+});
+
+// Bomb (escape combat)
+if (btnBomb) btnBomb.addEventListener('click', () => {
+    if (!combatState || combatState.turn !== 'player') return;
+    if (!S.consumables?.bomba || S.consumables.bomba <= 0) return;
+    S.consumables.bomba--;
+    fightInfo.textContent = '💣 ¡Bomba de humo! Escapas del combate.';
+    log('Usas una bomba de humo para huir.', 'dim');
+    AudioSystem.playTone('explore');
+    vibrate([30, 20, 30]);
+    closeCombat();
+});
+
+// Regular enemy combat (exported for use in expeditions)
+export function startEnemyEncounter(enemy) {
+    const instance = {
+        key: 'enemy_' + Date.now(),
+        name: enemy.name,
+        icon: enemy.icon,
+        hp: enemy.hp,
+        max: enemy.hp,
+        atk: enemy.atk,
+        level: enemy.level,
+        loot: enemy.loot,
+        endsAt: Date.now() + 120000,
+        region: ''
+    };
+    openCombat(instance);
 }
 
 btnEncAccept.addEventListener('click', () => {
