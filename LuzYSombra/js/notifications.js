@@ -113,7 +113,7 @@ class NotificationSystem {
             tag: 'expedition', type: 'expedition',
             onClick: () => {
                 // Scroll to actions
-                $('#actions')?.scrollIntoView({ behavior: 'smooth' });
+                $('#settlementBody')?.scrollIntoView({ behavior: 'smooth' });
             }
         });
     }

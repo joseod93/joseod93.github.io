@@ -33,7 +33,8 @@ const blank = () => ({
     waveMode: null,     // { wave: N, active: bool, hp: N }
     theme: 'dark',      // dark | light
     tutorialTips: {},   // tipKey -> shown bool
-    enemiesDefeated: 0
+    enemiesDefeated: 0,
+    currentLocation: null  // open settlement location id
 });
 
 export let S = blank();
@@ -72,6 +73,7 @@ export function loadState() {
             if (!S.tutorialTips) S.tutorialTips = {};
             if (S.enemiesDefeated === undefined) S.enemiesDefeated = 0;
             if (!S.theme) S.theme = 'dark';
+            if (S.currentLocation === undefined) S.currentLocation = null;
         }
     } catch (e) {
         console.error('Error al cargar estado:', e);

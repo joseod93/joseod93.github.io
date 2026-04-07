@@ -46,9 +46,9 @@
         <div class="body resources" id="resources"></div>
       </section>
 
-      <section class="card actions-card" id="actionsSection">
-        <h2>Acciones</h2>
-        <div class="body actions" id="actions"></div>
+      <section class="card settlement-card" id="settlementSection">
+        <h2>Tu Asentamiento</h2>
+        <div class="body" id="settlementBody"></div>
         <div class="footer desktop-only">
           <div class="inline">
             <span class="tag" id="expeditionTag">🧭 Sin expedición</span>
@@ -189,6 +189,21 @@
 
   <!-- Confetti canvas -->
   <canvas id="confettiCanvas" class="confetti-canvas"></canvas>
+
+  <!-- Location Overlay -->
+  <div id="locationOverlay" class="overlay hidden">
+    <div class="panel location-panel">
+      <div class="location-header">
+        <span id="locationIcon" style="font-size:2rem"></span>
+        <div>
+          <h2 id="locationTitle"></h2>
+          <p id="locationDesc" class="location-desc"></p>
+        </div>
+        <button id="locationCloseBtn" class="icon-btn">&#10005;</button>
+      </div>
+      <div id="locationActions" class="actions"></div>
+    </div>
+  </div>
 
   <!-- Fight Overlay -->
   <div id="fightOverlay" class="overlay hidden">

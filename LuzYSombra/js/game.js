@@ -4,6 +4,7 @@ import { S, loadState, saveState, resetState } from './state.js';
 import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics, initTabs, addXP, xpFlash, screenFlash, fireConfetti, updateStreakDisplay, updateWeatherVisuals, showPassiveGain, showEventBanner } from './ui.js';
 import { renderActions, tryUnlocks, checkAchievements } from './actions.js';
 import { renderMap } from './map.js';
+import { renderSettlement, refreshOpenLocation } from './settlement.js';
 import { showEncounterPrompt, startEnemyEncounter } from './combat.js';
 import { BOSSES, ENEMIES } from './constants.js';
 import integrator from './integrator.js';
@@ -167,19 +168,21 @@ function gameTick() {
         log('Un mercader ambulante ha acampado cerca.', 'good');
         showEventBanner('🪵 Un mercader ambulante ha acampado cerca', 'opportunity');
         integrator.onTraderArrived(S);
-        renderActions(); window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
+        renderActions(); renderSettlement(); refreshOpenLocation(); window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
     }
 
     if (S.trader && nowTs >= S.trader.endsAt) {
         log('El mercader recoge sus cosas y se marcha.', 'dim');
         S.trader = null;
-        renderActions(); window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
+        renderActions(); renderSettlement(); refreshOpenLocation(); window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
     }
 
     updateTags();
     renderResources();
     checkAchievements();
     renderMap();
+    renderSettlement();
+    refreshOpenLocation();
     renderNotes();
     updateCooldownVisuals();
     integrator.onGameTick(S, log);
@@ -586,6 +589,7 @@ function init() {
     renderResources();
     tryUnlocks();
     renderActions();
+    renderSettlement();
     renderAchievements();
     updateTags();
     renderNotes();
@@ -601,7 +605,7 @@ function init() {
     setInterval(updateCooldownVisuals, 100);
     setInterval(() => { renderMarket(); renderCrafting(); }, 30000);
 
-    window.addEventListener('lys-actions-refresh', () => { renderActions(); renderCrafting(); });
+    window.addEventListener('lys-actions-refresh', () => { renderActions(); renderSettlement(); refreshOpenLocation(); renderCrafting(); });
     document.body.addEventListener('click', (e) => {
         if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
             AudioSystem.playTone('click');

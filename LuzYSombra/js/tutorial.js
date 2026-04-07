@@ -32,7 +32,7 @@ const TUTORIAL_STEPS = [
         id: 'explore',
         title: 'Exploración',
         message: 'Explora los contornos para descubrir nuevos recursos y ganar renombre.',
-        highlight: '#actions',
+        highlight: '#settlementBody',
         position: 'bottom',
         action: 'Explora cuando puedas'
     },

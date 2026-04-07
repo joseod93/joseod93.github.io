@@ -145,3 +145,33 @@ export const REGION_POS = {
     'Roma':    { x: 290, y: 190 },
     'Constantinopla': { x: 290, y: 210 }
 };
+
+// ===== LOCAL SETTLEMENT LOCATIONS =====
+export const LOCAL_LOCATIONS = [
+    { id: 'campamento', name: 'Campamento', emoji: '🔥', unlock: null, desc: 'Tu hogar, el fuego sagrado.' },
+    { id: 'bosque', name: 'Bosque', emoji: '🌲', unlock: null, desc: 'Leña y senderos por explorar.' },
+    { id: 'rio', name: 'Río', emoji: '💧', unlock: 'water', desc: 'Un arroyo de agua fresca.' },
+    { id: 'campos', name: 'Campos', emoji: '🌾', unlock: 'herbs', desc: 'Hierbas, olivos y tierra fértil.' },
+    { id: 'taller', name: 'Taller', emoji: '🔨', unlock: 'crafting', desc: 'Artesanía y construcción.' },
+    { id: 'aldea', name: 'Aldea', emoji: '🏘️', unlock: 'village', desc: 'Tu creciente poblado.' },
+    { id: 'caminos', name: 'Caminos', emoji: '🛤️', unlock: 'expedition', desc: 'Rutas hacia tierras lejanas.' },
+];
+
+export const LOCAL_POS = {
+    campamento: { x: 155, y: 115 },
+    bosque:     { x: 55,  y: 55 },
+    rio:        { x: 255, y: 55 },
+    campos:     { x: 55,  y: 175 },
+    taller:     { x: 255, y: 175 },
+    aldea:      { x: 155, y: 40 },
+    caminos:    { x: 155, y: 200 },
+};
+
+export const LOCAL_CONNECTIONS = [
+    ['campamento', 'bosque'],
+    ['campamento', 'rio'],
+    ['campamento', 'campos'],
+    ['campamento', 'taller'],
+    ['campamento', 'aldea'],
+    ['campamento', 'caminos'],
+];
