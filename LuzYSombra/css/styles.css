@@ -1273,10 +1273,6 @@ button.action.danger {
 }
 
 /* ===== SETTLEMENT MAP (Local Locations) ===== */
-.settlement-svg-wrap {
-  margin-bottom: 12px;
-}
-
 .location-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;

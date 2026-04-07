@@ -589,6 +589,510 @@ body.screen-shake { animation: screenShake 0.4s ease-out; }
   animation: glowPulse 0.6s ease-out;
 }
 
+/* ===== ISOMETRIC 3D SETTLEMENT ===== */
+.iso-scene {
+  position: relative;
+  width: 100%;
+  height: 280px;
+  border-radius: 14px;
+  overflow: hidden;
+  perspective: 600px;
+  border: 1px solid #1b2636;
+  margin-bottom: 12px;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iso-ground-plane {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(25deg) scale(0.95);
+  transform-style: preserve-3d;
+  transform-origin: center 60%;
+}
+
+.iso-path-line {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Isometric nodes */
+.iso-node {
+  position: absolute;
+  transform: translate(-50%, -80%);
+  cursor: pointer;
+  z-index: 5;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s;
+  transform-style: preserve-3d;
+  text-align: center;
+}
+
+.iso-node:hover { transform: translate(-50%, -80%) scale(1.12) translateZ(8px); }
+.iso-node:active { transform: translate(-50%, -80%) scale(0.95); }
+.iso-node.iso-active { transform: translate(-50%, -80%) scale(1.15) translateZ(10px); filter: brightness(1.2); z-index: 10; }
+.iso-node.iso-locked { opacity: 0.3; filter: grayscale(0.8); pointer-events: none; cursor: default; }
+
+.iso-ground {
+  border-radius: 50%;
+  margin: 0 auto;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  transform: rotateX(60deg);
+}
+
+.iso-label {
+  font-size: 0.65rem;
+  color: #a0b0cc;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+  margin-top: 2px;
+  white-space: nowrap;
+  letter-spacing: 0.03em;
+}
+
+.iso-active .iso-label { color: #ffe08a; font-weight: 700; }
+
+/* ===== CAMPAMENTO ===== */
+.iso-campfire { position: relative; font-size: 1.6rem; line-height: 1; }
+.iso-fire-emoji { position: relative; z-index: 2; }
+.iso-campfire.hot .iso-fire-emoji { animation: isoFireFlicker 0.3s infinite alternate; }
+.iso-campfire.warm .iso-fire-emoji { animation: isoFireFlicker 0.6s infinite alternate; }
+
+.iso-fire-glow {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 50px; height: 50px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,140,40,0.4) 0%, transparent 70%);
+  animation: isoGlowPulse 1.5s infinite alternate;
+  pointer-events: none;
+}
+
+.iso-tent { font-size: 1.1rem; margin-top: -4px; }
+
+@keyframes isoFireFlicker {
+  0% { transform: scale(1) rotate(-2deg); }
+  100% { transform: scale(1.15) rotate(2deg); }
+}
+
+@keyframes isoGlowPulse {
+  0% { opacity: 0.5; transform: translate(-50%, -50%) scale(0.8); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+}
+
+/* Smoke */
+.iso-smoke {
+  position: absolute;
+  top: -20px; left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.iso-smoke-p {
+  position: absolute;
+  font-size: 0.7rem;
+  opacity: 0;
+  animation: isoSmokeRise 2.5s infinite;
+}
+
+@keyframes isoSmokeRise {
+  0% { opacity: 0.6; transform: translateY(0) scale(0.5); }
+  50% { opacity: 0.3; }
+  100% { opacity: 0; transform: translateY(-30px) translateX(8px) scale(1.2); }
+}
+
+/* ===== BOSQUE ===== */
+.iso-forest {
+  position: relative;
+  height: 36px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.iso-tree {
+  font-size: 1.5rem;
+  position: relative;
+  animation: isoTreeSway 4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.iso-tree.big { font-size: 1.8rem; }
+.iso-tree.small { font-size: 0.9rem; }
+
+@keyframes isoTreeSway {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(1.5deg); }
+  75% { transform: rotate(-1.5deg); }
+}
+
+/* Birds */
+.iso-birds {
+  position: absolute;
+  top: -16px;
+  width: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.iso-bird {
+  position: absolute;
+  font-size: 0.6rem;
+  animation: isoBirdFly 5s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+.iso-bird:nth-child(2) { left: 30px; }
+
+@keyframes isoBirdFly {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(12px, -8px); }
+  50% { transform: translate(24px, -4px); }
+  75% { transform: translate(12px, -10px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* ===== RIO ===== */
+.iso-river {
+  position: relative;
+  height: 24px;
+}
+
+.iso-water-flow {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.iso-wave {
+  font-size: 1rem;
+  animation: isoWaveFlow 2s ease-in-out infinite;
+  color: #4dabf7;
+}
+
+@keyframes isoWaveFlow {
+  0%, 100% { transform: translateX(0); opacity: 0.7; }
+  50% { transform: translateX(6px); opacity: 1; }
+}
+
+.iso-fish {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  font-size: 0.7rem;
+  animation: isoFishSwim 4s ease-in-out infinite;
+}
+
+@keyframes isoFishSwim {
+  0%, 100% { transform: translateX(-15px); opacity: 0.4; }
+  50% { transform: translateX(15px); opacity: 0.8; }
+}
+
+/* ===== CAMPOS ===== */
+.iso-fields {
+  display: flex;
+  gap: 3px;
+  font-size: 1.1rem;
+  justify-content: center;
+}
+
+.iso-crop {
+  animation: isoCropGrow 3s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.iso-crop:nth-child(2n) { animation-delay: 0.5s; }
+.iso-crop:nth-child(3n) { animation-delay: 1s; }
+
+@keyframes isoCropGrow {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.1); }
+}
+
+/* ===== TALLER / WORKSHOP ===== */
+.iso-workshop {
+  position: relative;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.iso-building-3d {
+  position: relative;
+  width: 32px;
+  height: 26px;
+  transform-style: preserve-3d;
+}
+
+.iso-wall-front {
+  position: absolute;
+  bottom: 0;
+  width: 32px;
+  height: 22px;
+  background: linear-gradient(180deg, #5a3a1a, #3a2510);
+  border: 1px solid #2a1a08;
+  border-radius: 2px;
+}
+
+.iso-wall-side {
+  position: absolute;
+  bottom: 0;
+  right: -8px;
+  width: 10px;
+  height: 22px;
+  background: linear-gradient(180deg, #4a2a10, #2a1808);
+  transform: skewY(-20deg);
+  transform-origin: bottom left;
+  border-radius: 0 2px 2px 0;
+}
+
+.iso-roof {
+  position: absolute;
+  top: -6px;
+  left: -3px;
+  width: 42px;
+  height: 10px;
+  background: linear-gradient(180deg, #8b4513, #6b3410);
+  clip-path: polygon(10% 100%, 50% 0%, 90% 100%);
+}
+
+.iso-workshop-icon {
+  position: absolute;
+  font-size: 1.1rem;
+  top: 4px;
+}
+
+.iso-sparks {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.iso-spark {
+  position: absolute;
+  font-size: 0.6rem;
+  animation: isoSparkFloat 1.2s ease-out infinite;
+  opacity: 0;
+}
+
+.iso-spark:nth-child(2) { left: 8px; }
+.iso-spark:nth-child(3) { left: -8px; }
+
+@keyframes isoSparkFloat {
+  0% { opacity: 0.9; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-18px) translateX(6px) scale(0.3); }
+}
+
+/* ===== ALDEA ===== */
+.iso-village {
+  position: relative;
+  height: 30px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.iso-house {
+  font-size: 1.2rem;
+  position: relative;
+  transition: transform 0.3s;
+}
+
+.iso-villager {
+  font-size: 0.8rem;
+  position: absolute;
+  bottom: -2px;
+  right: -10px;
+  animation: isoVillagerWalk 3s ease-in-out infinite;
+}
+
+@keyframes isoVillagerWalk {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(8px); }
+}
+
+/* ===== CAMINOS ===== */
+.iso-roads {
+  position: relative;
+  height: 24px;
+}
+
+.iso-path {
+  width: 40px;
+  height: 6px;
+  background: repeating-linear-gradient(90deg, #3a2a1a 0px, #3a2a1a 6px, #2a1a0a 6px, #2a1a0a 12px);
+  margin: 8px auto 0;
+  border-radius: 3px;
+}
+
+.iso-signpost {
+  font-size: 1rem;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(10px);
+}
+
+.iso-traveler-away {
+  font-size: 0.8rem;
+  position: absolute;
+  top: 2px;
+  animation: isoTravelerGo 3s ease-in-out infinite;
+  opacity: 0.6;
+}
+
+@keyframes isoTravelerGo {
+  0% { left: 30%; }
+  100% { left: 75%; opacity: 0.2; }
+}
+
+/* ===== WALKING CHARACTER ===== */
+.iso-character {
+  position: absolute;
+  font-size: 1.2rem;
+  z-index: 20;
+  pointer-events: none;
+  transition: left 0.8s ease-out, top 0.8s ease-out;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+}
+
+.iso-character.walking {
+  animation: isoWalk 0.4s steps(2) infinite;
+}
+
+.iso-character.idle {
+  animation: isoIdle 2s ease-in-out infinite;
+}
+
+@keyframes isoWalk {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes isoIdle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
+
+/* ===== NIGHT OVERLAY & FIRE LIGHT ===== */
+.iso-night-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 5, 20, 0.6);
+  pointer-events: none;
+  z-index: 15;
+  transition: opacity 2s;
+  border-radius: 14px;
+}
+
+.iso-fire-light {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 16;
+  border-radius: 14px;
+  transition: background 2s;
+}
+
+/* ===== WEATHER PARTICLES ===== */
+.iso-weather {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 18;
+  overflow: hidden;
+}
+
+.iso-rain {
+  position: absolute;
+  top: -10px;
+  width: 1.5px;
+  height: 12px;
+  background: linear-gradient(to bottom, transparent, rgba(77,171,247,0.6));
+  border-radius: 2px;
+  animation: isoRainFall 0.6s linear infinite;
+}
+
+@keyframes isoRainFall {
+  0% { transform: translateY(-10px); opacity: 0; }
+  20% { opacity: 0.8; }
+  100% { transform: translateY(290px); opacity: 0; }
+}
+
+.iso-wind-leaf {
+  position: absolute;
+  left: -20px;
+  font-size: 0.7rem;
+  animation: isoWindBlow 4s linear infinite;
+  opacity: 0.6;
+}
+
+@keyframes isoWindBlow {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0.6; }
+  100% { transform: translate(calc(100vw), 20px) rotate(360deg); opacity: 0; }
+}
+
+/* ===== 3D OVERLAY TRANSITIONS ===== */
+.location-panel.panel-enter {
+  animation: panelFlipIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.location-panel.panel-exit {
+  animation: panelFlipOut 0.25s ease-in forwards;
+}
+
+@keyframes panelFlipIn {
+  0% {
+    opacity: 0;
+    transform: perspective(600px) rotateX(-15deg) scale(0.85) translateY(30px);
+  }
+  60% {
+    transform: perspective(600px) rotateX(3deg) scale(1.02) translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(600px) rotateX(0deg) scale(1) translateY(0);
+  }
+}
+
+@keyframes panelFlipOut {
+  0% {
+    opacity: 1;
+    transform: perspective(600px) rotateX(0deg) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: perspective(600px) rotateX(10deg) scale(0.9) translateY(20px);
+  }
+}
+
+/* ===== RESOURCE COLLECT PARTICLES 3D ===== */
+@keyframes isoCollectParticle {
+  0% {
+    opacity: 1;
+    transform: perspective(400px) translateZ(0) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: perspective(400px) translateZ(30px) translateY(-40px) scale(0.3);
+  }
+}
+
+.iso-collect-particle {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  font-size: 1.2rem;
+  animation: isoCollectParticle 0.8s ease-out forwards;
+}
+
 /* ===== SVG ICON STYLES ===== */
 .svg-icon {
   display: inline-block;
