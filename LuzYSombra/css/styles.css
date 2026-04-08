@@ -1272,69 +1272,6 @@ button.action.danger {
   .xp-bar { background: Highlight; }
 }
 
-/* ===== SETTLEMENT MAP (Local Locations) ===== */
-.location-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 2px;
-}
-
-.location-card {
-  background: #0c1320;
-  border: 1px solid #1b2636;
-  border-radius: 12px;
-  padding: 12px;
-  cursor: pointer;
-  transition: all .2s;
-  -webkit-tap-highlight-color: transparent;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 56px;
-}
-
-.location-card:active { transform: scale(0.97); }
-.location-card:hover:not(.locked) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(242,166,90,0.15);
-  border-color: var(--accent);
-}
-
-.location-card.locked {
-  cursor: default;
-  opacity: 0.4;
-  filter: grayscale(0.6);
-}
-
-.location-card.focused {
-  border-color: #f59e0b;
-  box-shadow: 0 0 12px rgba(245,158,11,0.2);
-}
-
-.location-card-emoji {
-  font-size: 1.5rem;
-  flex-shrink: 0;
-}
-
-.location-card-info {
-  min-width: 0;
-}
-
-.location-card-name {
-  font-weight: 700;
-  font-size: 0.85rem;
-  color: #e9f0ff;
-}
-
-.location-card-desc {
-  font-size: 0.72rem;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* Location Overlay Panel */
 .location-panel {
   max-width: 500px;

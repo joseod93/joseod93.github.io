@@ -1,5 +1,5 @@
 
-import { S, saveState } from './state.js';
+import { S } from './state.js';
 import { LOCAL_LOCATIONS, LOCAL_POS, LOCAL_CONNECTIONS } from './constants.js';
 import { $ } from './utils.js';
 import { renderLocationActions } from './actions.js';
@@ -14,85 +14,12 @@ const locationDesc = $('#locationDesc');
 const locationIcon = $('#locationIcon');
 const locationCloseBtn = $('#locationCloseBtn');
 
-// Close overlay handlers
-if (locationCloseBtn) {
-    locationCloseBtn.onclick = () => closeLocation();
-}
-if (locationOverlay) {
-    locationOverlay.onclick = (e) => {
-        if (e.target === locationOverlay) closeLocation();
-    };
-}
+if (locationCloseBtn) locationCloseBtn.onclick = () => closeLocation();
+if (locationOverlay) locationOverlay.onclick = (e) => { if (e.target === locationOverlay) closeLocation(); };
 
-function isUnlocked(loc) {
-    if (!loc.unlock) return true;
-    return !!S.unlocked[loc.unlock];
-}
+function isUnlocked(loc) { return !loc.unlock || !!S.unlocked[loc.unlock]; }
 
-// ===== ISOMETRIC 3D BUILDING DEFINITIONS =====
-const ISO_BUILDINGS = {
-    campamento: {
-        emoji: '🔥',
-        layers: [
-            { type: 'ground', w: 56, h: 20, color: '#2a1f14' },
-            { type: 'fire', w: 20, h: 20 },
-        ],
-        smoke: true,
-        label: 'Campamento',
-    },
-    bosque: {
-        emoji: '🌲',
-        layers: [
-            { type: 'ground', w: 60, h: 18, color: '#1a2e1a' },
-            { type: 'trees' },
-        ],
-        birds: true,
-        label: 'Bosque',
-    },
-    rio: {
-        emoji: '💧',
-        layers: [
-            { type: 'ground', w: 56, h: 16, color: '#0e1a2e' },
-            { type: 'water' },
-        ],
-        label: 'Río',
-    },
-    campos: {
-        emoji: '🌾',
-        layers: [
-            { type: 'ground', w: 56, h: 18, color: '#2e2a14' },
-            { type: 'crops' },
-        ],
-        label: 'Campos',
-    },
-    taller: {
-        emoji: '🔨',
-        layers: [
-            { type: 'ground', w: 50, h: 16, color: '#1e1e1e' },
-            { type: 'building', w: 36, h: 28, color: '#3a2a1a', roof: '#6b4423' },
-        ],
-        sparks: true,
-        label: 'Taller',
-    },
-    aldea: {
-        emoji: '🏘️',
-        layers: [
-            { type: 'ground', w: 60, h: 18, color: '#2a2218' },
-            { type: 'houses' },
-        ],
-        label: 'Aldea',
-    },
-    caminos: {
-        emoji: '🛤️',
-        layers: [
-            { type: 'ground', w: 50, h: 14, color: '#1a1a14' },
-            { type: 'road' },
-        ],
-        label: 'Caminos',
-    },
-};
-
-// ===== TIME OF DAY HELPERS =====
+// ===== TIME =====
 function getTimePhase() {
     const m = S.time.minutes;
     if (m >= 360 && m < 720) return 'morning';
@@ -101,190 +28,62 @@ function getTimePhase() {
     return 'night';
 }
 
-function getSkyGradient() {
-    const phase = getTimePhase();
-    switch (phase) {
-        case 'morning': return 'linear-gradient(180deg, #1a2744 0%, #2a3f5f 40%, #4a6741 100%)';
-        case 'afternoon': return 'linear-gradient(180deg, #1e3354 0%, #2a4a6e 40%, #3a5a3a 100%)';
-        case 'sunset': return 'linear-gradient(180deg, #2a1a3a 0%, #5a2a2a 40%, #3a2a1a 100%)';
-        case 'night': return 'linear-gradient(180deg, #060810 0%, #0a0e18 40%, #0e1420 100%)';
-    }
-}
-
-function getNightOverlayOpacity() {
-    const phase = getTimePhase();
-    if (phase === 'night') return 0.45;
-    if (phase === 'sunset') return 0.15;
-    return 0;
-}
-
-function getFireGlow() {
-    if (!S.fire.lit) return 'none';
-    const intensity = Math.min(1, S.fire.heat / 20);
-    const r = 80 + intensity * 60;
-    const phase = getTimePhase();
-    const spread = phase === 'night' ? r * 1.5 : r;
-    return `radial-gradient(circle at 50% 55%, rgba(242,166,90,${intensity * 0.3}) 0%, transparent ${spread}px)`;
-}
-
-// ===== WEATHER PARTICLE SYSTEM =====
-function renderWeatherParticles() {
-    const weather = S.weather;
-    if (weather === 'clear') return '';
-
-    let particles = '';
-    const count = weather === 'rain' ? 25 : 15;
-
-    for (let i = 0; i < count; i++) {
-        const x = Math.random() * 100;
-        const delay = Math.random() * 2;
-        const dur = 0.5 + Math.random() * 0.8;
-
-        if (weather === 'rain') {
-            particles += `<div class="iso-rain" style="left:${x}%;animation-delay:${delay}s;animation-duration:${dur}s"></div>`;
-        } else if (weather === 'wind') {
-            const y = 20 + Math.random() * 60;
-            particles += `<div class="iso-wind-leaf" style="top:${y}%;animation-delay:${delay}s">🍃</div>`;
-        }
-    }
-    return `<div class="iso-weather">${particles}</div>`;
-}
-
-// ===== ISOMETRIC RENDERER =====
-function renderIsoBuilding(locId, isActive, isLocked) {
-    const def = ISO_BUILDINGS[locId];
-    if (!def) return '';
-
-    const pos = LOCAL_POS[locId];
-    // Convert to isometric coordinates
-    const isoX = (pos.x / 310) * 100;
-    const isoY = (pos.y / 230) * 100;
-
-    let content = '';
-    const activeClass = isActive ? 'iso-active' : '';
-    const lockedClass = isLocked ? 'iso-locked' : '';
-
-    // Ground shadow
-    content += `<div class="iso-ground" style="width:${def.layers[0].w}px;height:${def.layers[0].h}px;background:${def.layers[0].color}"></div>`;
-
-    // Build specific visuals
-    if (locId === 'campamento') {
-        const fireState = S.fire.lit ? (S.fire.heat > 15 ? 'hot' : 'warm') : 'cold';
-        content += `<div class="iso-campfire ${fireState}">
-            <span class="iso-fire-emoji">${S.fire.lit ? '🔥' : '⚫'}</span>
-            ${S.fire.lit ? '<div class="iso-fire-glow"></div>' : ''}
-        </div>`;
-        content += `<div class="iso-tent">⛺</div>`;
-        if (S.fire.lit && def.smoke) {
-            content += `<div class="iso-smoke">
-                <span class="iso-smoke-p" style="animation-delay:0s">💨</span>
-                <span class="iso-smoke-p" style="animation-delay:0.8s">💨</span>
-                <span class="iso-smoke-p" style="animation-delay:1.6s">💨</span>
-            </div>`;
-        }
-    } else if (locId === 'bosque') {
-        content += `<div class="iso-forest">
-            <span class="iso-tree" style="left:-12px">🌲</span>
-            <span class="iso-tree big" style="left:0px">🌳</span>
-            <span class="iso-tree" style="left:12px">🌲</span>
-            <span class="iso-tree small" style="left:-8px;top:-2px">🌿</span>
-        </div>`;
-        if (def.birds) {
-            content += `<div class="iso-birds">
-                <span class="iso-bird" style="animation-delay:0s">🐦</span>
-                <span class="iso-bird" style="animation-delay:2s">🐦</span>
-            </div>`;
-        }
-    } else if (locId === 'rio') {
-        content += `<div class="iso-river">
-            <div class="iso-water-flow">
-                <span class="iso-wave">〰️</span>
-                <span class="iso-wave" style="animation-delay:0.5s">〰️</span>
+// ===== 3D BUILDING HTML =====
+function buildingHTML(id) {
+    switch (id) {
+    case 'campamento': {
+        const lit = S.fire.lit;
+        const hot = S.fire.heat > 15;
+        return `<div class="b3-camp">
+            <div class="b3-tent"><div class="b3-tent-body"></div><div class="b3-tent-door"></div></div>
+            <div class="b3-fire ${lit ? (hot ? 'hot' : 'warm') : ''}">
+                ${lit ? `<div class="b3-flame f1"></div><div class="b3-flame f2"></div><div class="b3-flame f3"></div>
+                <div class="b3-glow"></div>` : '<div class="b3-ash"></div>'}
             </div>
-            <span class="iso-fish">🐟</span>
+            ${lit ? '<div class="b3-smoke"><i></i><i></i><i></i></div>' : ''}
         </div>`;
-    } else if (locId === 'campos') {
-        content += `<div class="iso-fields">
-            <span class="iso-crop">🌾</span><span class="iso-crop">🌱</span>
-            <span class="iso-crop">🌾</span><span class="iso-crop">🫒</span>
+    }
+    case 'bosque':
+        return `<div class="b3-forest">
+            <div class="b3-tree t1"><div class="b3-trunk"></div><div class="b3-leaves l1"></div><div class="b3-leaves l2"></div></div>
+            <div class="b3-tree t2"><div class="b3-trunk"></div><div class="b3-pine p1"></div><div class="b3-pine p2"></div><div class="b3-pine p3"></div></div>
+            <div class="b3-tree t3"><div class="b3-trunk"></div><div class="b3-leaves l1"></div></div>
         </div>`;
-    } else if (locId === 'taller') {
-        const hasForge = S.unlocked.forge;
-        const hasMill = S.unlocked.molino;
-        content += `<div class="iso-workshop">
-            <div class="iso-building-3d">
-                <div class="iso-wall-front"></div>
-                <div class="iso-wall-side"></div>
-                <div class="iso-roof"></div>
+    case 'rio':
+        return `<div class="b3-river">
+            <div class="b3-water"><div class="b3-ripple"></div><div class="b3-ripple r2"></div><div class="b3-shine"></div></div>
+            <div class="b3-rock"></div><div class="b3-rock r2"></div>
+        </div>`;
+    case 'campos':
+        return `<div class="b3-fields">
+            <div class="b3-row"><i></i><i></i><i></i><i></i></div>
+            <div class="b3-row r2"><i></i><i></i><i></i></div>
+        </div>`;
+    case 'taller': {
+        const forge = S.unlocked.forge;
+        return `<div class="b3-workshop">
+            <div class="b3-bldg">
+                <div class="b3-wall"></div><div class="b3-side"></div>
+                <div class="b3-roof"></div><div class="b3-door"></div>
+                ${forge ? '<div class="b3-chimney"></div>' : ''}
             </div>
-            <span class="iso-workshop-icon">${hasForge ? '⚒️' : hasMill ? '⚙️' : '🔨'}</span>
-        </div>`;
-        if (hasForge && def.sparks) {
-            content += `<div class="iso-sparks">
-                <span class="iso-spark">✨</span>
-                <span class="iso-spark" style="animation-delay:0.4s">✨</span>
-                <span class="iso-spark" style="animation-delay:0.8s">⚡</span>
-            </div>`;
-        }
-    } else if (locId === 'aldea') {
-        const houses = Math.min(3, 1 + Math.floor((S.people?.villagers || 0) / 2));
-        const houseEmojis = ['🏠', '🏡', '🏘️'];
-        content += `<div class="iso-village">`;
-        for (let i = 0; i < houses; i++) {
-            content += `<span class="iso-house" style="left:${(i - 1) * 18}px">${houseEmojis[i] || '🏠'}</span>`;
-        }
-        if (S.people?.villagers > 0) {
-            content += `<span class="iso-villager">🧑‍🌾</span>`;
-        }
-        content += `</div>`;
-    } else if (locId === 'caminos') {
-        content += `<div class="iso-roads">
-            <div class="iso-path"></div>
-            <span class="iso-signpost">🪧</span>
-            ${S.expedition ? `<span class="iso-traveler-away">🐎</span>` : ''}
+            ${forge ? '<div class="b3-sparks"><i></i><i></i><i></i></div>' : ''}
         </div>`;
     }
-
-    // Label
-    content += `<div class="iso-label">${def.label}</div>`;
-
-    return `<div class="iso-node ${activeClass} ${lockedClass}" data-location="${locId}"
-        style="left:${isoX}%;top:${isoY}%">
-        ${content}
-    </div>`;
-}
-
-// ===== WALKING CHARACTER =====
-let walkTarget = null;
-let walkPos = { x: 50, y: 55 }; // Start at campamento (percentage)
-
-function renderWalkingCharacter() {
-    const campPos = LOCAL_POS['campamento'];
-    const homeX = (campPos.x / 310) * 100;
-    const homeY = (campPos.y / 230) * 100;
-
-    if (S.currentLocation && LOCAL_POS[S.currentLocation]) {
-        const target = LOCAL_POS[S.currentLocation];
-        walkTarget = {
-            x: (target.x / 310) * 100,
-            y: (target.y / 230) * 100
-        };
-    } else {
-        walkTarget = { x: homeX, y: homeY };
+    case 'aldea': {
+        const pop = S.people?.villagers || 0;
+        const n = Math.min(3, 1 + Math.floor(pop / 2));
+        let h = '';
+        for (let i = 0; i < n; i++) h += `<div class="b3-house h${i}"><div class="b3-hw"></div><div class="b3-hr"></div></div>`;
+        return `<div class="b3-village">${h}${pop > 0 ? '<div class="b3-npc"></div>' : ''}</div>`;
     }
-
-    // Smooth interpolation toward target
-    const speed = 0.15;
-    walkPos.x += (walkTarget.x - walkPos.x) * speed;
-    walkPos.y += (walkTarget.y - walkPos.y) * speed;
-
-    const moving = Math.abs(walkTarget.x - walkPos.x) > 0.5 || Math.abs(walkTarget.y - walkPos.y) > 0.5;
-    const facingRight = walkTarget.x > walkPos.x;
-
-    return `<div class="iso-character ${moving ? 'walking' : 'idle'}"
-        style="left:${walkPos.x}%;top:${walkPos.y}%;${facingRight ? '' : 'transform:scaleX(-1)'}">
-        🚶
-    </div>`;
+    case 'caminos':
+        return `<div class="b3-roads">
+            <div class="b3-road"></div><div class="b3-sign"></div>
+            ${S.expedition ? '<div class="b3-horse"></div>' : ''}
+        </div>`;
+    default: return '';
+    }
 }
 
 // ===== MAIN RENDER =====
@@ -293,267 +92,176 @@ export function renderSettlement() {
 
     const unlocked = LOCAL_LOCATIONS.filter(isUnlocked);
     const locked = LOCAL_LOCATIONS.filter(l => !isUnlocked(l));
+    const phase = getTimePhase();
+    const fireI = S.fire.lit ? Math.min(1, S.fire.heat / 20) : 0;
+    const campP = LOCAL_POS['campamento'];
 
-    // Isometric paths between locations
-    let pathsHTML = '';
+    // SVG paths
+    let paths = '';
     LOCAL_CONNECTIONS.forEach(([a, b]) => {
-        const pa = LOCAL_POS[a];
-        const pb = LOCAL_POS[b];
+        const pa = LOCAL_POS[a], pb = LOCAL_POS[b];
         if (!pa || !pb) return;
-        const aUn = unlocked.some(l => l.id === a);
-        const bUn = unlocked.some(l => l.id === b);
-        if (!aUn || !bUn) return;
-
-        const x1 = (pa.x / 310) * 100, y1 = (pa.y / 230) * 100;
-        const x2 = (pb.x / 310) * 100, y2 = (pb.y / 230) * 100;
-
-        pathsHTML += `<svg class="iso-path-line" viewBox="0 0 100 100" preserveAspectRatio="none">
-            <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
-                stroke="#3a2a1a" stroke-width="0.8" stroke-dasharray="2,2" opacity="0.5"/>
-        </svg>`;
+        if (!unlocked.some(l => l.id === a) || !unlocked.some(l => l.id === b)) return;
+        paths += `<line x1="${pa.x}" y1="${pa.y}" x2="${pb.x}" y2="${pb.y}" stroke="rgba(160,130,80,0.25)" stroke-width="2.5" stroke-dasharray="5,5"/>`;
     });
 
-    // Render nodes
-    let nodesHTML = '';
-    unlocked.forEach(loc => {
-        const isActive = S.currentLocation === loc.id;
-        nodesHTML += renderIsoBuilding(loc.id, isActive, false);
+    // Nodes
+    let nodes = '';
+    const all = [...unlocked.map(l => ({...l, locked: false})), ...locked.map(l => ({...l, locked: true}))];
+    all.forEach(loc => {
+        const p = LOCAL_POS[loc.id];
+        const active = S.currentLocation === loc.id;
+        const cls = `s3-node${active ? ' active' : ''}${loc.locked ? ' locked' : ''}`;
+
+        nodes += `<div class="${cls}" data-location="${loc.id}" style="left:${p.x}px;top:${p.y}px">
+            <div class="s3-hitarea"></div>
+            <div class="s3-platform"></div>
+            <div class="s3-building">${loc.locked ? '<div class="s3-lock">🔒</div>' : buildingHTML(loc.id)}</div>
+            <div class="s3-name">${loc.name}</div>
+            ${active ? '<div class="s3-ring"></div>' : ''}
+        </div>`;
     });
-    locked.forEach(loc => {
-        nodesHTML += renderIsoBuilding(loc.id, false, true);
-    });
 
-    // Character
-    const characterHTML = renderWalkingCharacter();
+    // Stars
+    let stars = '';
+    if (phase === 'night') {
+        for (let i = 0; i < 15; i++)
+            stars += `<div class="s3-star" style="left:${Math.random()*95}%;top:${Math.random()*35}%;animation-delay:${Math.random()*3}s"></div>`;
+    }
 
-    // Night overlay
-    const nightOpacity = getNightOverlayOpacity();
-    const fireGlow = getFireGlow();
+    // Weather
+    let weather = '';
+    if (S.weather === 'rain') {
+        for (let i = 0; i < 30; i++)
+            weather += `<div class="s3-rain" style="left:${Math.random()*100}%;animation-delay:${(Math.random()*1.2).toFixed(2)}s"></div>`;
+    } else if (S.weather === 'wind') {
+        for (let i = 0; i < 6; i++)
+            weather += `<div class="s3-wind" style="top:${20+Math.random()*60}%;animation-delay:${(Math.random()*2.5).toFixed(2)}s"></div>`;
+    }
 
-    // Build the scene
-    const sceneHTML = `
-    <div class="iso-scene" style="background:${getSkyGradient()}">
-        <div class="iso-ground-plane">
-            ${pathsHTML}
-            ${nodesHTML}
-            ${characterHTML}
-            ${renderWeatherParticles()}
+    settlementBody.innerHTML = `
+    <div class="s3-scene ${phase}" style="--fi:${fireI};--fx:${campP.x};--fy:${campP.y}">
+        ${stars ? `<div class="s3-stars">${stars}</div>` : ''}
+        <div class="s3-world" style="--cols:310;--rows:230">
+            <svg class="s3-paths" viewBox="0 0 310 230">${paths}</svg>
+            ${nodes}
         </div>
-        <div class="iso-night-overlay" style="opacity:${nightOpacity}"></div>
-        <div class="iso-fire-light" style="background:${fireGlow}"></div>
+        ${weather ? `<div class="s3-weather">${weather}</div>` : ''}
+        <div class="s3-night"></div>
+        <div class="s3-fireglow"></div>
+        <div class="s3-vig"></div>
+    </div>
+
+    <div class="s3-strip">
+        ${unlocked.map(loc => `
+        <button class="s3-btn${S.currentLocation === loc.id ? ' active' : ''}" data-location="${loc.id}">
+            <span class="s3-btn-icon">${loc.emoji}</span>
+            <span class="s3-btn-name">${loc.name}</span>
+        </button>`).join('')}
+        ${locked.length > 0 ? `<div class="s3-btn locked"><span class="s3-btn-icon">🔒</span><span class="s3-btn-name">${locked.length} más</span></div>` : ''}
     </div>`;
 
-    // Location cards (below the isometric view)
-    let cardsHTML = '<div class="location-cards">';
-    unlocked.forEach(loc => {
-        const isCurrent = S.currentLocation === loc.id;
-        cardsHTML += `
-        <div class="location-card ${isCurrent ? 'focused' : ''}" data-location="${loc.id}">
-            <span class="location-card-emoji">${loc.emoji}</span>
-            <div class="location-card-info">
-                <div class="location-card-name">${loc.name}</div>
-                <div class="location-card-desc">${loc.desc}</div>
-            </div>
-        </div>`;
-    });
-
-    if (locked.length > 0) {
-        cardsHTML += `<div class="location-card locked">
-            <span class="location-card-emoji">🔒</span>
-            <div class="location-card-info">
-                <div class="location-card-name">${locked.length} por desbloquear</div>
-                <div class="location-card-desc">Progresa para descubrir más lugares</div>
-            </div>
-        </div>`;
-    }
-    cardsHTML += '</div>';
-
-    settlementBody.innerHTML = sceneHTML + cardsHTML;
-
-    // --- Event Listeners ---
-    settlementBody.querySelectorAll('.iso-node[data-location]').forEach(node => {
-        if (node.classList.contains('iso-locked')) return;
-        node.addEventListener('click', () => {
-            openLocation(node.getAttribute('data-location'));
-        });
-    });
-
-    settlementBody.querySelectorAll('.location-card[data-location]').forEach(card => {
-        card.addEventListener('click', () => {
-            openLocation(card.getAttribute('data-location'));
-        });
-    });
+    // Events — nodes
+    settlementBody.querySelectorAll('.s3-node:not(.locked)').forEach(n =>
+        n.addEventListener('click', () => openLocation(n.dataset.location))
+    );
+    // Events — strip buttons
+    settlementBody.querySelectorAll('.s3-btn:not(.locked)').forEach(b =>
+        b.addEventListener('click', () => openLocation(b.dataset.location))
+    );
 }
 
-// ===== AMBIENT SOUND SYSTEM =====
-let currentAmbient = null;
-let ambientInterval = null;
+// ===== AMBIENT =====
+let ambInt = null, ambNodes = [];
 
-function playAmbientForLocation(locId) {
+function playAmbient(id) {
     stopAmbient();
-    if (AudioSystem.muted) return;
-
-    const ambients = {
-        bosque: () => playNatureLoop('forest'),
-        rio: () => playNatureLoop('river'),
-        taller: () => playNatureLoop('workshop'),
-        aldea: () => playNatureLoop('village'),
-        campamento: () => { if (S.fire.lit) playNatureLoop('fire'); },
-    };
-
-    if (ambients[locId]) {
-        ambients[locId]();
-    }
-}
-
-function playNatureLoop(type) {
-    if (!AudioSystem.ctx || AudioSystem.muted) return;
+    if (AudioSystem.muted || !AudioSystem.ctx) return;
     if (AudioSystem.ctx.state === 'suspended') AudioSystem.ctx.resume();
-
     const ctx = AudioSystem.ctx;
-    currentAmbient = { nodes: [], type };
-
-    if (type === 'forest') {
-        // Birds chirping periodically
-        ambientInterval = setInterval(() => {
-            if (AudioSystem.muted) return;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sine';
-            const t = ctx.currentTime;
-            const baseFreq = 1800 + Math.random() * 1200;
-            osc.frequency.setValueAtTime(baseFreq, t);
-            osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, t + 0.05);
-            osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, t + 0.1);
-            osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.1, t + 0.15);
-            gain.gain.setValueAtTime(0.012, t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-            osc.start(t);
-            osc.stop(t + 0.2);
-        }, 1500 + Math.random() * 2000);
-    } else if (type === 'river') {
-        // White noise water
-        const bufferSize = ctx.sampleRate * 2;
-        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = (Math.random() * 2 - 1) * 0.015;
-        }
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.loop = true;
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.value = 800;
-        const gain = ctx.createGain();
-        gain.gain.value = 0.08;
-        source.connect(filter);
-        filter.connect(gain);
-        gain.connect(ctx.destination);
-        source.start();
-        currentAmbient.nodes.push(source, gain);
-    } else if (type === 'workshop') {
-        ambientInterval = setInterval(() => {
-            if (AudioSystem.muted) return;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'square';
-            const t = ctx.currentTime;
-            osc.frequency.setValueAtTime(200, t);
-            osc.frequency.exponentialRampToValueAtTime(100, t + 0.06);
-            gain.gain.setValueAtTime(0.02, t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-            osc.start(t);
-            osc.stop(t + 0.06);
-        }, 2000 + Math.random() * 1500);
-    } else if (type === 'village') {
-        ambientInterval = setInterval(() => {
-            if (AudioSystem.muted) return;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sine';
-            const t = ctx.currentTime;
-            osc.frequency.setValueAtTime(300 + Math.random() * 200, t);
-            gain.gain.setValueAtTime(0.008, t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-            osc.start(t);
-            osc.stop(t + 0.1);
-        }, 3000 + Math.random() * 2000);
-    } else if (type === 'fire') {
-        // Crackling
-        ambientInterval = setInterval(() => {
-            if (AudioSystem.muted) return;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.type = 'sawtooth';
-            const t = ctx.currentTime;
-            osc.frequency.setValueAtTime(80 + Math.random() * 40, t);
-            gain.gain.setValueAtTime(0.01, t);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-            osc.start(t);
-            osc.stop(t + 0.04);
-        }, 200 + Math.random() * 300);
-    }
+    const make = {
+        bosque() {
+            ambInt = setInterval(() => {
+                if (AudioSystem.muted) return;
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination); o.type = 'sine';
+                const t = ctx.currentTime, f = 1800 + Math.random() * 1200;
+                o.frequency.setValueAtTime(f, t);
+                o.frequency.exponentialRampToValueAtTime(f * 1.2, t + 0.08);
+                o.frequency.exponentialRampToValueAtTime(f * 0.9, t + 0.15);
+                g.gain.setValueAtTime(0.012, t);
+                g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+                o.start(t); o.stop(t + 0.2);
+            }, 1500 + Math.random() * 2000);
+        },
+        rio() {
+            const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+            const d = buf.getChannelData(0);
+            for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.012;
+            const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+            const flt = ctx.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 700;
+            const g = ctx.createGain(); g.gain.value = 0.06;
+            src.connect(flt); flt.connect(g); g.connect(ctx.destination); src.start();
+            ambNodes.push(src);
+        },
+        campamento() {
+            if (!S.fire.lit) return;
+            ambInt = setInterval(() => {
+                if (AudioSystem.muted) return;
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination); o.type = 'sawtooth';
+                const t = ctx.currentTime;
+                o.frequency.setValueAtTime(80 + Math.random() * 40, t);
+                g.gain.setValueAtTime(0.01, t);
+                g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+                o.start(t); o.stop(t + 0.04);
+            }, 200 + Math.random() * 300);
+        },
+        taller() {
+            ambInt = setInterval(() => {
+                if (AudioSystem.muted) return;
+                const o = ctx.createOscillator(), g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination); o.type = 'square';
+                const t = ctx.currentTime;
+                o.frequency.setValueAtTime(200, t);
+                o.frequency.exponentialRampToValueAtTime(100, t + 0.06);
+                g.gain.setValueAtTime(0.02, t);
+                g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+                o.start(t); o.stop(t + 0.06);
+            }, 2000 + Math.random() * 1500);
+        },
+    };
+    if (make[id]) make[id]();
 }
 
 function stopAmbient() {
-    if (ambientInterval) {
-        clearInterval(ambientInterval);
-        ambientInterval = null;
-    }
-    if (currentAmbient?.nodes) {
-        currentAmbient.nodes.forEach(n => {
-            try { n.stop(); } catch (e) { /* already stopped */ }
-            try { n.disconnect(); } catch (e) { /* ok */ }
-        });
-    }
-    currentAmbient = null;
+    if (ambInt) { clearInterval(ambInt); ambInt = null; }
+    ambNodes.forEach(n => { try { n.stop(); } catch(e){} try { n.disconnect(); } catch(e){} });
+    ambNodes = [];
 }
 
-// ===== OPEN / CLOSE LOCATION =====
+// ===== OPEN / CLOSE =====
 export function openLocation(locationId) {
     const loc = LOCAL_LOCATIONS.find(l => l.id === locationId);
-    if (!loc || !isUnlocked(loc)) return;
-    if (!locationOverlay) return;
-
+    if (!loc || !isUnlocked(loc) || !locationOverlay) return;
     S.currentLocation = locationId;
     vibrate(15);
 
-    // Set overlay content
     if (locationIcon) locationIcon.textContent = loc.emoji;
     if (locationTitle) locationTitle.textContent = loc.name;
     if (locationDesc) locationDesc.textContent = loc.desc;
+    if (locationActions) renderLocationActions(locationId, locationActions);
 
-    // Render actions
-    if (locationActions) {
-        renderLocationActions(locationId, locationActions);
-    }
-
-    // Show overlay with 3D transition
     locationOverlay.classList.remove('hidden');
-    locationOverlay.querySelector('.location-panel')?.classList.add('panel-enter');
-    setTimeout(() => {
-        locationOverlay.querySelector('.location-panel')?.classList.remove('panel-enter');
-    }, 400);
+    const panel = locationOverlay.querySelector('.location-panel');
+    if (panel) { panel.classList.add('panel-enter'); setTimeout(() => panel.classList.remove('panel-enter'), 400); }
 
-    // Start ambient sound
-    playAmbientForLocation(locationId);
-
+    playAmbient(locationId);
     renderSettlement();
 }
 
 export function closeLocation() {
     if (!locationOverlay) return;
-
-    // 3D exit animation
     const panel = locationOverlay.querySelector('.location-panel');
     if (panel) {
         panel.classList.add('panel-exit');
@@ -572,7 +280,6 @@ export function closeLocation() {
     }
 }
 
-// Refresh the open location panel
 export function refreshOpenLocation() {
     if (S.currentLocation && locationActions && !locationOverlay?.classList.contains('hidden')) {
         renderLocationActions(S.currentLocation, locationActions);
