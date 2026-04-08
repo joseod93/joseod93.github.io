@@ -157,21 +157,3 @@ export const LOCAL_LOCATIONS = [
     { id: 'caminos', name: 'Caminos', emoji: '🛤️', unlock: 'expedition', desc: 'Rutas hacia tierras lejanas.' },
 ];
 
-export const LOCAL_POS = {
-    campamento: { x: 155, y: 115 },
-    bosque:     { x: 55,  y: 55 },
-    rio:        { x: 255, y: 55 },
-    campos:     { x: 55,  y: 175 },
-    taller:     { x: 255, y: 175 },
-    aldea:      { x: 155, y: 40 },
-    caminos:    { x: 155, y: 200 },
-};
-
-export const LOCAL_CONNECTIONS = [
-    ['campamento', 'bosque'],
-    ['campamento', 'rio'],
-    ['campamento', 'campos'],
-    ['campamento', 'taller'],
-    ['campamento', 'aldea'],
-    ['campamento', 'caminos'],
-];
