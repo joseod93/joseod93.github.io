@@ -1,0 +1,228 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    background: #1a1a2e;
+    font-family: 'Press Start 2P', monospace;
+    overflow: hidden;
+    height: 100%;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+#game-wrapper {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 4px;
+}
+
+#game {
+    border: 3px solid #333;
+    border-radius: 4px;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: default;
+    max-width: 100vw;
+    max-height: 60vh;
+    width: 800px;
+    height: 608px;
+}
+
+/* Touch controls */
+#touch-controls {
+    display: none;
+    width: 100%;
+    max-width: 500px;
+    padding: 8px 16px;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    margin-top: 4px;
+}
+
+.touch-dpad {
+    position: relative;
+    width: 150px;
+    height: 150px;
+}
+
+.touch-btn {
+    position: absolute;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.12);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 22px;
+    font-family: 'Press Start 2P', monospace;
+    transition: background 0.05s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.touch-btn.active {
+    background: rgba(255, 255, 255, 0.35);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+.dpad-up {
+    top: 0;
+    left: 50px;
+    width: 50px;
+    height: 50px;
+}
+
+.dpad-down {
+    bottom: 0;
+    left: 50px;
+    width: 50px;
+    height: 50px;
+}
+
+.dpad-left {
+    top: 50px;
+    left: 0;
+    width: 50px;
+    height: 50px;
+}
+
+.dpad-right {
+    top: 50px;
+    right: 0;
+    width: 50px;
+    height: 50px;
+}
+
+.dpad-center {
+    position: absolute;
+    top: 50px;
+    left: 50px;
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+}
+
+.touch-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.action-btn {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    font-size: 18px;
+}
+
+.btn-a {
+    background: rgba(68, 187, 68, 0.3);
+    border-color: rgba(68, 187, 68, 0.6);
+}
+
+.btn-a.active {
+    background: rgba(68, 187, 68, 0.6);
+}
+
+.btn-b {
+    background: rgba(255, 68, 68, 0.3);
+    border-color: rgba(255, 68, 68, 0.6);
+}
+
+.btn-b.active {
+    background: rgba(255, 68, 68, 0.6);
+}
+
+/* Show touch controls on touch devices / small screens */
+@media (max-width: 900px), (hover: none) and (pointer: coarse) {
+    #touch-controls {
+        display: flex;
+    }
+
+    #game {
+        max-height: 55vh;
+    }
+
+    body {
+        justify-content: flex-start;
+        padding-top: 2px;
+    }
+}
+
+@media (max-width: 500px) {
+    #game {
+        border-width: 2px;
+        max-height: 50vh;
+    }
+
+    .touch-dpad {
+        width: 130px;
+        height: 130px;
+    }
+
+    .dpad-up { left: 40px; width: 46px; height: 46px; }
+    .dpad-down { left: 40px; width: 46px; height: 46px; }
+    .dpad-left { top: 42px; width: 46px; height: 46px; }
+    .dpad-right { top: 42px; width: 46px; height: 46px; }
+    .dpad-center { top: 42px; left: 40px; width: 46px; height: 46px; }
+
+    .action-btn {
+        width: 56px;
+        height: 56px;
+        font-size: 16px;
+    }
+}
+
+/* Landscape phone */
+@media (max-height: 500px) and (orientation: landscape) {
+    #game {
+        max-height: 70vh;
+    }
+
+    #touch-controls {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        max-width: 100%;
+        padding: 4px 20px;
+    }
+
+    .touch-dpad {
+        width: 110px;
+        height: 110px;
+    }
+
+    .dpad-up { left: 34px; width: 40px; height: 40px; }
+    .dpad-down { left: 34px; width: 40px; height: 40px; }
+    .dpad-left { top: 36px; width: 40px; height: 40px; }
+    .dpad-right { top: 36px; width: 40px; height: 40px; }
+    .dpad-center { top: 36px; left: 34px; width: 40px; height: 40px; }
+
+    .action-btn {
+        width: 48px;
+        height: 48px;
+        font-size: 14px;
+    }
+}

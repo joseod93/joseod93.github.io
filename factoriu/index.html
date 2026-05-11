@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>Imperio Industrial</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-overlay">
+        <!-- Resource Bar -->
+        <div id="resource-bar">
+            <div id="resource-items"></div>
+            <div id="power-bar"><div id="power-fill"></div><span id="power-text"></span></div>
+            <div id="research-bar"><div id="research-fill"></div><span id="research-text"></span></div>
+        </div>
+
+        <!-- Top Buttons -->
+        <div id="top-buttons">
+            <button id="btn-tech" title="Árbol Tecnológico">🔬</button>
+            <button id="btn-stats" title="Estadísticas">📊</button>
+            <button id="btn-prestige" title="Prestigio">⭐</button>
+            <button id="btn-settings" title="Ajustes">⚙️</button>
+        </div>
+
+        <!-- Toast Container -->
+        <div id="toast-container"></div>
+
+        <!-- Info Panel -->
+        <div id="info-panel"></div>
+
+        <!-- Context Menu -->
+        <div id="context-menu"></div>
+
+        <!-- Tutorial -->
+        <div id="tutorial-box"></div>
+
+        <!-- Toolbar -->
+        <div id="toolbar">
+            <div id="build-actions">
+                <span id="build-cost"></span>
+                <button id="btn-rotate" title="Rotar (R)">↻</button>
+                <button id="btn-cancel" title="Cancelar (Esc)">✕</button>
+            </div>
+            <div id="toolbar-buildings"></div>
+        </div>
+
+        <!-- Pause Indicator -->
+        <div id="pause-indicator">⏸ PAUSADO</div>
+
+        <!-- Modal -->
+        <div id="modal">
+            <div id="modal-inner">
+                <button id="modal-close">×</button>
+                <div id="modal-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/camera.js"></script>
+    <script src="js/items.js"></script>
+    <script src="js/world.js"></script>
+    <script src="js/particles.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/belts.js"></script>
+    <script src="js/recipes.js"></script>
+    <script src="js/tech.js"></script>
+    <script src="js/prestige.js"></script>
+    <script src="js/buildings.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/save.js"></script>
+    <script src="js/tutorial.js"></script>
+    <script src="js/input.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
