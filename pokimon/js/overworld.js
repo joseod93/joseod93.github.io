@@ -42,6 +42,7 @@ Game.Overworld = {
         this.pauseSubState = null;
         this.npcBattlePending = null;
         this.initNPCs();
+        if (Game.Tilemap) Game.Tilemap.invalidate();
     },
 
     initNPCs: function() {
@@ -392,113 +393,30 @@ Game.Overworld = {
         return targets;
     },
 
+    // ===================== RENDERING =====================
+
     draw: function() {
         var R = Game.Renderer;
         var C = Game.Constants;
         var p = this.player;
+        var ctx = R.ctx;
+        var t = performance.now();
 
         var camX = Math.floor(p.pixelX - 400 + C.TILE_SIZE / 2);
         var camY = Math.floor(p.pixelY - 304 + C.TILE_SIZE / 2);
         camX = Game.Utils.clamp(camX, 0, C.MAP_COLS * C.TILE_SIZE - 800);
         camY = Game.Utils.clamp(camY, 0, C.MAP_ROWS * C.TILE_SIZE - 608);
 
-        R.clear('#222');
+        R.clear('#111');
 
-        var baseImg = Game.Assets ? Game.Assets.get('tile_base') : null;
-        var wallImg = Game.Assets ? Game.Assets.get('tile_wall') : null;
-        var grassImg = Game.Assets ? Game.Assets.get('tile_grass') : null;
-        var healImg = Game.Assets ? Game.Assets.get('tile_heal') : null;
-        var pathImg = Game.Assets ? Game.Assets.get('tile_path') : null;
+        Game.Tilemap.drawGround(ctx, camX, camY);
 
-        var ctx = R.ctx;
-        var t = performance.now();
+        this.drawAnimatedOverlays(ctx, camX, camY, C, t);
 
-        for (var row = 0; row < C.MAP_ROWS; row++) {
-            for (var col = 0; col < C.MAP_COLS; col++) {
-                var tile = this.map.tiles[row][col];
-                var tx = col * C.TILE_SIZE - camX;
-                var ty = row * C.TILE_SIZE - camY;
+        this.drawYSorted(R, ctx, p, camX, camY, C, t);
 
-                if (tx < -C.TILE_SIZE || tx > 800 || ty < -C.TILE_SIZE || ty > 608) continue;
+        Game.Tilemap.drawCanopy(ctx, camX, camY);
 
-                if (baseImg) {
-                    ctx.drawImage(baseImg, (col % 16) * 32, (row % 16) * 32, 32, 32, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
-                } else {
-                    R.drawRect(tx, ty, C.TILE_SIZE, C.TILE_SIZE, '#88cc44');
-                }
-
-                if (tile === C.TILE_WALL) {
-                    if (wallImg) {
-                        ctx.drawImage(wallImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
-                    } else {
-                        var grd = ctx.createLinearGradient(tx, ty, tx, ty + C.TILE_SIZE);
-                        grd.addColorStop(0, '#3d7a22');
-                        grd.addColorStop(0.6, '#2a5518');
-                        grd.addColorStop(1, '#1e3d12');
-                        ctx.fillStyle = grd;
-                        ctx.fillRect(tx + 1, ty + 1, C.TILE_SIZE - 2, C.TILE_SIZE - 6);
-                        ctx.fillStyle = '#664433';
-                        ctx.fillRect(tx + 6, ty + C.TILE_SIZE - 8, C.TILE_SIZE - 12, 7);
-                    }
-                }
-
-                if (tile === C.TILE_GRASS) {
-                    if (grassImg) {
-                        ctx.drawImage(grassImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
-                    }
-                    var sway = Math.sin(t / 600 + col * 0.8 + row * 0.5);
-                    for (var g = 0; g < 3; g++) {
-                        var gx = tx + 4 + g * 9 + ((col + g) % 3);
-                        var gy = ty + 8 + (g % 2) * 5;
-                        var lean = sway * 2.5;
-                        ctx.fillStyle = g % 2 === 0 ? 'rgba(45,136,32,0.6)' : 'rgba(77,187,48,0.6)';
-                        ctx.beginPath();
-                        ctx.moveTo(gx, gy + 14);
-                        ctx.quadraticCurveTo(gx + lean, gy, gx + 2 + lean, gy - 3);
-                        ctx.lineTo(gx + 3 + lean, gy);
-                        ctx.quadraticCurveTo(gx + 3, gy + 7, gx + 3, gy + 14);
-                        ctx.fill();
-                    }
-                }
-
-                if (tile === C.TILE_HEAL) {
-                    if (healImg) {
-                        ctx.drawImage(healImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
-                    }
-                    var pulse = 0.5 + Math.sin(t / 400) * 0.3;
-                    ctx.globalAlpha = pulse;
-                    ctx.fillStyle = 'rgba(255,100,130,0.3)';
-                    ctx.beginPath();
-                    ctx.arc(tx + 16, ty + 16, 18, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.globalAlpha = 1;
-                }
-
-                if (tile === C.TILE_PATH) {
-                    if (pathImg) {
-                        ctx.drawImage(pathImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
-                    } else {
-                        ctx.fillStyle = '#bbaa77';
-                        ctx.fillRect(tx + 1, ty + 1, C.TILE_SIZE - 2, C.TILE_SIZE - 2);
-                    }
-                }
-
-                if (tile === C.TILE_SHOP) {
-                    ctx.fillStyle = '#cc9944';
-                    ctx.fillRect(tx + 1, ty + 1, C.TILE_SIZE - 2, C.TILE_SIZE - 2);
-                    var shopPulse = 0.6 + Math.sin(t / 500) * 0.2;
-                    ctx.globalAlpha = shopPulse;
-                    ctx.fillStyle = '#ffdd44';
-                    ctx.font = '14px monospace';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('$', tx + 16, ty + 22);
-                    ctx.globalAlpha = 1;
-                }
-            }
-        }
-
-        this.drawNPCs(R, ctx, camX, camY, C, t);
-        this.drawPlayer(R, ctx, p, camX, camY, C, t);
         this.drawHUD(R);
 
         if (this.showHealMsg) {
@@ -516,60 +434,141 @@ Game.Overworld = {
         }
     },
 
-    drawNPCs: function(R, ctx, camX, camY, C, t) {
-        for (var i = 0; i < this.npcs.length; i++) {
-            var npc = this.npcs[i];
-            var nx = npc.x * C.TILE_SIZE - camX;
-            var ny = npc.y * C.TILE_SIZE - camY;
+    drawAnimatedOverlays: function(ctx, camX, camY, C, t) {
+        for (var row = 0; row < C.MAP_ROWS; row++) {
+            for (var col = 0; col < C.MAP_COLS; col++) {
+                var tile = this.map.tiles[row][col];
+                var tx = col * C.TILE_SIZE - camX;
+                var ty = row * C.TILE_SIZE - camY;
 
-            if (nx < -C.TILE_SIZE || nx > 800 || ny < -C.TILE_SIZE || ny > 608) continue;
+                if (tx < -C.TILE_SIZE || tx > 800 || ty < -C.TILE_SIZE || ty > 608) continue;
 
-            ctx.save();
+                if (tile === C.TILE_GRASS) {
+                    var sway = Math.sin(t / 600 + col * 0.8 + row * 0.5);
+                    for (var g = 0; g < 3; g++) {
+                        var gx = tx + 4 + g * 9 + ((col + g) % 3);
+                        var gy = ty + 8 + (g % 2) * 5;
+                        var lean = sway * 2.5;
+                        ctx.fillStyle = g % 2 === 0 ? 'rgba(40,130,28,0.65)' : 'rgba(70,180,42,0.65)';
+                        ctx.beginPath();
+                        ctx.moveTo(gx, gy + 14);
+                        ctx.quadraticCurveTo(gx + lean, gy, gx + 2 + lean, gy - 3);
+                        ctx.lineTo(gx + 3 + lean, gy);
+                        ctx.quadraticCurveTo(gx + 3, gy + 7, gx + 3, gy + 14);
+                        ctx.fill();
+                    }
+                }
 
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.beginPath();
-            ctx.ellipse(nx + 16, ny + 30, 10, 4, 0, 0, Math.PI * 2);
-            ctx.fill();
+                if (tile === C.TILE_HEAL) {
+                    var pulse = 0.4 + Math.sin(t / 400) * 0.3;
+                    ctx.globalAlpha = pulse;
+                    ctx.fillStyle = 'rgba(255,90,120,0.35)';
+                    ctx.beginPath();
+                    ctx.arc(tx + 16, ty + 16, 18, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = 'rgba(255,70,100,0.7)';
+                    ctx.fillRect(tx + 12, ty + 6, 8, 20);
+                    ctx.fillRect(tx + 6, ty + 12, 20, 8);
+                }
 
-            var bob = Math.sin(t / 800 + i * 2) * 1.5;
-
-            ctx.fillStyle = npc.sprite;
-            ctx.beginPath();
-            ctx.arc(nx + 16, ny + 14 + bob, 10, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#ffddcc';
-            ctx.beginPath();
-            ctx.arc(nx + 16, ny + 8 + bob, 7, 0, Math.PI * 2);
-            ctx.fill();
-
-            var eyeX = 0;
-            if (npc.direction === 'left') eyeX = -2;
-            if (npc.direction === 'right') eyeX = 2;
-
-            if (npc.direction !== 'up') {
-                ctx.fillStyle = '#222';
-                ctx.beginPath();
-                ctx.arc(nx + 13 + eyeX, ny + 7 + bob, 1.5, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(nx + 19 + eyeX, ny + 7 + bob, 1.5, 0, Math.PI * 2);
-                ctx.fill();
+                if (tile === C.TILE_SHOP) {
+                    var shopPulse = 0.6 + Math.sin(t / 500) * 0.2;
+                    ctx.globalAlpha = shopPulse;
+                    ctx.fillStyle = '#ffdd44';
+                    ctx.font = '14px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('$', tx + 16, ty + 22);
+                    ctx.globalAlpha = 1;
+                }
             }
-
-            if (npc.defeated) {
-                ctx.globalAlpha = 0.5;
-            }
-
-            if (!npc.defeated) {
-                ctx.fillStyle = '#ff3333';
-                ctx.font = '8px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText('!', nx + 16, ny - 4 + bob);
-            }
-
-            ctx.restore();
         }
+    },
+
+    drawYSorted: function(R, ctx, p, camX, camY, C, t) {
+        var entities = [];
+
+        entities.push({
+            type: 'player',
+            sortY: p.pixelY + C.TILE_SIZE
+        });
+
+        for (var i = 0; i < this.npcs.length; i++) {
+            entities.push({
+                type: 'npc',
+                index: i,
+                sortY: this.npcs[i].y * C.TILE_SIZE + C.TILE_SIZE
+            });
+        }
+
+        var trunks = Game.Tilemap.getTrunkPositions();
+        for (var i = 0; i < trunks.length; i++) {
+            entities.push({
+                type: 'trunk',
+                data: trunks[i],
+                sortY: trunks[i].y + C.TILE_SIZE
+            });
+        }
+
+        entities.sort(function(a, b) { return a.sortY - b.sortY; });
+
+        for (var i = 0; i < entities.length; i++) {
+            var e = entities[i];
+            if (e.type === 'player') {
+                this.drawPlayer(R, ctx, p, camX, camY, C, t);
+            } else if (e.type === 'npc') {
+                this.drawSingleNPC(ctx, this.npcs[e.index], camX, camY, C, t);
+            } else if (e.type === 'trunk') {
+                Game.Tilemap.drawTrunk(ctx, e.data, camX, camY);
+            }
+        }
+    },
+
+    drawSingleNPC: function(ctx, npc, camX, camY, C, t) {
+        var nx = npc.x * C.TILE_SIZE - camX;
+        var ny = npc.y * C.TILE_SIZE - camY;
+
+        if (nx < -C.TILE_SIZE || nx > 800 || ny < -C.TILE_SIZE || ny > 608) return;
+
+        ctx.save();
+        if (npc.defeated) ctx.globalAlpha = 0.5;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.beginPath();
+        ctx.ellipse(nx + 16, ny + 30, 10, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        var bob = Math.sin(t / 800 + npc.x * 2) * 1.5;
+
+        ctx.fillStyle = npc.sprite;
+        ctx.beginPath();
+        ctx.arc(nx + 16, ny + 14 + bob, 10, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffddcc';
+        ctx.beginPath();
+        ctx.arc(nx + 16, ny + 8 + bob, 7, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (npc.direction !== 'up') {
+            var eyeX = npc.direction === 'left' ? -2 : (npc.direction === 'right' ? 2 : 0);
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.arc(nx + 13 + eyeX, ny + 7 + bob, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(nx + 19 + eyeX, ny + 7 + bob, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        if (!npc.defeated) {
+            ctx.fillStyle = '#ff3333';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('!', nx + 16, ny - 4 + bob);
+        }
+
+        ctx.restore();
     },
 
     drawPlayer: function(R, ctx, p, camX, camY, C, t) {

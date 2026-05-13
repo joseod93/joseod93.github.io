@@ -534,7 +534,6 @@ Game.Main = {
         ctx.strokeText('MONSTER', 400, 170 + offset);
         ctx.strokeText('BATTLE', 400, 235 + offset);
 
-        R.drawText('Un juego estilo Pokemon', 400, 310, { size: 10, color: '#667', align: 'center' });
 
         var hasSave = Game.Save.exists();
         var blink = Math.sin(t / 500) > 0;
