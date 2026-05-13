@@ -46,33 +46,93 @@ Game.Renderer = {
     },
 
     drawHPBar: function(x, y, width, current, max) {
+        var ctx = this.ctx;
         var ratio = max > 0 ? current / max : 0;
-        var barH = 10;
-        var color = ratio > 0.5 ? '#44dd44' : (ratio > 0.2 ? '#ddcc00' : '#dd3333');
+        var barH = 12;
+        var fx = Math.floor(x), fy = Math.floor(y);
 
-        this.drawRect(x, y, width, barH, '#333');
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(fx, fy, width, barH, 4);
+        ctx.fillStyle = '#222';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
         if (ratio > 0) {
-            this.drawRect(x + 1, y + 1, Math.floor((width - 2) * ratio), barH - 2, color);
+            var barW = Math.floor((width - 2) * ratio);
+            var grd;
+            if (ratio > 0.5) {
+                grd = ctx.createLinearGradient(fx, fy, fx, fy + barH);
+                grd.addColorStop(0, '#66ee66');
+                grd.addColorStop(1, '#33aa33');
+            } else if (ratio > 0.2) {
+                grd = ctx.createLinearGradient(fx, fy, fx, fy + barH);
+                grd.addColorStop(0, '#eecc33');
+                grd.addColorStop(1, '#bb9900');
+            } else {
+                grd = ctx.createLinearGradient(fx, fy, fx, fy + barH);
+                grd.addColorStop(0, '#ee4444');
+                grd.addColorStop(1, '#aa2222');
+            }
+            ctx.beginPath();
+            ctx.roundRect(fx + 1, fy + 1, barW, barH - 2, 3);
+            ctx.fillStyle = grd;
+            ctx.fill();
         }
-        this.drawRectOutline(x, y, width, barH, '#555', 1);
+        ctx.restore();
     },
 
     drawXPBar: function(x, y, width, current, max) {
+        var ctx = this.ctx;
         var ratio = max > 0 ? Math.min(current / max, 1) : 0;
-        var barH = 6;
+        var barH = 7;
+        var fx = Math.floor(x), fy = Math.floor(y);
 
-        this.drawRect(x, y, width, barH, '#222');
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(fx, fy, width, barH, 3);
+        ctx.fillStyle = '#181830';
+        ctx.fill();
+
         if (ratio > 0) {
-            this.drawRect(x + 1, y + 1, Math.floor((width - 2) * ratio), barH - 2, '#4488ff');
+            var grd = ctx.createLinearGradient(fx, fy, fx, fy + barH);
+            grd.addColorStop(0, '#66aaff');
+            grd.addColorStop(1, '#3366cc');
+            ctx.beginPath();
+            ctx.roundRect(fx + 1, fy + 1, Math.floor((width - 2) * ratio), barH - 2, 2);
+            ctx.fillStyle = grd;
+            ctx.fill();
         }
+        ctx.restore();
     },
 
     drawPanel: function(x, y, w, h, bgColor) {
-        this.ctx.fillStyle = bgColor || 'rgba(20,20,40,0.92)';
-        this.ctx.fillRect(Math.floor(x), Math.floor(y), w, h);
-        this.ctx.strokeStyle = '#fff';
-        this.ctx.lineWidth = 3;
-        this.ctx.strokeRect(Math.floor(x) + 2, Math.floor(y) + 2, w - 4, h - 4);
+        var ctx = this.ctx;
+        var fx = Math.floor(x), fy = Math.floor(y);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.roundRect(fx, fy, w, h, 8);
+        var grd = ctx.createLinearGradient(fx, fy, fx, fy + h);
+        grd.addColorStop(0, bgColor || 'rgba(25,25,55,0.94)');
+        grd.addColorStop(1, bgColor ? bgColor : 'rgba(15,15,35,0.96)');
+        ctx.fillStyle = grd;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.roundRect(fx + 2, fy + 2, w - 4, h - 4, 6);
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.roundRect(fx + 1, fy + 1, w - 2, h * 0.4, 6);
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        ctx.fill();
+
+        ctx.restore();
     },
 
     drawMonsterSprite: function(x, y, species, options) {
@@ -85,21 +145,20 @@ Game.Renderer = {
         this.ctx.save();
         this.ctx.globalAlpha = alpha;
 
-        if (species.image) {
-            this.ctx.drawImage(species.image, Math.floor(x), Math.floor(y), w, h);
+        var sprite = Game.Sprites.getSprite(species.id, w, h);
+
+        if (flash) {
+            var tmp = document.createElement('canvas');
+            tmp.width = w;
+            tmp.height = h;
+            var tc = tmp.getContext('2d');
+            tc.drawImage(sprite, 0, 0);
+            tc.globalCompositeOperation = 'source-atop';
+            tc.fillStyle = 'rgba(255,255,255,0.75)';
+            tc.fillRect(0, 0, w, h);
+            this.ctx.drawImage(tmp, Math.floor(x), Math.floor(y));
         } else {
-            this.drawRect(x + 4, y + 4, w - 8, h - 8, flash ? '#fff' : species.color);
-            this.drawRectOutline(x + 4, y + 4, w - 8, h - 8, species.accentColor || '#fff', 3);
-
-            var eyeY = y + h * 0.3;
-            var eyeSize = 8;
-            this.drawRect(x + w * 0.3, eyeY, eyeSize, eyeSize, flash ? '#fff' : '#fff');
-            this.drawRect(x + w * 0.6, eyeY, eyeSize, eyeSize, flash ? '#fff' : '#fff');
-            this.drawRect(x + w * 0.3 + 2, eyeY + 2, 4, 4, flash ? '#fff' : '#111');
-            this.drawRect(x + w * 0.6 + 2, eyeY + 2, 4, 4, flash ? '#fff' : '#111');
-
-            var mouthY = y + h * 0.55;
-            this.drawRect(x + w * 0.35, mouthY, w * 0.3, 4, flash ? '#fff' : '#111');
+            this.ctx.drawImage(sprite, Math.floor(x), Math.floor(y));
         }
 
         this.ctx.restore();

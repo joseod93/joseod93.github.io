@@ -1,3 +1,21 @@
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+        if (typeof r === 'number') r = [r, r, r, r];
+        var rad = r[0] || 0;
+        this.moveTo(x + rad, y);
+        this.lineTo(x + w - rad, y);
+        this.arcTo(x + w, y, x + w, y + rad, rad);
+        this.lineTo(x + w, y + h - rad);
+        this.arcTo(x + w, y + h, x + w - rad, y + h, rad);
+        this.lineTo(x + rad, y + h);
+        this.arcTo(x, y + h, x, y + h - rad, rad);
+        this.lineTo(x, y + rad);
+        this.arcTo(x, y, x + rad, y, rad);
+        this.closePath();
+        return this;
+    };
+}
+
 window.Game = window.Game || {};
 
 Game.Utils = {
@@ -33,8 +51,12 @@ Game.Utils = {
         var C = Game.Constants;
         var level = attacker.level;
         var power = move.power;
-        var atk = move.category === 'physical' ? attacker.stats.attack : attacker.stats.attack;
-        var def = move.category === 'physical' ? defender.stats.defense : defender.stats.defense;
+        var atk = move.category === 'physical' ? attacker.stats.attack : attacker.stats.spAttack;
+        var def = move.category === 'physical' ? defender.stats.defense : defender.stats.spDefense;
+
+        if (move.category === 'physical' && attacker.status === 'burn') {
+            atk = Math.floor(atk * 0.5);
+        }
 
         var base = ((2 * level / 5 + 2) * power * (atk / def)) / 50 + 2;
 

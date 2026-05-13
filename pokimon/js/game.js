@@ -7,6 +7,7 @@ Game.Main = {
     transitionTimer: 0,
     transitionCallback: null,
     pendingEncounter: null,
+    titleCursor: 0,
 
     starters: ['flamander', 'aquarion', 'thornleaf'],
 
@@ -24,9 +25,15 @@ Game.Main = {
 
         Game.Touch.init();
 
-        this.state = 'TITLE';
+        this.state = 'LOADING';
         this.lastTime = performance.now();
         this.loop(this.lastTime);
+
+        Game.Assets.load(function() {
+            Game.Sprites.cache = {};
+            Game.Main.state = 'TITLE';
+            Game.Main.titleCursor = 0;
+        });
     },
 
     loop: function(timestamp) {
@@ -35,6 +42,7 @@ Game.Main = {
 
         Game.Main.update(dt);
         Game.Main.render();
+        Game.Effects.update(dt);
         Game.Input.update();
 
         requestAnimationFrame(Game.Main.loop);
@@ -52,10 +60,7 @@ Game.Main = {
 
         switch (this.state) {
             case 'TITLE':
-                if (Game.Input.confirm()) {
-                    this.state = 'STARTER_SELECT';
-                    this.starterCursor = 0;
-                }
+                this.updateTitle();
                 break;
 
             case 'STARTER_SELECT':
@@ -66,7 +71,9 @@ Game.Main = {
                 var result = Game.Overworld.update(dt);
                 if (result && result.type === 'encounter') {
                     this.pendingEncounter = result.monster;
+                    Game.Effects.encounterFlash();
                     this.startTransition(0.5, function() {
+                        Game.Effects.clear();
                         Game.Battle.start(Game.Overworld.player.team, Game.Main.pendingEncounter);
                         Game.Main.state = 'BATTLE';
                     });
@@ -103,6 +110,45 @@ Game.Main = {
         }
     },
 
+    updateTitle: function() {
+        var input = Game.Input;
+        var hasSave = Game.Save.exists();
+
+        if (hasSave) {
+            if (input.up() && this.titleCursor > 0) this.titleCursor--;
+            if (input.down() && this.titleCursor < 1) this.titleCursor++;
+
+            if (input.confirm()) {
+                if (this.titleCursor === 0) {
+                    var saveData = Game.Save.load();
+                    if (saveData) {
+                        Game.Overworld.init(saveData.team);
+                        Game.Overworld.player.gridX = saveData.position.gridX;
+                        Game.Overworld.player.gridY = saveData.position.gridY;
+                        Game.Overworld.player.pixelX = saveData.position.gridX * Game.Constants.TILE_SIZE;
+                        Game.Overworld.player.pixelY = saveData.position.gridY * Game.Constants.TILE_SIZE;
+                        Game.Overworld.player.targetX = Game.Overworld.player.pixelX;
+                        Game.Overworld.player.targetY = Game.Overworld.player.pixelY;
+                        Game.Overworld.player.direction = saveData.position.direction || 'down';
+                        this.startTransition(0.5, function() {
+                            Game.Main.state = 'OVERWORLD';
+                        });
+                    }
+                } else {
+                    Game.Save.clear();
+                    Game.Inventory.reset();
+                    this.state = 'STARTER_SELECT';
+                    this.starterCursor = 0;
+                }
+            }
+        } else {
+            if (input.confirm()) {
+                this.state = 'STARTER_SELECT';
+                this.starterCursor = 0;
+            }
+        }
+    },
+
     updateStarterSelect: function() {
         var input = Game.Input;
         if (input.left() && this.starterCursor > 0) this.starterCursor--;
@@ -111,9 +157,13 @@ Game.Main = {
         if (input.confirm()) {
             var speciesId = this.starters[this.starterCursor];
             var starter = Game.createMonster(speciesId, 5);
+            Game.Inventory.reset();
+            Game.Inventory.add('potion', 3);
+            Game.Inventory.add('antidote', 1);
             Game.Overworld.init([starter]);
             this.startTransition(0.5, function() {
                 Game.Main.state = 'OVERWORLD';
+                Game.Save.save();
             });
         }
     },
@@ -156,6 +206,9 @@ Game.Main = {
         var R = Game.Renderer;
 
         switch (this.state) {
+            case 'LOADING':
+                this.renderLoading(R);
+                break;
             case 'TITLE':
                 this.renderTitle(R);
                 break;
@@ -176,35 +229,127 @@ Game.Main = {
         }
     },
 
-    renderTitle: function(R) {
-        R.clear('#1a1a2e');
+    titleParticles: [],
+    titleInited: false,
 
+    renderLoading: function(R) {
         var ctx = R.ctx;
-        var grd = ctx.createLinearGradient(0, 120, 0, 250);
-        grd.addColorStop(0, '#ff6633');
-        grd.addColorStop(0.5, '#ffcc00');
-        grd.addColorStop(1, '#44bb44');
+        ctx.fillStyle = '#0d0d2b';
+        ctx.fillRect(0, 0, 800, 608);
+        R.drawText('Cargando...', 400, 270, { size: 16, color: '#fff', align: 'center' });
+        var progress = Game.Assets.progress();
+        ctx.fillStyle = '#222';
+        ctx.fillRect(250, 310, 300, 20);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillRect(250, 310, Math.floor(300 * progress), 20);
+    },
 
-        ctx.font = '42px "Press Start 2P", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = grd;
-        ctx.fillText('MONSTER', 400, 170);
-        ctx.fillText('BATTLE', 400, 230);
+    renderTitle: function(R) {
+        var ctx = R.ctx;
+        var t = performance.now();
 
-        R.drawText('Un juego estilo Pokemon', 400, 310, { size: 10, color: '#888', align: 'center' });
+        var bgGrd = ctx.createLinearGradient(0, 0, 0, 608);
+        bgGrd.addColorStop(0, '#0d0d2b');
+        bgGrd.addColorStop(0.5, '#1a1a3e');
+        bgGrd.addColorStop(1, '#0a0a20');
+        ctx.fillStyle = bgGrd;
+        ctx.fillRect(0, 0, 800, 608);
 
-        var blink = Math.sin(performance.now() / 500) > 0;
-        if (blink) {
-            R.drawText('Pulsa ENTER para empezar', 400, 420, { size: 12, color: '#fff', align: 'center' });
+        if (!this.titleInited) {
+            this.titleParticles = [];
+            for (var i = 0; i < 40; i++) {
+                this.titleParticles.push({
+                    x: Math.random() * 800,
+                    y: Math.random() * 608,
+                    size: 1 + Math.random() * 2.5,
+                    speed: 0.2 + Math.random() * 0.5,
+                    phase: Math.random() * Math.PI * 2
+                });
+            }
+            this.titleInited = true;
         }
 
-        R.drawText('Controles: WASD/Flechas = mover', 400, 510, { size: 8, color: '#555', align: 'center' });
-        R.drawText('Z/Enter = confirmar  X/Esc = cancelar', 400, 535, { size: 8, color: '#555', align: 'center' });
-        R.drawText('Hierba alta = encuentros  Cruz roja = curar', 400, 560, { size: 8, color: '#555', align: 'center' });
+        for (var s = 0; s < this.titleParticles.length; s++) {
+            var star = this.titleParticles[s];
+            var alpha = 0.4 + Math.sin(t / 800 + star.phase) * 0.4;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+            ctx.fill();
+            star.y -= star.speed;
+            if (star.y < -5) { star.y = 612; star.x = Math.random() * 800; }
+        }
+        ctx.globalAlpha = 1;
+
+        var species = ['flamander', 'aquarion', 'thornleaf'];
+        for (var m = 0; m < 3; m++) {
+            var mx = 100 + m * 250;
+            var my = 400 + Math.sin(t / 1000 + m * 2) * 8;
+            ctx.globalAlpha = 0.15;
+            R.drawMonsterSprite(mx, my, Game.Species[species[m]], { width: 80, height: 80, alpha: 0.15 });
+            ctx.globalAlpha = 1;
+        }
+
+        var grd = ctx.createLinearGradient(0, 120, 0, 260);
+        grd.addColorStop(0, '#ff6633');
+        grd.addColorStop(0.4, '#ffcc00');
+        grd.addColorStop(0.7, '#44bb44');
+        grd.addColorStop(1, '#3399ff');
+
+        var offset = Math.sin(t / 2000) * 3;
+        ctx.font = '44px "Press Start 2P", monospace';
+        ctx.textAlign = 'center';
+
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillText('MONSTER', 402, 172 + offset);
+        ctx.fillText('BATTLE', 402, 237 + offset);
+
+        ctx.fillStyle = grd;
+        ctx.fillText('MONSTER', 400, 170 + offset);
+        ctx.fillText('BATTLE', 400, 235 + offset);
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 1;
+        ctx.strokeText('MONSTER', 400, 170 + offset);
+        ctx.strokeText('BATTLE', 400, 235 + offset);
+
+        R.drawText('Un juego estilo Pokemon', 400, 310, { size: 10, color: '#667', align: 'center' });
+
+        var hasSave = Game.Save.exists();
+        var blink = Math.sin(t / 500) > 0;
+
+        if (hasSave) {
+            var contColor = this.titleCursor === 0 ? '#ffdd44' : '#888';
+            var newColor = this.titleCursor === 1 ? '#ffdd44' : '#888';
+            var contPrefix = this.titleCursor === 0 ? '> ' : '  ';
+            var newPrefix = this.titleCursor === 1 ? '> ' : '  ';
+            R.drawText(contPrefix + 'Continuar', 400, 390, { size: 14, color: contColor, align: 'center' });
+            R.drawText(newPrefix + 'Nueva Partida', 400, 420, { size: 14, color: newColor, align: 'center' });
+        } else {
+            if (blink) {
+                R.drawText('Pulsa ENTER para empezar', 400, 420, { size: 12, color: '#ddd', align: 'center' });
+            }
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.03)';
+        ctx.fillRect(50, 500, 700, 1);
+
+        R.drawText('WASD/Flechas = mover', 400, 520, { size: 8, color: '#445', align: 'center' });
+        R.drawText('Z/Enter = confirmar  X/Esc = cancelar', 400, 543, { size: 8, color: '#445', align: 'center' });
+        R.drawText('Hierba alta = encuentros  Cruz roja = curar', 400, 566, { size: 8, color: '#445', align: 'center' });
     },
 
     renderStarterSelect: function(R) {
-        R.clear('#1a1a2e');
+        var ctx = R.ctx;
+        var t = performance.now();
+
+        var bgGrd = ctx.createLinearGradient(0, 0, 0, 608);
+        bgGrd.addColorStop(0, '#0d0d2b');
+        bgGrd.addColorStop(1, '#1a1a3e');
+        ctx.fillStyle = bgGrd;
+        ctx.fillRect(0, 0, 800, 608);
+
         R.drawText('Elige tu monstruo inicial', 400, 40, { size: 14, color: '#fff', align: 'center' });
 
         for (var i = 0; i < 3; i++) {
@@ -214,31 +359,64 @@ Game.Main = {
             var selected = this.starterCursor === i;
 
             if (selected) {
-                R.drawPanel(x - 10, y - 10, 180, 340);
+                var glowAlpha = 0.15 + Math.sin(t / 400) * 0.08;
+                ctx.fillStyle = 'rgba(' + this.hexToRgb(Game.Constants.TYPE_COLORS[sp.type]) + ',' + glowAlpha + ')';
+                ctx.beginPath();
+                ctx.roundRect(x - 14, y - 14, 188, 388, 12);
+                ctx.fill();
+
+                R.drawPanel(x - 10, y - 10, 180, 380);
             }
 
-            R.drawMonsterSprite(x + 20, y + 10, sp, {
+            var spriteY = selected ? y + 10 + Math.sin(t / 600 + i) * 4 : y + 10;
+            R.drawMonsterSprite(x + 20, spriteY, sp, {
                 width: 120,
                 height: 120,
-                alpha: selected ? 1 : 0.5
+                alpha: selected ? 1 : 0.4
             });
 
-            var nameColor = selected ? '#ffdd44' : '#aaa';
+            var nameColor = selected ? '#ffdd44' : '#777';
             R.drawText(sp.name, x + 80, y + 150, { size: 12, color: nameColor, align: 'center' });
 
             var typeColor = Game.Constants.TYPE_COLORS[sp.type];
-            R.drawText(sp.type.toUpperCase(), x + 80, y + 180, { size: 10, color: typeColor, align: 'center' });
+            ctx.globalAlpha = selected ? 1 : 0.5;
 
-            R.drawText('HP:  ' + sp.baseStats.hp, x + 20, y + 210, { size: 8, color: '#aaa' });
-            R.drawText('ATK: ' + sp.baseStats.attack, x + 20, y + 230, { size: 8, color: '#aaa' });
-            R.drawText('DEF: ' + sp.baseStats.defense, x + 20, y + 250, { size: 8, color: '#aaa' });
-            R.drawText('SPD: ' + sp.baseStats.speed, x + 20, y + 270, { size: 8, color: '#aaa' });
+            ctx.fillStyle = typeColor;
+            ctx.beginPath();
+            ctx.roundRect(x + 45, y + 172, 70, 20, 4);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            R.drawText(sp.type.toUpperCase(), x + 80, y + 175, { size: 8, color: '#fff', align: 'center' });
+
+            var statColor = selected ? '#bbb' : '#666';
+            var labels = ['HP', 'ATK', 'DEF', 'SPA', 'SPD', 'VEL'];
+            var values = [sp.baseStats.hp, sp.baseStats.attack, sp.baseStats.defense, sp.baseStats.spAttack, sp.baseStats.spDefense, sp.baseStats.speed];
+            for (var s = 0; s < 6; s++) {
+                var sy = y + 205 + s * 22;
+                R.drawText(labels[s], x + 10, sy, { size: 7, color: statColor });
+
+                var barW = Math.floor(values[s] / 100 * 75);
+                ctx.fillStyle = '#222';
+                ctx.fillRect(x + 55, sy + 2, 75, 8);
+                ctx.fillStyle = selected ? typeColor : '#555';
+                ctx.fillRect(x + 55, sy + 2, barW, 8);
+
+                R.drawText('' + values[s], x + 135, sy, { size: 7, color: statColor });
+            }
         }
 
-        var blink = Math.sin(performance.now() / 400) > 0;
+        var blink = Math.sin(t / 400) > 0;
         if (blink) {
-            R.drawText('< ENTER para elegir >', 400, 500, { size: 12, color: '#fff', align: 'center' });
+            R.drawText('< ENTER para elegir >', 400, 520, { size: 12, color: '#ddd', align: 'center' });
         }
+    },
+
+    hexToRgb: function(hex) {
+        var r = parseInt(hex.slice(1, 3), 16);
+        var g = parseInt(hex.slice(3, 5), 16);
+        var b = parseInt(hex.slice(5, 7), 16);
+        return r + ',' + g + ',' + b;
     }
 };
 

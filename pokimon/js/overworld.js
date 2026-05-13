@@ -135,6 +135,7 @@ Game.Overworld = {
         }
         this.showHealMsg = true;
         this.healMsgTimer = 2;
+        if (Game.Save) Game.Save.save();
     },
 
     draw: function() {
@@ -149,6 +150,14 @@ Game.Overworld = {
 
         R.clear('#222');
 
+        var tileImages = {
+            0: Game.Assets ? Game.Assets.get('tile_ground') : null,
+            1: Game.Assets ? Game.Assets.get('tile_wall') : null,
+            2: Game.Assets ? Game.Assets.get('tile_grass') : null,
+            3: Game.Assets ? Game.Assets.get('tile_heal') : null,
+            4: Game.Assets ? Game.Assets.get('tile_path') : null
+        };
+
         for (var row = 0; row < C.MAP_ROWS; row++) {
             for (var col = 0; col < C.MAP_COLS; col++) {
                 var tile = this.map.tiles[row][col];
@@ -157,69 +166,77 @@ Game.Overworld = {
 
                 if (tx < -C.TILE_SIZE || tx > 800 || ty < -C.TILE_SIZE || ty > 608) continue;
 
-                R.drawRect(tx, ty, C.TILE_SIZE, C.TILE_SIZE, C.TILE_COLORS[tile]);
-
-                if (tile === C.TILE_WALL) {
-                    R.drawRect(tx + 2, ty + 2, C.TILE_SIZE - 4, C.TILE_SIZE - 8, '#2a5518');
-                    R.drawRect(tx + 8, ty + C.TILE_SIZE - 8, C.TILE_SIZE - 16, 8, '#553322');
-                }
-
-                if (tile === C.TILE_GRASS) {
-                    for (var g = 0; g < 3; g++) {
-                        var gx = tx + 4 + g * 10;
-                        var gy = ty + 8 + (g % 2) * 6;
-                        R.drawRect(gx, gy, 3, 16, '#33882a');
-                        R.drawRect(gx + 5, gy + 4, 3, 12, '#55aa33');
-                    }
-                }
-
-                if (tile === C.TILE_HEAL) {
-                    R.drawRect(tx + 10, ty + 6, 12, 20, '#fff');
-                    R.drawRect(tx + 6, ty + 10, 20, 12, '#fff');
-                    R.drawRect(tx + 12, ty + 8, 8, 16, '#ff4466');
-                    R.drawRect(tx + 8, ty + 12, 16, 8, '#ff4466');
-                }
-
-                if (tile === C.TILE_PATH) {
-                    R.drawRect(tx + 1, ty + 1, C.TILE_SIZE - 2, C.TILE_SIZE - 2, '#bbaa77');
+                var ctx = R.ctx;
+                var tileImg = tileImages[tile];
+                if (tileImg) {
+                    ctx.drawImage(tileImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
+                } else {
+                    R.drawRect(tx, ty, C.TILE_SIZE, C.TILE_SIZE, C.TILE_COLORS[tile]);
                 }
             }
         }
 
         var px = Math.floor(p.pixelX - camX);
         var py = Math.floor(p.pixelY - camY);
-
-        R.drawRect(px + 4, py + 4, C.TILE_SIZE - 8, C.TILE_SIZE - 8, '#ff3333');
-        R.drawRectOutline(px + 4, py + 4, C.TILE_SIZE - 8, C.TILE_SIZE - 8, '#cc1111', 2);
-
-        var arrowSize = 6;
         var ctx = R.ctx;
-        ctx.fillStyle = '#fff';
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.beginPath();
-        switch (p.direction) {
-            case 'up':
-                ctx.moveTo(px + 16, py + 2);
-                ctx.lineTo(px + 16 - arrowSize, py + 2 + arrowSize);
-                ctx.lineTo(px + 16 + arrowSize, py + 2 + arrowSize);
-                break;
-            case 'down':
-                ctx.moveTo(px + 16, py + 30);
-                ctx.lineTo(px + 16 - arrowSize, py + 30 - arrowSize);
-                ctx.lineTo(px + 16 + arrowSize, py + 30 - arrowSize);
-                break;
-            case 'left':
-                ctx.moveTo(px + 2, py + 16);
-                ctx.lineTo(px + 2 + arrowSize, py + 16 - arrowSize);
-                ctx.lineTo(px + 2 + arrowSize, py + 16 + arrowSize);
-                break;
-            case 'right':
-                ctx.moveTo(px + 30, py + 16);
-                ctx.lineTo(px + 30 - arrowSize, py + 16 - arrowSize);
-                ctx.lineTo(px + 30 - arrowSize, py + 16 + arrowSize);
-                break;
-        }
-        ctx.closePath();
+        ctx.ellipse(px + 16, py + 30, 10, 4, 0, 0, Math.PI * 2);
         ctx.fill();
+
+        var bob = p.moving ? Math.sin(performance.now() / 80) * 2 : 0;
+        var playerImg = Game.Assets ? Game.Assets.get('player') : null;
+
+        if (playerImg) {
+            ctx.drawImage(playerImg, px, py - 4 + bob, C.TILE_SIZE, C.TILE_SIZE);
+        } else {
+            ctx.fillStyle = '#ee3333';
+            ctx.beginPath();
+            ctx.arc(px + 16, py + 14 + bob, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#cc1111';
+            ctx.beginPath();
+            ctx.arc(px + 16, py + 14 + bob, 10, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffddcc';
+            ctx.beginPath();
+            ctx.arc(px + 16, py + 8 + bob, 7, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#fff';
+            var eyeOffX = 0, eyeOffY = 0;
+            if (p.direction === 'left') eyeOffX = -2;
+            if (p.direction === 'right') eyeOffX = 2;
+            if (p.direction === 'up') eyeOffY = -1;
+            if (p.direction === 'down') eyeOffY = 1;
+
+            if (p.direction !== 'up') {
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(px + 13 + eyeOffX, py + 7 + bob + eyeOffY, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(px + 19 + eyeOffX, py + 7 + bob + eyeOffY, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#222';
+                ctx.beginPath();
+                ctx.arc(px + 13 + eyeOffX, py + 7.5 + bob + eyeOffY, 1.2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(px + 19 + eyeOffX, py + 7.5 + bob + eyeOffY, 1.2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = '#884422';
+            ctx.fillRect(px + 9, py + 1 + bob, 14, 4);
+            ctx.fillRect(px + 7, py + 3 + bob, 18, 2);
+        }
+
+        ctx.restore();
 
         this.drawHUD(R);
 
