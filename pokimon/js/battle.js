@@ -338,7 +338,7 @@ Game.Battle = {
         this.captureShakes = shakes;
         this.events = [];
         this.eventIndex = 0;
-        this.pushMessage('Lanzaste una Pokeball!');
+        this.pushMessage('Lanzaste una Capsula!');
         this.state = 'CAPTURING';
 
         Game.BattleUI.startCapture(shakes, caught);

@@ -5,10 +5,10 @@ Game.Items = {
     superPotion: { id: 'superPotion', name: 'Super Pocion', description: 'Cura 100 HP',        type: 'heal',    value: 100, price: 300 },
     antidote:    { id: 'antidote',    name: 'Antidoto',     description: 'Cura estado alter.',  type: 'status',              price: 50 },
     revive:      { id: 'revive',      name: 'Revivir',      description: 'Revive con 50% HP',   type: 'revive',              price: 500 },
-    pokeball:    { id: 'pokeball',    name: 'Pokeball',     description: 'Captura monstruos',   type: 'capture',             price: 150 }
+    capsula:    { id: 'capsula',    name: 'Capsula',      description: 'Captura monstruos',   type: 'capture',             price: 150 }
 };
 
-Game.ShopItems = ['potion', 'superPotion', 'antidote', 'revive', 'pokeball'];
+Game.ShopItems = ['potion', 'superPotion', 'antidote', 'revive', 'capsula'];
 
 Game.Inventory = {
     items: {},

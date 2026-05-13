@@ -250,6 +250,12 @@ Game.Audio = {
     stopMusic: function() {
         this.currentMusicType = null;
         if (this.musicTimeout) { clearTimeout(this.musicTimeout); this.musicTimeout = null; }
+        if (this.musicGain && this.ctx) {
+            this.musicGain.disconnect();
+            this.musicGain = this.ctx.createGain();
+            this.musicGain.gain.value = 0.12;
+            this.musicGain.connect(this.masterGain);
+        }
     },
 
     toggleMusic: function() {

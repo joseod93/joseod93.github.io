@@ -281,7 +281,7 @@ Game.Main = {
             Game.Inventory.reset();
             Game.Inventory.add('potion', 3);
             Game.Inventory.add('antidote', 1);
-            Game.Inventory.add('pokeball', 5);
+            Game.Inventory.add('capsula', 5);
             Game.Overworld.defeatedNPCs = [];
             Game.Overworld.init([starter]);
             this.startTransition(0.5, function() {

@@ -63,19 +63,111 @@ Game.BattleUI = {
 
     drawBackground: function(R) {
         var ctx = R.ctx;
-        var grd = ctx.createLinearGradient(0, 0, 0, 460);
-        grd.addColorStop(0, '#5599cc'); grd.addColorStop(0.3, '#88ccee');
-        grd.addColorStop(0.6, '#aaddff'); grd.addColorStop(0.8, '#77bb55'); grd.addColorStop(1, '#55993d');
-        ctx.fillStyle = grd; ctx.fillRect(0, 0, 800, 460);
-        ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.15;
-        ctx.beginPath(); ctx.ellipse(200, 100, 120, 40, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(600, 60, 80, 25, 0, 0, Math.PI * 2); ctx.fill();
+        var t = this.animTimer;
+
+        var sky = ctx.createLinearGradient(0, 0, 0, 280);
+        sky.addColorStop(0, '#3a7bbf');
+        sky.addColorStop(0.4, '#6aacdd');
+        sky.addColorStop(0.7, '#9fd4ee');
+        sky.addColorStop(1, '#c8e8f5');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, 800, 280);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.12;
+        ctx.beginPath(); ctx.ellipse(180, 80, 130, 38, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(220, 75, 90, 30, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(600, 50, 100, 28, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(560, 55, 70, 22, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 0.06;
+        ctx.beginPath(); ctx.ellipse(400, 110, 60, 18, 0, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
-        var gg = ctx.createLinearGradient(0, 320, 0, 460);
-        gg.addColorStop(0, '#66aa44'); gg.addColorStop(1, '#448830');
-        ctx.fillStyle = gg; ctx.fillRect(0, 320, 800, 140);
-        ctx.fillStyle = 'rgba(0,0,0,0.06)';
-        for (var i = 0; i < 6; i++) ctx.fillRect(0, 335 + i * 22, 800, 2);
+
+        var hills = ctx.createLinearGradient(0, 200, 0, 290);
+        hills.addColorStop(0, '#5a9a3a');
+        hills.addColorStop(1, '#4a8830');
+        ctx.fillStyle = hills;
+        ctx.beginPath();
+        ctx.moveTo(0, 290);
+        ctx.bezierCurveTo(100, 220, 250, 240, 400, 250);
+        ctx.bezierCurveTo(550, 260, 700, 230, 800, 260);
+        ctx.lineTo(800, 290);
+        ctx.fill();
+
+        ctx.fillStyle = '#3d7828';
+        ctx.beginPath();
+        ctx.moveTo(0, 280);
+        ctx.bezierCurveTo(200, 260, 350, 275, 500, 265);
+        ctx.bezierCurveTo(650, 255, 750, 270, 800, 280);
+        ctx.lineTo(800, 300);
+        ctx.lineTo(0, 300);
+        ctx.fill();
+
+        for (var tr = 0; tr < 5; tr++) {
+            var tx = 50 + tr * 180 + Math.sin(tr * 2.3) * 30;
+            var ty = 225 + Math.sin(tr * 1.7) * 15;
+            var ts = 10 + (tr % 3) * 4;
+            ctx.fillStyle = '#664422';
+            ctx.fillRect(tx - 2, ty, 4, ts);
+            ctx.fillStyle = '#3a7520';
+            ctx.beginPath();
+            ctx.arc(tx, ty - 2, ts * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#4a9030';
+            ctx.beginPath();
+            ctx.arc(tx - 3, ty - 4, ts * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        var ground = ctx.createLinearGradient(0, 280, 0, 460);
+        ground.addColorStop(0, '#6aaa42');
+        ground.addColorStop(0.3, '#5a9838');
+        ground.addColorStop(0.7, '#4a882e');
+        ground.addColorStop(1, '#3a7824');
+        ctx.fillStyle = ground;
+        ctx.fillRect(0, 280, 800, 180);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.03)';
+        for (var i = 0; i < 20; i++) {
+            var lx = (i * 43 + 7) % 800;
+            var ly = 290 + (i * 17 + 3) % 150;
+            ctx.fillRect(lx, ly, 20 + (i % 3) * 8, 1);
+        }
+
+        for (var g = 0; g < 30; g++) {
+            var gx = (g * 27 + 11) % 800;
+            var gy = 290 + (g * 19 + 5) % 160;
+            var sway = Math.sin(t * 1.5 + g * 0.7) * 2;
+            ctx.fillStyle = g % 2 === 0 ? 'rgba(80,160,50,0.3)' : 'rgba(55,130,35,0.25)';
+            ctx.beginPath();
+            ctx.moveTo(gx, gy + 8);
+            ctx.quadraticCurveTo(gx + sway, gy, gx + 1 + sway, gy - 2);
+            ctx.lineTo(gx + 2 + sway, gy);
+            ctx.quadraticCurveTo(gx + 2, gy + 4, gx + 2, gy + 8);
+            ctx.fill();
+        }
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(80,60,40,0.12)';
+        ctx.beginPath();
+        ctx.ellipse(580, 180, 120, 22, -0.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(90,70,50,0.08)';
+        ctx.beginPath();
+        ctx.ellipse(580, 178, 110, 18, -0.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(80,60,40,0.12)';
+        ctx.beginPath();
+        ctx.ellipse(190, 360, 130, 24, 0.05, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(90,70,50,0.08)';
+        ctx.beginPath();
+        ctx.ellipse(190, 358, 120, 20, 0.05, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
     },
 
     drawEnemySprite: function(R, B) {
@@ -290,15 +382,32 @@ Game.BattleUI = {
 
         ctx.save();
         ctx.translate(c.ballX + shakeX, c.ballY);
-        ctx.fillStyle = '#ff3333';
-        ctx.beginPath(); ctx.arc(0, 0, 12, Math.PI, 0); ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI); ctx.fill();
-        ctx.fillStyle = '#333';
-        ctx.fillRect(-12, -2, 24, 4);
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.stroke();
+
+        var glow = 0.3 + Math.sin(this.animTimer * 8) * 0.15;
+        ctx.globalAlpha = glow;
+        ctx.fillStyle = '#44ddff';
+        ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+
+        var cg = ctx.createRadialGradient(-3, -3, 2, 0, 0, 12);
+        cg.addColorStop(0, '#aaeeff');
+        cg.addColorStop(0.4, '#33bbdd');
+        cg.addColorStop(0.8, '#1188aa');
+        cg.addColorStop(1, '#0a6688');
+        ctx.fillStyle = cg;
+        ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2); ctx.fill();
+
+        ctx.strokeStyle = '#0d7799';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2); ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(180,240,255,0.5)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(-3, -4, 5, -0.8, 1.2); ctx.stroke();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath(); ctx.arc(-4, -5, 2, 0, Math.PI * 2); ctx.fill();
+
         ctx.restore();
 
         if (c.phase === 4 && c.success) {
@@ -307,7 +416,7 @@ Game.BattleUI = {
             for (var i = 0; i < 8; i++) {
                 var a = i * Math.PI / 4 + this.animTimer * 3;
                 var r = 20 + (1 - c.timer / 0.3) * 20;
-                ctx.fillStyle = '#ffee44';
+                ctx.fillStyle = '#44ddff';
                 ctx.beginPath();
                 ctx.arc(c.ballX + Math.cos(a) * r, c.ballY + Math.sin(a) * r, 3, 0, Math.PI * 2);
                 ctx.fill();
