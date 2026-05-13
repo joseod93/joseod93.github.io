@@ -8,6 +8,20 @@ Game.Main = {
     transitionCallback: null,
     pendingEncounter: null,
     titleCursor: 0,
+    audioInited: false,
+
+    shopCursor: 0,
+    shopConfirm: false,
+
+    learnMoveMon: null,
+    learnMoveNew: null,
+    learnMoveCursor: 0,
+
+    evolutionMon: null,
+    evolutionTimer: 0,
+    evolutionCursor: 0,
+
+    pendingPostBattle: null,
 
     starters: ['flamander', 'aquarion', 'thornleaf'],
 
@@ -17,11 +31,17 @@ Game.Main = {
         canvas.height = Game.Constants.CANVAS_HEIGHT;
         Game.Renderer.init(canvas);
 
+        var self = this;
         canvas.addEventListener('click', function() {
             canvas.focus();
+            self.initAudio();
         });
         canvas.setAttribute('tabindex', '0');
         canvas.focus();
+
+        window.addEventListener('keydown', function() {
+            self.initAudio();
+        }, { once: true });
 
         Game.Touch.init();
 
@@ -34,6 +54,14 @@ Game.Main = {
             Game.Main.state = 'TITLE';
             Game.Main.titleCursor = 0;
         });
+    },
+
+    initAudio: function() {
+        if (this.audioInited) return;
+        this.audioInited = true;
+        Game.Audio.init();
+        if (this.state === 'OVERWORLD') Game.Audio.playMusic('overworld');
+        else if (this.state === 'BATTLE') Game.Audio.playMusic('battle');
     },
 
     loop: function(timestamp) {
@@ -69,15 +97,7 @@ Game.Main = {
 
             case 'OVERWORLD':
                 var result = Game.Overworld.update(dt);
-                if (result && result.type === 'encounter') {
-                    this.pendingEncounter = result.monster;
-                    Game.Effects.encounterFlash();
-                    this.startTransition(0.5, function() {
-                        Game.Effects.clear();
-                        Game.Battle.start(Game.Overworld.player.team, Game.Main.pendingEncounter);
-                        Game.Main.state = 'BATTLE';
-                    });
-                }
+                if (result) this.handleOverworldResult(result);
                 break;
 
             case 'BATTLE':
@@ -89,25 +109,122 @@ Game.Main = {
                 }
 
                 if (!Game.Battle.active) {
-                    if (Game.Battle.result === 'DEFEAT') {
-                        for (var i = 0; i < Game.Overworld.player.team.length; i++) {
-                            Game.Overworld.player.team[i].heal();
-                        }
-                        var hp = Game.MapData.healPoint;
-                        Game.Overworld.player.gridX = hp.x;
-                        Game.Overworld.player.gridY = hp.y;
-                        Game.Overworld.player.pixelX = hp.x * Game.Constants.TILE_SIZE;
-                        Game.Overworld.player.pixelY = hp.y * Game.Constants.TILE_SIZE;
-                        Game.Overworld.player.targetX = Game.Overworld.player.pixelX;
-                        Game.Overworld.player.targetY = Game.Overworld.player.pixelY;
-                        Game.Overworld.player.moving = false;
-                    }
-                    this.startTransition(0.4, function() {
-                        Game.Main.state = 'OVERWORLD';
-                    });
+                    this.handleBattleEnd();
                 }
                 break;
+
+            case 'SHOP':
+                this.updateShop();
+                break;
+
+            case 'LEARN_MOVE':
+                this.updateLearnMove();
+                break;
+
+            case 'EVOLUTION':
+                this.updateEvolution(dt);
+                break;
         }
+    },
+
+    handleOverworldResult: function(result) {
+        if (result.type === 'encounter') {
+            this.pendingEncounter = result.monster;
+            Game.Effects.encounterFlash();
+            Game.Audio.playEncounter();
+            this.startTransition(0.5, function() {
+                Game.Effects.clear();
+                Game.Audio.playMusic('battle');
+                Game.Battle.start(Game.Overworld.player.team, Game.Main.pendingEncounter);
+                Game.Main.state = 'BATTLE';
+            });
+        } else if (result.type === 'trainer') {
+            var npc = result.npc;
+            var enemyTeam = [];
+            for (var i = 0; i < npc.team.length; i++) {
+                enemyTeam.push(Game.createMonster(npc.team[i].speciesId, npc.team[i].level));
+            }
+            this.startTransition(0.5, function() {
+                Game.Effects.clear();
+                Game.Audio.playMusic('battle');
+                Game.Battle.start(Game.Overworld.player.team, enemyTeam, {
+                    id: npc.id, name: npc.name,
+                    preText: npc.preText, postText: npc.postText,
+                    reward: npc.reward
+                });
+                Game.Main.state = 'BATTLE';
+            });
+        } else if (result.type === 'shop') {
+            this.state = 'SHOP';
+            this.shopCursor = 0;
+            this.shopConfirm = false;
+        }
+    },
+
+    handleBattleEnd: function() {
+        var B = Game.Battle;
+
+        if (B.result === 'DEFEAT') {
+            for (var i = 0; i < Game.Overworld.player.team.length; i++) {
+                Game.Overworld.player.team[i].heal();
+            }
+            var hp = Game.MapData.healPoint;
+            Game.Overworld.player.gridX = hp.x;
+            Game.Overworld.player.gridY = hp.y;
+            Game.Overworld.player.pixelX = hp.x * Game.Constants.TILE_SIZE;
+            Game.Overworld.player.pixelY = hp.y * Game.Constants.TILE_SIZE;
+            Game.Overworld.player.targetX = Game.Overworld.player.pixelX;
+            Game.Overworld.player.targetY = Game.Overworld.player.pixelY;
+            Game.Overworld.player.moving = false;
+        }
+
+        if (B.isTrainerBattle && B.result === 'VICTORY' && B.trainerData) {
+            Game.Overworld.defeatNPC(B.trainerData.id);
+        }
+
+        if (B.result === 'VICTORY' && (B.pendingMoves.length > 0 || B.pendingEvolutions.length > 0)) {
+            this.pendingPostBattle = {
+                moves: B.pendingMoves.slice(),
+                evolutions: B.pendingEvolutions.slice(),
+                mon: B.playerMon
+            };
+        } else {
+            this.pendingPostBattle = null;
+        }
+
+        this.startTransition(0.4, function() {
+            Game.Audio.playMusic('overworld');
+            Game.Main.processPostBattle();
+        });
+    },
+
+    processPostBattle: function() {
+        var pb = this.pendingPostBattle;
+
+        if (pb && pb.moves.length > 0) {
+            var newMove = pb.moves.shift();
+            this.learnMoveMon = pb.mon;
+            this.learnMoveNew = newMove;
+            this.learnMoveCursor = 0;
+            this.state = 'LEARN_MOVE';
+            return;
+        }
+
+        if (pb && pb.evolutions.length > 0) {
+            var mon = pb.evolutions.shift();
+            if (mon.canEvolve()) {
+                this.evolutionMon = mon;
+                this.evolutionTimer = 3;
+                this.evolutionCursor = 0;
+                this.state = 'EVOLUTION';
+                Game.Audio.playEvolution();
+                return;
+            }
+        }
+
+        this.pendingPostBattle = null;
+        this.state = 'OVERWORLD';
+        if (Game.Save) Game.Save.save();
     },
 
     updateTitle: function() {
@@ -119,6 +236,7 @@ Game.Main = {
             if (input.down() && this.titleCursor < 1) this.titleCursor++;
 
             if (input.confirm()) {
+                this.initAudio();
                 if (this.titleCursor === 0) {
                     var saveData = Game.Save.load();
                     if (saveData) {
@@ -132,17 +250,20 @@ Game.Main = {
                         Game.Overworld.player.direction = saveData.position.direction || 'down';
                         this.startTransition(0.5, function() {
                             Game.Main.state = 'OVERWORLD';
+                            Game.Audio.playMusic('overworld');
                         });
                     }
                 } else {
                     Game.Save.clear();
                     Game.Inventory.reset();
+                    Game.Overworld.defeatedNPCs = [];
                     this.state = 'STARTER_SELECT';
                     this.starterCursor = 0;
                 }
             }
         } else {
             if (input.confirm()) {
+                this.initAudio();
                 this.state = 'STARTER_SELECT';
                 this.starterCursor = 0;
             }
@@ -160,9 +281,12 @@ Game.Main = {
             Game.Inventory.reset();
             Game.Inventory.add('potion', 3);
             Game.Inventory.add('antidote', 1);
+            Game.Inventory.add('pokeball', 5);
+            Game.Overworld.defeatedNPCs = [];
             Game.Overworld.init([starter]);
             this.startTransition(0.5, function() {
                 Game.Main.state = 'OVERWORLD';
+                Game.Audio.playMusic('overworld');
                 Game.Save.save();
             });
         }
@@ -197,6 +321,92 @@ Game.Main = {
         }
     },
 
+    updateShop: function() {
+        var input = Game.Input;
+        var items = Game.ShopItems;
+
+        if (this.shopConfirm) {
+            if (input.confirm()) {
+                var itemId = items[this.shopCursor];
+                var def = Game.Items[itemId];
+                if (Game.Inventory.money >= def.price) {
+                    Game.Inventory.money -= def.price;
+                    Game.Inventory.add(itemId);
+                    Game.Audio.playBuy();
+                } else {
+                    Game.Audio.playError();
+                }
+                this.shopConfirm = false;
+            }
+            if (input.cancel()) {
+                this.shopConfirm = false;
+                Game.Audio.playCancel();
+            }
+            return;
+        }
+
+        var old = this.shopCursor;
+        if (input.up() && this.shopCursor > 0) this.shopCursor--;
+        if (input.down() && this.shopCursor < items.length - 1) this.shopCursor++;
+        if (this.shopCursor !== old) Game.Audio.playSelect();
+
+        if (input.cancel()) {
+            this.state = 'OVERWORLD';
+            Game.Audio.playCancel();
+            return;
+        }
+
+        if (input.confirm()) {
+            Game.Audio.playConfirm();
+            this.shopConfirm = true;
+        }
+    },
+
+    updateLearnMove: function() {
+        var input = Game.Input;
+
+        var old = this.learnMoveCursor;
+        if (input.up() && this.learnMoveCursor > 0) this.learnMoveCursor--;
+        if (input.down() && this.learnMoveCursor < 4) this.learnMoveCursor++;
+        if (this.learnMoveCursor !== old) Game.Audio.playSelect();
+
+        if (input.confirm()) {
+            if (this.learnMoveCursor < 4) {
+                this.learnMoveMon.forgetMove(this.learnMoveCursor);
+                this.learnMoveMon.addMove(this.learnMoveNew);
+                Game.Audio.playLevelUp();
+            } else {
+                Game.Audio.playCancel();
+            }
+            this.processPostBattle();
+        }
+
+        if (input.cancel()) {
+            Game.Audio.playCancel();
+            this.processPostBattle();
+        }
+    },
+
+    updateEvolution: function(dt) {
+        this.evolutionTimer -= dt;
+
+        if (this.evolutionTimer <= 0) {
+            var input = Game.Input;
+            var old = this.evolutionCursor;
+            if (input.left() && this.evolutionCursor > 0) this.evolutionCursor--;
+            if (input.right() && this.evolutionCursor < 1) this.evolutionCursor++;
+            if (this.evolutionCursor !== old) Game.Audio.playSelect();
+
+            if (input.confirm()) {
+                if (this.evolutionCursor === 0) {
+                    this.evolutionMon.evolve();
+                    Game.Audio.playEvolution();
+                }
+                this.processPostBattle();
+            }
+        }
+    },
+
     startTransition: function(duration, callback) {
         this.transitionTimer = duration;
         this.transitionCallback = callback;
@@ -220,6 +430,16 @@ Game.Main = {
                 break;
             case 'BATTLE':
                 Game.BattleUI.draw();
+                break;
+            case 'SHOP':
+                Game.Overworld.draw();
+                this.renderShop(R);
+                break;
+            case 'LEARN_MOVE':
+                this.renderLearnMove(R);
+                break;
+            case 'EVOLUTION':
+                this.renderEvolution(R);
                 break;
         }
 
@@ -335,7 +555,7 @@ Game.Main = {
         ctx.fillStyle = 'rgba(255,255,255,0.03)';
         ctx.fillRect(50, 500, 700, 1);
 
-        R.drawText('WASD/Flechas = mover', 400, 520, { size: 8, color: '#445', align: 'center' });
+        R.drawText('WASD/Flechas = mover  ESC = pausa', 400, 520, { size: 8, color: '#445', align: 'center' });
         R.drawText('Z/Enter = confirmar  X/Esc = cancelar', 400, 543, { size: 8, color: '#445', align: 'center' });
         R.drawText('Hierba alta = encuentros  Cruz roja = curar', 400, 566, { size: 8, color: '#445', align: 'center' });
     },
@@ -392,23 +612,132 @@ Game.Main = {
             var statColor = selected ? '#bbb' : '#666';
             var labels = ['HP', 'ATK', 'DEF', 'SPA', 'SPD', 'VEL'];
             var values = [sp.baseStats.hp, sp.baseStats.attack, sp.baseStats.defense, sp.baseStats.spAttack, sp.baseStats.spDefense, sp.baseStats.speed];
-            for (var s = 0; s < 6; s++) {
-                var sy = y + 205 + s * 22;
-                R.drawText(labels[s], x + 10, sy, { size: 7, color: statColor });
+            for (var ss = 0; ss < 6; ss++) {
+                var sy = y + 205 + ss * 22;
+                R.drawText(labels[ss], x + 10, sy, { size: 7, color: statColor });
 
-                var barW = Math.floor(values[s] / 100 * 75);
+                var barW = Math.floor(values[ss] / 100 * 75);
                 ctx.fillStyle = '#222';
                 ctx.fillRect(x + 55, sy + 2, 75, 8);
                 ctx.fillStyle = selected ? typeColor : '#555';
                 ctx.fillRect(x + 55, sy + 2, barW, 8);
 
-                R.drawText('' + values[s], x + 135, sy, { size: 7, color: statColor });
+                R.drawText('' + values[ss], x + 135, sy, { size: 7, color: statColor });
             }
         }
 
         var blink = Math.sin(t / 400) > 0;
         if (blink) {
             R.drawText('< ENTER para elegir >', 400, 520, { size: 12, color: '#ddd', align: 'center' });
+        }
+    },
+
+    renderShop: function(R) {
+        var ctx = R.ctx;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(0, 0, 800, 608);
+
+        R.drawPanel(150, 80, 500, 450);
+        R.drawText('TIENDA', 400, 100, { size: 18, color: '#ffdd44', align: 'center' });
+        R.drawText('Dinero: $' + Game.Inventory.money, 400, 130, { size: 12, color: '#88ff88', align: 'center' });
+
+        var items = Game.ShopItems;
+        for (var i = 0; i < items.length; i++) {
+            var def = Game.Items[items[i]];
+            var sel = this.shopCursor === i;
+            var y = 170 + i * 50;
+            var canBuy = Game.Inventory.money >= def.price;
+
+            if (sel) {
+                R.drawRect(170, y - 5, 460, 42, 'rgba(255,255,255,0.06)');
+            }
+
+            var nameColor = sel ? '#ffdd44' : '#fff';
+            if (!canBuy) nameColor = sel ? '#aa8833' : '#666';
+
+            R.drawText((sel ? '> ' : '  ') + def.name, 190, y, { size: 14, color: nameColor });
+            R.drawText('$' + def.price, 480, y, { size: 12, color: canBuy ? '#88ff88' : '#884444' });
+            R.drawText('x' + Game.Inventory.count(items[i]), 560, y, { size: 10, color: '#aaa' });
+            R.drawText(def.description, 210, y + 22, { size: 8, color: '#888' });
+        }
+
+        if (this.shopConfirm) {
+            R.drawPanel(270, 420, 260, 50);
+            var cDef = Game.Items[items[this.shopCursor]];
+            R.drawText('Comprar ' + cDef.name + '?', 300, 430, { size: 10, color: '#fff' });
+            R.drawText('[Z] Si  [X] No', 300, 450, { size: 9, color: '#aaa' });
+        }
+
+        R.drawText('[ESC] Salir', 400, 510, { size: 8, color: '#666', align: 'center' });
+    },
+
+    renderLearnMove: function(R) {
+        var ctx = R.ctx;
+        ctx.fillStyle = '#0d0d2b';
+        ctx.fillRect(0, 0, 800, 608);
+
+        var mon = this.learnMoveMon;
+        var newMove = this.learnMoveNew;
+
+        R.drawText(mon.name + ' quiere aprender ' + newMove.name + '!', 400, 50, { size: 14, color: '#fff', align: 'center' });
+        R.drawText('Elige un movimiento para olvidar:', 400, 80, { size: 10, color: '#ccc', align: 'center' });
+
+        for (var i = 0; i < mon.moves.length; i++) {
+            var m = mon.moves[i];
+            var sel = this.learnMoveCursor === i;
+            var y = 130 + i * 60;
+            var color = sel ? '#ffdd44' : '#ccc';
+
+            R.drawPanel(200, y - 5, 400, 50);
+            R.drawText((sel ? '> ' : '  ') + m.name, 220, y + 5, { size: 14, color: color });
+            var typeCol = Game.Constants.TYPE_COLORS[m.type] || '#aaa';
+            R.drawText(m.type.toUpperCase(), 420, y + 5, { size: 8, color: typeCol });
+            R.drawText('POD:' + m.power + '  PP:' + m.pp, 220, y + 28, { size: 8, color: '#888' });
+        }
+
+        var newSel = this.learnMoveCursor === 4;
+        R.drawPanel(200, 375, 400, 50);
+        R.drawText((newSel ? '> ' : '  ') + 'No aprender ' + newMove.name, 220, 385, { size: 12, color: newSel ? '#ff6644' : '#888' });
+
+        R.drawPanel(200, 460, 400, 80);
+        R.drawText('NUEVO: ' + newMove.name, 220, 475, { size: 14, color: '#44ff44' });
+        var ntc = Game.Constants.TYPE_COLORS[newMove.type] || '#aaa';
+        R.drawText(newMove.type.toUpperCase(), 480, 475, { size: 8, color: ntc });
+        R.drawText('POD:' + newMove.power + '  PP:' + newMove.pp + '  ACC:' + newMove.accuracy, 220, 500, { size: 8, color: '#aaa' });
+    },
+
+    renderEvolution: function(R) {
+        var ctx = R.ctx;
+        var t = performance.now();
+        ctx.fillStyle = '#0d0d2b';
+        ctx.fillRect(0, 0, 800, 608);
+
+        var mon = this.evolutionMon;
+        var evoSpec = Game.Species[mon.species.evolution.to];
+
+        R.drawText('Que? ' + mon.name + ' esta evolucionando!', 400, 50, { size: 14, color: '#fff', align: 'center' });
+
+        var flash = Math.sin(t / 100) * 0.3 + 0.7;
+        ctx.globalAlpha = flash;
+        R.drawMonsterSprite(200, 180, mon.species, { width: 160, height: 160 });
+        ctx.globalAlpha = 1;
+
+        R.drawText('->', 400, 250, { size: 24, color: '#ffdd44', align: 'center' });
+
+        if (evoSpec) {
+            ctx.globalAlpha = 0.5 + Math.sin(t / 200) * 0.3;
+            R.drawMonsterSprite(480, 180, evoSpec, { width: 160, height: 160 });
+            ctx.globalAlpha = 1;
+            R.drawText(evoSpec.name, 560, 360, { size: 14, color: '#ffdd44', align: 'center' });
+        }
+
+        if (this.evolutionTimer <= 0) {
+            R.drawPanel(200, 420, 400, 80);
+            var yesColor = this.evolutionCursor === 0 ? '#44ff44' : '#888';
+            var noColor = this.evolutionCursor === 1 ? '#ff4444' : '#888';
+            R.drawText('Evolucionar?', 400, 435, { size: 14, color: '#fff', align: 'center' });
+            R.drawText((this.evolutionCursor === 0 ? '> ' : '  ') + 'Si', 320, 465, { size: 14, color: yesColor });
+            R.drawText((this.evolutionCursor === 1 ? '> ' : '  ') + 'No', 440, 465, { size: 14, color: noColor });
         }
     },
 

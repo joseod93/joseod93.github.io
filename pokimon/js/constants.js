@@ -6,7 +6,7 @@ Game.Constants = {
     TILE_SIZE: 32,
     MAP_COLS: 25,
     MAP_ROWS: 19,
-    MAX_TEAM_SIZE: 3,
+    MAX_TEAM_SIZE: 6,
     ENCOUNTER_RATE: 0.15,
     CRIT_RATE: 0.0625,
     CRIT_MULTIPLIER: 1.5,
@@ -40,12 +40,14 @@ Game.Constants = {
     TILE_GRASS: 2,
     TILE_HEAL: 3,
     TILE_PATH: 4,
+    TILE_SHOP: 5,
 
     TILE_COLORS: {
         0: '#88cc44',
         1: '#336622',
         2: '#44aa22',
         3: '#ff6688',
-        4: '#ccbb88'
+        4: '#ccbb88',
+        5: '#dd9944'
     }
 };

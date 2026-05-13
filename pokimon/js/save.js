@@ -25,14 +25,16 @@ Game.Save = {
         }
 
         var data = {
-            version: 1,
+            version: 2,
             team: teamData,
             position: {
                 gridX: ow.player.gridX,
                 gridY: ow.player.gridY,
                 direction: ow.player.direction
             },
-            inventory: Game.Inventory ? JSON.parse(JSON.stringify(Game.Inventory.items)) : {}
+            inventory: Game.Inventory ? JSON.parse(JSON.stringify(Game.Inventory.items)) : {},
+            money: Game.Inventory ? Game.Inventory.money : 500,
+            defeatedNPCs: ow.defeatedNPCs ? ow.defeatedNPCs.slice() : []
         };
 
         try {
@@ -45,7 +47,7 @@ Game.Save = {
             var raw = localStorage.getItem(this.KEY);
             if (!raw) return null;
             var data = JSON.parse(raw);
-            if (!data || data.version !== 1) return null;
+            if (!data || (data.version !== 1 && data.version !== 2)) return null;
 
             var team = [];
             for (var i = 0; i < data.team.length; i++) {
@@ -69,8 +71,13 @@ Game.Save = {
                 team.push(mon);
             }
 
-            if (Game.Inventory && data.inventory) {
-                Game.Inventory.items = data.inventory;
+            if (Game.Inventory) {
+                if (data.inventory) Game.Inventory.items = data.inventory;
+                if (data.money !== undefined) Game.Inventory.money = data.money;
+            }
+
+            if (data.defeatedNPCs) {
+                Game.Overworld.defeatedNPCs = data.defeatedNPCs;
             }
 
             return {

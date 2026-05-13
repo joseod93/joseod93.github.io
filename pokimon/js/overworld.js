@@ -5,7 +5,19 @@ Game.Overworld = {
     map: null,
     showHealMsg: false,
     healMsgTimer: 0,
+    healMsgText: 'Equipo curado!',
     encounterTriggered: false,
+    npcs: [],
+    defeatedNPCs: [],
+    pauseOpen: false,
+    pauseCursor: 0,
+    pauseSubState: null,
+    pauseTeamCursor: 0,
+    pauseItemCursor: 0,
+    pauseItemTargetCursor: 0,
+    pausePendingItem: null,
+    npcWalkTimer: 0,
+    npcBattlePending: null,
 
     init: function(team) {
         var start = Game.MapData.playerStart;
@@ -19,11 +31,45 @@ Game.Overworld = {
             moving: false,
             direction: 'down',
             team: team,
-            stepCount: 0
+            stepCount: 0,
+            walkFrame: 0,
+            walkTimer: 0
         };
         this.map = Game.MapData;
         this.showHealMsg = false;
         this.encounterTriggered = false;
+        this.pauseOpen = false;
+        this.pauseSubState = null;
+        this.npcBattlePending = null;
+        this.initNPCs();
+    },
+
+    initNPCs: function() {
+        this.npcs = [];
+        for (var i = 0; i < Game.NPCData.length; i++) {
+            var d = Game.NPCData[i];
+            var defeated = false;
+            for (var j = 0; j < this.defeatedNPCs.length; j++) {
+                if (this.defeatedNPCs[j] === d.id) { defeated = true; break; }
+            }
+            this.npcs.push({
+                id: d.id, x: d.x, y: d.y, direction: d.direction,
+                sight: d.sight, name: d.name, sprite: d.sprite,
+                team: d.team, preText: d.preText, postText: d.postText,
+                reward: d.reward, defeated: defeated
+            });
+        }
+    },
+
+    defeatNPC: function(npcId) {
+        for (var i = 0; i < this.npcs.length; i++) {
+            if (this.npcs[i].id === npcId) this.npcs[i].defeated = true;
+        }
+        var found = false;
+        for (var j = 0; j < this.defeatedNPCs.length; j++) {
+            if (this.defeatedNPCs[j] === npcId) { found = true; break; }
+        }
+        if (!found) this.defeatedNPCs.push(npcId);
     },
 
     update: function(dt) {
@@ -31,9 +77,29 @@ Game.Overworld = {
         var C = Game.Constants;
         var input = Game.Input;
 
+        if (this.npcBattlePending) {
+            this.npcWalkTimer -= dt;
+            if (this.npcWalkTimer <= 0) {
+                var npc = this.npcBattlePending;
+                this.npcBattlePending = null;
+                return { type: 'trainer', npc: npc };
+            }
+            return null;
+        }
+
+        if (this.pauseOpen) {
+            this.updatePause();
+            return null;
+        }
+
         if (this.showHealMsg) {
             this.healMsgTimer -= dt;
             if (this.healMsgTimer <= 0) this.showHealMsg = false;
+            return null;
+        }
+
+        if (input.cancel() && !p.moving) {
+            this.openPause();
             return null;
         }
 
@@ -54,10 +120,17 @@ Game.Overworld = {
                 p.pixelY = p.targetY;
             }
 
+            p.walkTimer += dt;
+            if (p.walkTimer > 0.15) {
+                p.walkFrame = (p.walkFrame + 1) % 2;
+                p.walkTimer = 0;
+            }
+
             if (p.pixelX === p.targetX && p.pixelY === p.targetY) {
                 p.moving = false;
                 p.gridX = p.targetX / C.TILE_SIZE;
                 p.gridY = p.targetY / C.TILE_SIZE;
+                p.walkFrame = 0;
                 return this.onStepComplete();
             }
             return null;
@@ -81,6 +154,9 @@ Game.Overworld = {
             var tile = this.getTile(p.gridX, p.gridY);
             if (tile === C.TILE_HEAL) {
                 this.healTeam();
+            } else if (tile === C.TILE_SHOP) {
+                Game.Audio.playShop();
+                return { type: 'shop' };
             }
         }
 
@@ -91,10 +167,47 @@ Game.Overworld = {
         var C = Game.Constants;
         var tile = this.getTile(this.player.gridX, this.player.gridY);
 
+        var npcBattle = this.checkNPCSight();
+        if (npcBattle) return npcBattle;
+
         if (tile === C.TILE_GRASS) {
             this.player.stepCount++;
             if (Game.Utils.chance(C.ENCOUNTER_RATE)) {
                 return this.triggerEncounter();
+            }
+        }
+        return null;
+    },
+
+    checkNPCSight: function() {
+        var px = this.player.gridX;
+        var py = this.player.gridY;
+
+        for (var i = 0; i < this.npcs.length; i++) {
+            var npc = this.npcs[i];
+            if (npc.defeated) continue;
+
+            var inSight = false;
+            switch (npc.direction) {
+                case 'right':
+                    if (py === npc.y && px > npc.x && px <= npc.x + npc.sight) inSight = true;
+                    break;
+                case 'left':
+                    if (py === npc.y && px < npc.x && px >= npc.x - npc.sight) inSight = true;
+                    break;
+                case 'down':
+                    if (px === npc.x && py > npc.y && py <= npc.y + npc.sight) inSight = true;
+                    break;
+                case 'up':
+                    if (px === npc.x && py < npc.y && py >= npc.y - npc.sight) inSight = true;
+                    break;
+            }
+
+            if (inSight) {
+                this.npcBattlePending = npc;
+                this.npcWalkTimer = 0.6;
+                Game.Audio.playEncounter();
+                return null;
             }
         }
         return null;
@@ -122,7 +235,11 @@ Game.Overworld = {
 
     canWalk: function(x, y) {
         if (x < 0 || x >= Game.Constants.MAP_COLS || y < 0 || y >= Game.Constants.MAP_ROWS) return false;
-        return this.getTile(x, y) !== Game.Constants.TILE_WALL;
+        if (this.getTile(x, y) === Game.Constants.TILE_WALL) return false;
+        for (var i = 0; i < this.npcs.length; i++) {
+            if (this.npcs[i].x === x && this.npcs[i].y === y) return false;
+        }
+        return true;
     },
 
     getTile: function(x, y) {
@@ -135,7 +252,144 @@ Game.Overworld = {
         }
         this.showHealMsg = true;
         this.healMsgTimer = 2;
+        this.healMsgText = 'Equipo curado!';
+        Game.Audio.playHeal();
         if (Game.Save) Game.Save.save();
+    },
+
+    openPause: function() {
+        this.pauseOpen = true;
+        this.pauseCursor = 0;
+        this.pauseSubState = null;
+        Game.Audio.playConfirm();
+    },
+
+    updatePause: function() {
+        var input = Game.Input;
+
+        if (this.pauseSubState === 'TEAM') {
+            this.updatePauseTeam();
+            return;
+        }
+        if (this.pauseSubState === 'BAG') {
+            this.updatePauseBag();
+            return;
+        }
+        if (this.pauseSubState === 'BAG_TARGET') {
+            this.updatePauseBagTarget();
+            return;
+        }
+
+        var old = this.pauseCursor;
+        if (input.up() && this.pauseCursor > 0) this.pauseCursor--;
+        if (input.down() && this.pauseCursor < 3) this.pauseCursor++;
+        if (this.pauseCursor !== old) Game.Audio.playSelect();
+
+        if (input.cancel()) {
+            this.pauseOpen = false;
+            Game.Audio.playCancel();
+            return;
+        }
+
+        if (input.confirm()) {
+            Game.Audio.playConfirm();
+            switch (this.pauseCursor) {
+                case 0:
+                    this.pauseSubState = 'TEAM';
+                    this.pauseTeamCursor = 0;
+                    break;
+                case 1:
+                    this.pauseSubState = 'BAG';
+                    this.pauseItemCursor = 0;
+                    break;
+                case 2:
+                    Game.Save.save();
+                    this.pauseOpen = false;
+                    this.showHealMsg = true;
+                    this.healMsgTimer = 1.5;
+                    this.healMsgText = 'Partida guardada!';
+                    break;
+                case 3:
+                    this.pauseOpen = false;
+                    break;
+            }
+        }
+    },
+
+    updatePauseTeam: function() {
+        var input = Game.Input;
+        var teamLen = this.player.team.length;
+        var old = this.pauseTeamCursor;
+        if (input.up() && this.pauseTeamCursor > 0) this.pauseTeamCursor--;
+        if (input.down() && this.pauseTeamCursor < teamLen - 1) this.pauseTeamCursor++;
+        if (this.pauseTeamCursor !== old) Game.Audio.playSelect();
+        if (input.cancel()) {
+            this.pauseSubState = null;
+            Game.Audio.playCancel();
+        }
+    },
+
+    updatePauseBag: function() {
+        var input = Game.Input;
+        var items = Game.Inventory.getFieldItems();
+        var old = this.pauseItemCursor;
+        if (input.up() && this.pauseItemCursor > 0) this.pauseItemCursor--;
+        if (input.down() && this.pauseItemCursor < items.length - 1) this.pauseItemCursor++;
+        if (this.pauseItemCursor !== old) Game.Audio.playSelect();
+        if (input.cancel()) {
+            this.pauseSubState = null;
+            Game.Audio.playCancel();
+            return;
+        }
+        if (input.confirm() && items.length > 0) {
+            var item = items[this.pauseItemCursor];
+            this.pausePendingItem = item.id;
+            this.pauseItemTargetCursor = 0;
+            this.pauseSubState = 'BAG_TARGET';
+            Game.Audio.playConfirm();
+        }
+    },
+
+    updatePauseBagTarget: function() {
+        var input = Game.Input;
+        var targets = this.getFieldItemTargets(this.pausePendingItem);
+        var old = this.pauseItemTargetCursor;
+        if (input.up() && this.pauseItemTargetCursor > 0) this.pauseItemTargetCursor--;
+        if (input.down() && this.pauseItemTargetCursor < targets.length - 1) this.pauseItemTargetCursor++;
+        if (this.pauseItemTargetCursor !== old) Game.Audio.playSelect();
+        if (input.cancel()) {
+            this.pauseSubState = 'BAG';
+            Game.Audio.playCancel();
+            return;
+        }
+        if (input.confirm() && targets.length > 0) {
+            var targetIdx = targets[this.pauseItemTargetCursor];
+            var mon = this.player.team[targetIdx];
+            var def = Game.Items[this.pausePendingItem];
+
+            if (def.type === 'heal') {
+                if (mon.currentHP >= mon.maxHP || mon.isFainted()) { Game.Audio.playError(); return; }
+                mon.heal(def.value);
+            } else if (def.type === 'status') {
+                if (!mon.status || mon.isFainted()) { Game.Audio.playError(); return; }
+                mon.clearStatus();
+            }
+
+            Game.Inventory.remove(this.pausePendingItem);
+            Game.Audio.playHeal();
+            this.pauseSubState = 'BAG';
+        }
+    },
+
+    getFieldItemTargets: function(itemId) {
+        var def = Game.Items[itemId];
+        var targets = [];
+        for (var i = 0; i < this.player.team.length; i++) {
+            var mon = this.player.team[i];
+            if (def.type === 'heal' && !mon.isFainted() && mon.currentHP < mon.maxHP) targets.push(i);
+            else if (def.type === 'status' && !mon.isFainted() && mon.status !== null) targets.push(i);
+        }
+        return targets;
     },
 
     draw: function() {
@@ -150,13 +404,14 @@ Game.Overworld = {
 
         R.clear('#222');
 
-        var tileImages = {
-            0: Game.Assets ? Game.Assets.get('tile_ground') : null,
-            1: Game.Assets ? Game.Assets.get('tile_wall') : null,
-            2: Game.Assets ? Game.Assets.get('tile_grass') : null,
-            3: Game.Assets ? Game.Assets.get('tile_heal') : null,
-            4: Game.Assets ? Game.Assets.get('tile_path') : null
-        };
+        var baseImg = Game.Assets ? Game.Assets.get('tile_base') : null;
+        var wallImg = Game.Assets ? Game.Assets.get('tile_wall') : null;
+        var grassImg = Game.Assets ? Game.Assets.get('tile_grass') : null;
+        var healImg = Game.Assets ? Game.Assets.get('tile_heal') : null;
+        var pathImg = Game.Assets ? Game.Assets.get('tile_path') : null;
+
+        var ctx = R.ctx;
+        var t = performance.now();
 
         for (var row = 0; row < C.MAP_ROWS; row++) {
             for (var col = 0; col < C.MAP_COLS; col++) {
@@ -166,84 +421,221 @@ Game.Overworld = {
 
                 if (tx < -C.TILE_SIZE || tx > 800 || ty < -C.TILE_SIZE || ty > 608) continue;
 
-                var ctx = R.ctx;
-                var tileImg = tileImages[tile];
-                if (tileImg) {
-                    ctx.drawImage(tileImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
+                if (baseImg) {
+                    ctx.drawImage(baseImg, (col % 16) * 32, (row % 16) * 32, 32, 32, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
                 } else {
-                    R.drawRect(tx, ty, C.TILE_SIZE, C.TILE_SIZE, C.TILE_COLORS[tile]);
+                    R.drawRect(tx, ty, C.TILE_SIZE, C.TILE_SIZE, '#88cc44');
+                }
+
+                if (tile === C.TILE_WALL) {
+                    if (wallImg) {
+                        ctx.drawImage(wallImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
+                    } else {
+                        var grd = ctx.createLinearGradient(tx, ty, tx, ty + C.TILE_SIZE);
+                        grd.addColorStop(0, '#3d7a22');
+                        grd.addColorStop(0.6, '#2a5518');
+                        grd.addColorStop(1, '#1e3d12');
+                        ctx.fillStyle = grd;
+                        ctx.fillRect(tx + 1, ty + 1, C.TILE_SIZE - 2, C.TILE_SIZE - 6);
+                        ctx.fillStyle = '#664433';
+                        ctx.fillRect(tx + 6, ty + C.TILE_SIZE - 8, C.TILE_SIZE - 12, 7);
+                    }
+                }
+
+                if (tile === C.TILE_GRASS) {
+                    if (grassImg) {
+                        ctx.drawImage(grassImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
+                    }
+                    var sway = Math.sin(t / 600 + col * 0.8 + row * 0.5);
+                    for (var g = 0; g < 3; g++) {
+                        var gx = tx + 4 + g * 9 + ((col + g) % 3);
+                        var gy = ty + 8 + (g % 2) * 5;
+                        var lean = sway * 2.5;
+                        ctx.fillStyle = g % 2 === 0 ? 'rgba(45,136,32,0.6)' : 'rgba(77,187,48,0.6)';
+                        ctx.beginPath();
+                        ctx.moveTo(gx, gy + 14);
+                        ctx.quadraticCurveTo(gx + lean, gy, gx + 2 + lean, gy - 3);
+                        ctx.lineTo(gx + 3 + lean, gy);
+                        ctx.quadraticCurveTo(gx + 3, gy + 7, gx + 3, gy + 14);
+                        ctx.fill();
+                    }
+                }
+
+                if (tile === C.TILE_HEAL) {
+                    if (healImg) {
+                        ctx.drawImage(healImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
+                    }
+                    var pulse = 0.5 + Math.sin(t / 400) * 0.3;
+                    ctx.globalAlpha = pulse;
+                    ctx.fillStyle = 'rgba(255,100,130,0.3)';
+                    ctx.beginPath();
+                    ctx.arc(tx + 16, ty + 16, 18, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+
+                if (tile === C.TILE_PATH) {
+                    if (pathImg) {
+                        ctx.drawImage(pathImg, tx, ty, C.TILE_SIZE, C.TILE_SIZE);
+                    } else {
+                        ctx.fillStyle = '#bbaa77';
+                        ctx.fillRect(tx + 1, ty + 1, C.TILE_SIZE - 2, C.TILE_SIZE - 2);
+                    }
+                }
+
+                if (tile === C.TILE_SHOP) {
+                    ctx.fillStyle = '#cc9944';
+                    ctx.fillRect(tx + 1, ty + 1, C.TILE_SIZE - 2, C.TILE_SIZE - 2);
+                    var shopPulse = 0.6 + Math.sin(t / 500) * 0.2;
+                    ctx.globalAlpha = shopPulse;
+                    ctx.fillStyle = '#ffdd44';
+                    ctx.font = '14px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('$', tx + 16, ty + 22);
+                    ctx.globalAlpha = 1;
                 }
             }
         }
 
+        this.drawNPCs(R, ctx, camX, camY, C, t);
+        this.drawPlayer(R, ctx, p, camX, camY, C, t);
+        this.drawHUD(R);
+
+        if (this.showHealMsg) {
+            R.drawPanel(200, 250, 400, 60);
+            R.drawText(this.healMsgText, 300, 270, { size: 16, color: '#44ff44', align: 'center' });
+        }
+
+        if (this.npcBattlePending) {
+            R.drawPanel(200, 250, 400, 60);
+            R.drawText(this.npcBattlePending.name + ' te desafia!', 300, 270, { size: 14, color: '#ff4444', align: 'center' });
+        }
+
+        if (this.pauseOpen) {
+            this.drawPause(R, ctx);
+        }
+    },
+
+    drawNPCs: function(R, ctx, camX, camY, C, t) {
+        for (var i = 0; i < this.npcs.length; i++) {
+            var npc = this.npcs[i];
+            var nx = npc.x * C.TILE_SIZE - camX;
+            var ny = npc.y * C.TILE_SIZE - camY;
+
+            if (nx < -C.TILE_SIZE || nx > 800 || ny < -C.TILE_SIZE || ny > 608) continue;
+
+            ctx.save();
+
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.beginPath();
+            ctx.ellipse(nx + 16, ny + 30, 10, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            var bob = Math.sin(t / 800 + i * 2) * 1.5;
+
+            ctx.fillStyle = npc.sprite;
+            ctx.beginPath();
+            ctx.arc(nx + 16, ny + 14 + bob, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffddcc';
+            ctx.beginPath();
+            ctx.arc(nx + 16, ny + 8 + bob, 7, 0, Math.PI * 2);
+            ctx.fill();
+
+            var eyeX = 0;
+            if (npc.direction === 'left') eyeX = -2;
+            if (npc.direction === 'right') eyeX = 2;
+
+            if (npc.direction !== 'up') {
+                ctx.fillStyle = '#222';
+                ctx.beginPath();
+                ctx.arc(nx + 13 + eyeX, ny + 7 + bob, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(nx + 19 + eyeX, ny + 7 + bob, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            if (npc.defeated) {
+                ctx.globalAlpha = 0.5;
+            }
+
+            if (!npc.defeated) {
+                ctx.fillStyle = '#ff3333';
+                ctx.font = '8px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('!', nx + 16, ny - 4 + bob);
+            }
+
+            ctx.restore();
+        }
+    },
+
+    drawPlayer: function(R, ctx, p, camX, camY, C, t) {
         var px = Math.floor(p.pixelX - camX);
         var py = Math.floor(p.pixelY - camY);
-        var ctx = R.ctx;
 
         ctx.save();
+
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.beginPath();
         ctx.ellipse(px + 16, py + 30, 10, 4, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        var bob = p.moving ? Math.sin(performance.now() / 80) * 2 : 0;
-        var playerImg = Game.Assets ? Game.Assets.get('player') : null;
+        var bob = p.moving ? Math.sin(t / 80) * 2 : 0;
+        var tilt = 0;
+        if (p.moving) {
+            tilt = Math.sin(t / 100) * 0.08;
+        }
+
+        var dirKey = 'player_' + p.direction;
+        var playerImg = Game.Assets ? Game.Assets.get(dirKey) : null;
 
         if (playerImg) {
-            ctx.drawImage(playerImg, px, py - 4 + bob, C.TILE_SIZE, C.TILE_SIZE);
+            ctx.translate(px + 16, py + 16 + bob);
+            ctx.rotate(tilt);
+            ctx.drawImage(playerImg, -16, -20, C.TILE_SIZE, C.TILE_SIZE);
         } else {
+            ctx.translate(px + 16, py + 16 + bob);
+            ctx.rotate(tilt);
+
             ctx.fillStyle = '#ee3333';
             ctx.beginPath();
-            ctx.arc(px + 16, py + 14 + bob, 10, 0, Math.PI * 2);
+            ctx.arc(0, -2, 10, 0, Math.PI * 2);
             ctx.fill();
-
-            ctx.fillStyle = '#cc1111';
-            ctx.beginPath();
-            ctx.arc(px + 16, py + 14 + bob, 10, 0, Math.PI * 2);
-            ctx.stroke();
 
             ctx.fillStyle = '#ffddcc';
             ctx.beginPath();
-            ctx.arc(px + 16, py + 8 + bob, 7, 0, Math.PI * 2);
+            ctx.arc(0, -8, 7, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.fillStyle = '#fff';
-            var eyeOffX = 0, eyeOffY = 0;
-            if (p.direction === 'left') eyeOffX = -2;
-            if (p.direction === 'right') eyeOffX = 2;
-            if (p.direction === 'up') eyeOffY = -1;
-            if (p.direction === 'down') eyeOffY = 1;
-
             if (p.direction !== 'up') {
+                var eyeOffX = 0;
+                if (p.direction === 'left') eyeOffX = -2;
+                if (p.direction === 'right') eyeOffX = 2;
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
-                ctx.arc(px + 13 + eyeOffX, py + 7 + bob + eyeOffY, 2.5, 0, Math.PI * 2);
+                ctx.arc(-3 + eyeOffX, -9, 2.5, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.beginPath();
-                ctx.arc(px + 19 + eyeOffX, py + 7 + bob + eyeOffY, 2.5, 0, Math.PI * 2);
+                ctx.arc(3 + eyeOffX, -9, 2.5, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.fillStyle = '#222';
                 ctx.beginPath();
-                ctx.arc(px + 13 + eyeOffX, py + 7.5 + bob + eyeOffY, 1.2, 0, Math.PI * 2);
+                ctx.arc(-3 + eyeOffX, -8.5, 1.2, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.beginPath();
-                ctx.arc(px + 19 + eyeOffX, py + 7.5 + bob + eyeOffY, 1.2, 0, Math.PI * 2);
+                ctx.arc(3 + eyeOffX, -8.5, 1.2, 0, Math.PI * 2);
                 ctx.fill();
             }
 
             ctx.fillStyle = '#884422';
-            ctx.fillRect(px + 9, py + 1 + bob, 14, 4);
-            ctx.fillRect(px + 7, py + 3 + bob, 18, 2);
+            ctx.fillRect(-7, -15, 14, 4);
+            ctx.fillRect(-9, -13, 18, 2);
         }
 
         ctx.restore();
-
-        this.drawHUD(R);
-
-        if (this.showHealMsg) {
-            R.drawPanel(200, 250, 400, 60);
-            R.drawText('Equipo curado!', 300, 270, { size: 16, color: '#44ff44', align: 'center' });
-        }
     },
 
     drawHUD: function(R) {
@@ -257,5 +649,107 @@ Game.Overworld = {
             R.drawHPBar(120, y + 2, 80, mon.currentHP, mon.maxHP);
             R.drawText('Nv' + mon.level, 205, y, { size: 7, color: '#aaa', shadow: false });
         }
+        R.drawText('$' + Game.Inventory.money, 5, 30 + this.player.team.length * 22, { size: 8, color: '#ffdd44', shadow: false });
+    },
+
+    drawPause: function(R, ctx) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0, 0, 800, 608);
+
+        if (this.pauseSubState === 'TEAM') {
+            this.drawPauseTeam(R); return;
+        }
+        if (this.pauseSubState === 'BAG' || this.pauseSubState === 'BAG_TARGET') {
+            this.drawPauseBag(R); return;
+        }
+
+        R.drawPanel(280, 150, 240, 280);
+        R.drawText('PAUSA', 400, 170, { size: 16, color: '#fff', align: 'center' });
+
+        var options = ['EQUIPO', 'MOCHILA', 'GUARDAR', 'CERRAR'];
+        for (var i = 0; i < 4; i++) {
+            var sel = this.pauseCursor === i;
+            var y = 220 + i * 45;
+            R.drawText((sel ? '> ' : '  ') + options[i], 320, y, { size: 14, color: sel ? '#ffdd44' : '#ccc' });
+        }
+
+        R.drawText('[ESC] Cerrar', 400, 410, { size: 8, color: '#666', align: 'center' });
+    },
+
+    drawPauseTeam: function(R) {
+        R.drawPanel(100, 50, 600, 500);
+        R.drawText('EQUIPO', 400, 70, { size: 16, color: '#fff', align: 'center' });
+
+        for (var i = 0; i < this.player.team.length; i++) {
+            var mon = this.player.team[i];
+            var sel = this.pauseTeamCursor === i;
+            var y = 110 + i * 70;
+
+            if (sel) {
+                R.drawRect(120, y - 5, 560, 60, 'rgba(255,255,255,0.08)');
+            }
+
+            var typeCol = Game.Constants.TYPE_COLORS[mon.species.type];
+            R.drawRect(130, y, 12, 40, typeCol);
+
+            R.drawText((sel ? '> ' : '  ') + mon.name, 155, y + 2, { size: 14, color: sel ? '#ffdd44' : '#fff' });
+            R.drawText('Nv.' + mon.level, 350, y + 2, { size: 10, color: '#ccc' });
+
+            R.drawHPBar(155, y + 28, 180, mon.currentHP, mon.maxHP);
+            R.drawText(mon.currentHP + '/' + mon.maxHP, 340, y + 26, { size: 8, color: '#aaa' });
+
+            if (mon.status) {
+                var sColor = Game.BattleUI.STATUS_COLORS[mon.status] || '#888';
+                var sLabel = Game.BattleUI.STATUS_LABELS[mon.status] || '???';
+                R.ctx.fillStyle = sColor;
+                R.ctx.beginPath();
+                R.ctx.roundRect(420, y + 5, 32, 14, 3);
+                R.ctx.fill();
+                R.drawText(sLabel, 424, y + 7, { size: 7, color: '#fff', shadow: false });
+            }
+
+            var stats = 'ATK:' + mon.stats.attack + ' DEF:' + mon.stats.defense + ' VEL:' + mon.stats.speed;
+            R.drawText(stats, 470, y + 5, { size: 7, color: '#888' });
+
+            for (var m = 0; m < mon.moves.length; m++) {
+                R.drawText(mon.moves[m].name, 470 + (m % 2) * 120, y + 22 + Math.floor(m / 2) * 14, { size: 7, color: '#aaa' });
+            }
+        }
+
+        R.drawText('[ESC] Volver', 400, 530, { size: 8, color: '#666', align: 'center' });
+    },
+
+    drawPauseBag: function(R) {
+        R.drawPanel(100, 50, 600, 500);
+        R.drawText('MOCHILA', 300, 70, { size: 16, color: '#fff' });
+        R.drawText('$' + Game.Inventory.money, 550, 70, { size: 14, color: '#ffdd44' });
+
+        var items = Game.Inventory.getFieldItems();
+
+        if (items.length === 0) {
+            R.drawText('Sin objetos usables...', 300, 250, { size: 12, color: '#888' });
+        } else {
+            for (var i = 0; i < items.length; i++) {
+                var sel = this.pauseItemCursor === i;
+                var def = Game.Items[items[i].id];
+                var y = 110 + i * 35;
+                R.drawText((sel ? '> ' : '  ') + def.name + ' x' + items[i].count, 150, y, { size: 12, color: sel ? '#ffdd44' : '#fff' });
+                if (sel) R.drawText(def.description, 450, y, { size: 9, color: '#aaa' });
+            }
+        }
+
+        if (this.pauseSubState === 'BAG_TARGET') {
+            var targets = this.getFieldItemTargets(this.pausePendingItem);
+            R.drawPanel(400, 150, 250, 30 + targets.length * 30);
+            R.drawText('Usar en:', 420, 160, { size: 10, color: '#ccc' });
+            for (var j = 0; j < targets.length; j++) {
+                var mon = this.player.team[targets[j]];
+                var tSel = this.pauseItemTargetCursor === j;
+                var ty = 185 + j * 28;
+                R.drawText((tSel ? '> ' : '  ') + mon.name + ' HP:' + mon.currentHP + '/' + mon.maxHP, 420, ty, { size: 10, color: tSel ? '#ffdd44' : '#fff' });
+            }
+        }
+
+        R.drawText('[ESC] Volver', 400, 530, { size: 8, color: '#666', align: 'center' });
     }
 };
