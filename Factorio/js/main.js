@@ -46,6 +46,8 @@ var Game = {
                 Inventory.add(this.player.inventory, 'coal', startRes * 10);
             } else {
                 Inventory.add(this.player.inventory, 'iron_plate', 10);
+                Inventory.add(this.player.inventory, 'iron_gear', 5);
+                Inventory.add(this.player.inventory, 'copper_plate', 5);
                 Inventory.add(this.player.inventory, 'stone', 10);
                 Inventory.add(this.player.inventory, 'coal', 5);
             }
@@ -55,6 +57,11 @@ var Game = {
             Camera.targetY = start.y * CFG.TILE - window.innerHeight / 2;
             Camera.x = Camera.targetX;
             Camera.y = Camera.targetY;
+
+            if (window.innerWidth < 600) {
+                Camera.zoom = 1.0;
+                Camera.targetZoom = 1.0;
+            }
         }
 
         Input.init(canvas);
@@ -108,21 +115,18 @@ var Game = {
             var b = World.buildings[i];
             if (!b || b.removed) continue;
             var def = CFG.BUILDING_DEFS[b.type];
-            if (def.powerOutput && b.active) this.power.production += def.powerOutput;
             if (def.powerDraw) this.power.consumption += def.powerDraw;
+            if (b.type === 'solar_panel') {
+                b.active = true;
+                this.power.production += def.powerOutput;
+            }
+            if (b.type === 'steam_engine' && b.active) {
+                this.power.production += def.powerOutput;
+            }
         }
         this.power.satisfaction = this.power.consumption > 0
             ? Math.min(1, this.power.production / this.power.consumption)
             : 1;
-
-        for (var j = 0; j < World.buildings.length; j++) {
-            var b2 = World.buildings[j];
-            if (!b2 || b2.removed) continue;
-            if (b2.type === 'solar_panel') {
-                b2.active = true;
-                this.power.production += CFG.BUILDING_DEFS.solar_panel.powerOutput;
-            }
-        }
 
         Buildings.update();
         Belts.update();
@@ -182,6 +186,8 @@ var Game = {
             Inventory.add(this.player.inventory, 'coal', startRes * 10);
         } else {
             Inventory.add(this.player.inventory, 'iron_plate', 10);
+            Inventory.add(this.player.inventory, 'iron_gear', 5);
+            Inventory.add(this.player.inventory, 'copper_plate', 5);
             Inventory.add(this.player.inventory, 'stone', 10);
             Inventory.add(this.player.inventory, 'coal', 5);
         }

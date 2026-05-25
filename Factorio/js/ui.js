@@ -40,6 +40,13 @@ var UI = {
                     btn.style.borderColor = bc.fg;
                 }
 
+                if (item.def.icon) {
+                    var icon = document.createElement('span');
+                    icon.className = 'btn-icon';
+                    icon.textContent = item.def.icon;
+                    btn.appendChild(icon);
+                }
+
                 var label = document.createElement('span');
                 label.className = 'btn-label';
                 label.textContent = item.def.name;
@@ -80,6 +87,10 @@ var UI = {
             self.toggleStats();
         });
 
+        document.getElementById('btn-glossary').addEventListener('click', function() {
+            self.toggleGlossary();
+        });
+
         document.getElementById('btn-settings').addEventListener('click', function() {
             self.toggleSettings();
         });
@@ -105,6 +116,36 @@ var UI = {
             Input.selectedBuilding = null;
             self.closePanels();
             self.updateToolbarSelection();
+        });
+
+        document.getElementById('btn-zoom-in').addEventListener('click', function(e) {
+            e.stopPropagation();
+            Camera.zoomAt(window.innerWidth / 2, window.innerHeight / 2, -2);
+        });
+
+        document.getElementById('btn-zoom-out').addEventListener('click', function(e) {
+            e.stopPropagation();
+            Camera.zoomAt(window.innerWidth / 2, window.innerHeight / 2, 2);
+        });
+
+        document.getElementById('btn-pause-mobile').addEventListener('click', function(e) {
+            e.stopPropagation();
+            Game.paused = !Game.paused;
+            self.updatePauseState();
+            this.textContent = Game.paused ? '▶' : '⏸';
+        });
+
+        document.getElementById('btn-fullscreen').addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(function(){});
+            } else {
+                document.exitFullscreen().catch(function(){});
+            }
+        });
+
+        document.getElementById('modal').addEventListener('click', function(e) {
+            if (e.target === this) self.closeModal();
         });
     },
 
@@ -152,6 +193,7 @@ var UI = {
         actions.style.display = Input.buildMode ? 'flex' : 'none';
 
         var costEl = document.getElementById('build-cost');
+        var dirEl = document.getElementById('build-direction');
         if (Input.buildMode) {
             var def2 = CFG.BUILDING_DEFS[Input.buildMode];
             if (def2.cost && def2.cost.length > 0) {
@@ -166,6 +208,8 @@ var UI = {
             } else {
                 costEl.textContent = 'Gratis';
             }
+            var arrows = ['↑','→','↓','←'];
+            dirEl.textContent = arrows[Input.buildDirection];
         }
     },
 
@@ -176,15 +220,27 @@ var UI = {
 
         var important = ['iron_plate','copper_plate','steel','iron_gear','green_circuit','advanced_circuit','red_science','green_science','blue_science'];
 
+        if (!this._lastProduced) this._lastProduced = {};
+        if (!this._rates) this._rates = {};
+        var produced = Game.stats.itemsProduced;
+        for (var rk in produced) {
+            var prev = this._lastProduced[rk] || 0;
+            var delta = produced[rk] - prev;
+            this._rates[rk] = delta;
+            this._lastProduced[rk] = produced[rk];
+        }
+
         for (var i = 0; i < important.length; i++) {
             var item = important[i];
             var qty = inv[item] || 0;
-            if (qty <= 0 && !Game.stats.itemsProduced[item]) continue;
+            if (qty <= 0 && !produced[item]) continue;
             var color = Items.color(item);
+            var rate = this._rates[item] || 0;
             html += '<div class="resource-item">';
             html += '<span class="resource-dot" style="background:' + color + '"></span>';
             html += '<span class="resource-name">' + (ITEM_NAMES[item] || item) + '</span>';
             html += '<span class="resource-count">' + this.formatNumber(qty) + '</span>';
+            if (rate > 0) html += '<span class="resource-rate">+' + rate + '/s</span>';
             html += '</div>';
         }
 
@@ -192,10 +248,12 @@ var UI = {
             if (important.indexOf(item2) !== -1) continue;
             if (inv[item2] <= 0) continue;
             var color2 = Items.color(item2);
+            var rate2 = this._rates[item2] || 0;
             html += '<div class="resource-item">';
             html += '<span class="resource-dot" style="background:' + color2 + '"></span>';
             html += '<span class="resource-name">' + (ITEM_NAMES[item2] || item2) + '</span>';
             html += '<span class="resource-count">' + this.formatNumber(inv[item2]) + '</span>';
+            if (rate2 > 0) html += '<span class="resource-rate">+' + rate2 + '/s</span>';
             html += '</div>';
         }
 
@@ -241,7 +299,8 @@ var UI = {
         var panel = document.getElementById('info-panel');
         var def = CFG.BUILDING_DEFS[b.type];
 
-        var html = '<h3>' + def.name + '</h3>';
+        var html = '<button class="info-close" onclick="UI.closePanels()">✕</button>';
+        html += '<h3>' + def.name + '</h3>';
 
         if (b.type === 'miner') {
             var resType = World.getResourceType(b.x, b.y, def.size[0], def.size[1]);
@@ -324,10 +383,6 @@ var UI = {
         var menu = document.getElementById('context-menu');
         var screen = Camera.worldToScreen(tile.x * CFG.TILE + CFG.TILE/2, tile.y * CFG.TILE + CFG.TILE/2);
 
-        menu.style.left = screen.x + 'px';
-        menu.style.top = screen.y + 'px';
-        menu.style.display = 'block';
-
         menu.innerHTML = '';
         var actions = [
             {label: 'Info', icon: 'ℹ️', action: function() { Input.selectedBuilding = b; UI.showBuildingInfo(b); }},
@@ -347,6 +402,19 @@ var UI = {
                 });
             })(actions[i]);
             menu.appendChild(btn);
+        }
+
+        menu.style.display = 'block';
+        menu.style.left = screen.x + 'px';
+        menu.style.top = screen.y + 'px';
+        menu.style.transform = 'translate(-50%, -110%)';
+
+        var rect = menu.getBoundingClientRect();
+        var vw = window.innerWidth, vh = window.innerHeight;
+        if (rect.left < 8) menu.style.transform = 'translate(0, -110%)';
+        if (rect.right > vw - 8) menu.style.transform = 'translate(-100%, -110%)';
+        if (rect.top < 8) {
+            menu.style.transform = 'translate(-50%, 10%)';
         }
     },
 
@@ -403,6 +471,96 @@ var UI = {
         modal.style.display = 'flex';
     },
 
+    toggleGlossary: function() {
+        var modal = document.getElementById('modal');
+        var content = document.getElementById('modal-content');
+        if (modal.style.display === 'flex') { this.closeModal(); return; }
+
+        var html = '<h2>📖 Glosario de Producción</h2>';
+
+        html += '<h3>Recursos Naturales</h3>';
+        html += '<p style="color:#888;font-size:11px;">Se obtienen con Mineros colocados sobre vetas</p>';
+        var rawItems = ['iron_ore', 'copper_ore', 'coal', 'stone'];
+        for (var ri = 0; ri < rawItems.length; ri++) {
+            var rid = rawItems[ri];
+            html += '<div class="glossary-item">';
+            html += '<span class="resource-dot" style="background:' + Items.color(rid) + '"></span>';
+            html += '<strong>' + (ITEM_NAMES[rid] || rid) + '</strong>';
+            html += '<span class="glossary-source">⛏ Minero sobre veta</span>';
+            html += '</div>';
+        }
+
+        html += '<h3>Fundición</h3>';
+        html += '<p style="color:#888;font-size:11px;">Se fabrican en Fundidora (requiere carbón como combustible)</p>';
+        for (var sKey in CFG.SMELTING_RECIPES) {
+            var sr = CFG.SMELTING_RECIPES[sKey];
+            html += '<div class="glossary-item">';
+            html += '<span class="resource-dot" style="background:' + Items.color(sr.output) + '"></span>';
+            html += '<strong>' + (ITEM_NAMES[sr.output] || sr.output) + '</strong>';
+            html += '<span class="glossary-arrow">←</span>';
+            var inQty = sr.inputQty || 1;
+            html += '<span class="glossary-input">' + inQty + 'x ' + (ITEM_NAMES[sKey] || sKey) + '</span>';
+            html += '<span class="glossary-time">⏱ ' + (sr.time / 20).toFixed(1) + 's</span>';
+            html += '</div>';
+        }
+
+        html += '<h3>Ensamblaje</h3>';
+        html += '<p style="color:#888;font-size:11px;">Se fabrican en Ensamblador (requiere electricidad)</p>';
+        for (var ai = 0; ai < CFG.ASSEMBLY_RECIPES.length; ai++) {
+            var ar = CFG.ASSEMBLY_RECIPES[ai];
+            var locked = ar.tech && !Tech.isCompleted(ar.tech);
+            html += '<div class="glossary-item' + (locked ? ' glossary-locked' : '') + '">';
+            html += '<span class="resource-dot" style="background:' + Items.color(ar.output) + '"></span>';
+            html += '<strong>' + (ITEM_NAMES[ar.output] || ar.output) + '</strong>';
+            if (ar.qty > 1) html += ' x' + ar.qty;
+            html += '<span class="glossary-arrow">←</span>';
+            var inputs = [];
+            for (var ii = 0; ii < ar.inputs.length; ii++) {
+                inputs.push(ar.inputs[ii].qty + 'x ' + (ITEM_NAMES[ar.inputs[ii].item] || ar.inputs[ii].item));
+            }
+            html += '<span class="glossary-input">' + inputs.join(' + ') + '</span>';
+            html += '<span class="glossary-time">⏱ ' + (ar.time / 20).toFixed(1) + 's</span>';
+            if (locked) {
+                html += '<span class="glossary-lock">🔒 ' + (CFG.TECH_TREE[ar.tech] ? CFG.TECH_TREE[ar.tech].name : ar.tech) + '</span>';
+            }
+            html += '</div>';
+        }
+
+        html += '<h3>Edificios</h3>';
+        for (var bType in CFG.BUILDING_DEFS) {
+            var bd = CFG.BUILDING_DEFS[bType];
+            html += '<div class="glossary-item">';
+            html += '<strong>' + (bd.icon || '') + ' ' + bd.name + '</strong>';
+            if (bd.cost && bd.cost.length > 0) {
+                var costs = [];
+                for (var ci = 0; ci < bd.cost.length; ci++) {
+                    costs.push(bd.cost[ci].qty + 'x ' + (ITEM_NAMES[bd.cost[ci].item] || bd.cost[ci].item));
+                }
+                html += '<span class="glossary-input">' + costs.join(' + ') + '</span>';
+            } else {
+                html += '<span class="glossary-input" style="color:#44cc66">Gratis</span>';
+            }
+            if (bd.tech) {
+                var techLocked = !Tech.isCompleted(bd.tech);
+                if (techLocked) html += '<span class="glossary-lock">🔒 ' + (CFG.TECH_TREE[bd.tech] ? CFG.TECH_TREE[bd.tech].name : bd.tech) + '</span>';
+            }
+            html += '</div>';
+        }
+
+        html += '<h3>Consejos</h3>';
+        html += '<div style="font-size:12px;color:#ccc;line-height:1.6;">';
+        html += '<p>• Minero → Cinta → Fundidora (con carbón) = placas</p>';
+        html += '<p>• Insertador mueve items entre edificios y cintas</p>';
+        html += '<p>• Motor de Vapor genera electricidad (necesita carbón)</p>';
+        html += '<p>• Laboratorio + ciencia = desbloquear tecnologías</p>';
+        html += '<p>• Ensamblador fabrica items complejos (necesita electricidad)</p>';
+        html += '<p>• ¡Lanza un cohete para prestigiar!</p>';
+        html += '</div>';
+
+        content.innerHTML = html;
+        modal.style.display = 'flex';
+    },
+
     toggleStats: function() {
         var modal = document.getElementById('modal');
         var content = document.getElementById('modal-content');
@@ -454,7 +612,11 @@ var UI = {
         html += '<br><br>';
         html += '<p style="font-size:12px;color:#888;">Exportar/Importar partida como texto:</p>';
         html += '<button class="btn-action" onclick="var d=Save.exportSave();if(d){navigator.clipboard.writeText(d);UI.showToast(\'¡Copiado!\');}">Exportar</button>';
-        html += '<button class="btn-action" onclick="var d=prompt(\'Pega los datos de la partida:\');if(d&&Save.importSave(d)){UI.showToast(\'¡Importado!\');UI.closeModal();}">Importar</button>';
+        html += '<div id="import-area" style="display:none;margin-top:8px;">';
+        html += '<textarea id="import-text" rows="3" style="width:100%;background:#111;color:#eee;border:1px solid #555;border-radius:4px;padding:6px;font-size:12px;resize:vertical;" placeholder="Pega los datos de la partida aquí..."></textarea>';
+        html += '<button class="btn-action" onclick="var d=document.getElementById(\'import-text\').value;if(d&&Save.importSave(d)){UI.showToast(\'¡Importado!\');UI.closeModal();}else if(d){UI.showToast(\'Datos inválidos\');}">Confirmar Importación</button>';
+        html += '</div>';
+        html += '<button class="btn-action" onclick="document.getElementById(\'import-area\').style.display=\'block\';this.style.display=\'none\';">Importar</button>';
 
         content.innerHTML = html;
         modal.style.display = 'flex';
@@ -523,11 +685,26 @@ var UI = {
         }, 3000);
     },
 
-    showTutorial: function(text, highlight) {
+    showTutorial: function(text, highlight, hasNext) {
         var el = document.getElementById('tutorial-box');
-        el.innerHTML = text + '<button class="tutorial-skip" onclick="Tutorial.skip()">Saltar Tutorial</button>';
+        var backdrop = document.getElementById('tutorial-backdrop');
+        var html = '<div class="tutorial-text">' + text.replace(/\n/g, '<br>') + '</div>';
+        html += '<div class="tutorial-buttons">';
+        if (hasNext) {
+            html += '<button class="tutorial-next" onclick="Tutorial.nextStep()">Siguiente →</button>';
+        } else {
+            html += '<span class="tutorial-hint">Completa la acción para continuar</span>';
+        }
+        html += '<button class="tutorial-skip" onclick="Tutorial.skip()">Saltar</button>';
+        html += '</div>';
+        el.innerHTML = html;
         el.style.display = 'block';
+        backdrop.style.display = 'block';
 
+        var highlighted = document.querySelectorAll('.tutorial-highlight');
+        for (var i = 0; i < highlighted.length; i++) {
+            highlighted[i].classList.remove('tutorial-highlight');
+        }
         if (highlight) {
             var target = document.getElementById(highlight);
             if (target) target.classList.add('tutorial-highlight');
@@ -536,6 +713,7 @@ var UI = {
 
     hideTutorial: function() {
         document.getElementById('tutorial-box').style.display = 'none';
+        document.getElementById('tutorial-backdrop').style.display = 'none';
         var highlighted = document.querySelectorAll('.tutorial-highlight');
         for (var i = 0; i < highlighted.length; i++) {
             highlighted[i].classList.remove('tutorial-highlight');
@@ -559,6 +737,11 @@ var UI = {
             this.toastTimer = 0;
             this.updateResources();
             this.updateToolbarSelection();
+
+            if (Input.selectedBuilding && !Input.selectedBuilding.removed &&
+                document.getElementById('info-panel').style.display === 'block') {
+                this.showBuildingInfo(Input.selectedBuilding);
+            }
         }
     }
 };

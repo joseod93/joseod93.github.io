@@ -14,6 +14,7 @@ var Particles = {
         var count = 1;
         if (type === 'place') count = 5;
         if (type === 'smoke') count = 2;
+        if (type === 'achievement') count = 20;
 
         for (var i = 0; i < count; i++) {
             if (this.pool.length === 0) return;
@@ -57,13 +58,14 @@ var Particles = {
                 p.alpha = 1;
             } else if (type === 'achievement') {
                 var angle2 = Math.random() * Math.PI * 2;
-                var speed2 = 50 + Math.random() * 80;
+                var speed2 = 60 + Math.random() * 120;
                 p.vx = Math.cos(angle2) * speed2;
-                p.vy = Math.sin(angle2) * speed2;
-                p.life = 0.8;
-                p.maxLife = 0.8;
-                p.color = '#ffd700';
-                p.size = 3;
+                p.vy = Math.sin(angle2) * speed2 - 30;
+                p.life = 1.2 + Math.random() * 0.5;
+                p.maxLife = p.life;
+                var colors = ['#ffd700','#ff6600','#ff3366','#44ddff','#44ff88'];
+                p.color = colors[Math.floor(Math.random() * colors.length)];
+                p.size = 2 + Math.random() * 3;
                 p.text = '';
                 p.alpha = 1;
             }

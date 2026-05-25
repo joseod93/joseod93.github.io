@@ -21,9 +21,9 @@ var World = {
     },
 
     hash2d: function(x, y) {
-        var n = x * 374761393 + y * 668265263 + this.seed;
-        n = (n ^ (n >> 13)) * 1274126177;
-        n = n ^ (n >> 16);
+        var n = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + this.seed) | 0;
+        n = Math.imul(n ^ (n >>> 13), 1274126177);
+        n = n ^ (n >>> 16);
         return (n >>> 0) / 4294967296;
     },
 
@@ -74,15 +74,15 @@ var World = {
 
                 var resource = null;
                 if (terrain !== 'water') {
-                    var ironN   = this.noise2d(wx + 1000, wy + 1000, 8 * patchMult);
-                    var copperN = this.noise2d(wx + 2000, wy + 2000, 9 * patchMult);
-                    var coalN   = this.noise2d(wx + 3000, wy + 3000, 7 * patchMult);
-                    var stoneN  = this.noise2d(wx + 4000, wy + 4000, 10 * patchMult);
+                    var ironN   = this.noise2d(wx + 1000, wy + 1000, 12 * patchMult);
+                    var copperN = this.noise2d(wx + 2000, wy + 2000, 13 * patchMult);
+                    var coalN   = this.noise2d(wx + 3000, wy + 3000, 11 * patchMult);
+                    var stoneN  = this.noise2d(wx + 4000, wy + 4000, 14 * patchMult);
 
-                    if (ironN > 0.72) resource = {type:'iron_ore', amount: Math.floor(50 + ironN * 200)};
-                    else if (copperN > 0.74) resource = {type:'copper_ore', amount: Math.floor(40 + copperN * 180)};
-                    else if (coalN > 0.73) resource = {type:'coal', amount: Math.floor(60 + coalN * 250)};
-                    else if (stoneN > 0.75) resource = {type:'stone', amount: Math.floor(30 + stoneN * 150)};
+                    if (ironN > 0.76) resource = {type:'iron_ore', amount: Math.floor(80 + ironN * 250)};
+                    else if (copperN > 0.78) resource = {type:'copper_ore', amount: Math.floor(60 + copperN * 220)};
+                    else if (coalN > 0.77) resource = {type:'coal', amount: Math.floor(80 + coalN * 280)};
+                    else if (stoneN > 0.79) resource = {type:'stone', amount: Math.floor(50 + stoneN * 180)};
                 }
 
                 var variantSeed = this.hash2d(wx * 7, wy * 13);

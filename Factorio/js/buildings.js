@@ -4,16 +4,37 @@ var Buildings = {
     tryPlace: function(tx, ty, type, dir) {
         var def = CFG.BUILDING_DEFS[type];
         if (!def) return false;
-        if (def.unlocked === false && !Tech.isUnlocked(type)) return false;
+        if (def.unlocked === false && !Tech.isUnlocked(type)) {
+            UI.showToast('Requiere investigar: ' + (CFG.TECH_TREE[def.tech] ? CFG.TECH_TREE[def.tech].name : def.tech));
+            Audio.play('error');
+            return false;
+        }
 
         var w = def.size[0], h = def.size[1];
-        if (!World.canPlace(tx, ty, w, h)) return false;
+        if (!World.canPlace(tx, ty, w, h)) {
+            UI.showToast('No se puede colocar aquí');
+            return false;
+        }
 
-        if (type === 'miner' && !World.hasResource(tx, ty, w, h)) return false;
+        if (type === 'miner' && !World.hasResource(tx, ty, w, h)) {
+            UI.showToast('Necesita veta de recurso debajo');
+            return false;
+        }
 
         if (!Game.creativeModeOn) {
             if (def.cost && def.cost.length > 0) {
-                if (!Inventory.hasAll(Game.player.inventory, def.cost)) return false;
+                if (!Inventory.hasAll(Game.player.inventory, def.cost)) {
+                    var missing = [];
+                    for (var i = 0; i < def.cost.length; i++) {
+                        var have = Inventory.count(Game.player.inventory, def.cost[i].item);
+                        if (have < def.cost[i].qty) {
+                            missing.push((ITEM_NAMES[def.cost[i].item] || def.cost[i].item) + ' (' + have + '/' + def.cost[i].qty + ')');
+                        }
+                    }
+                    UI.showToast('Faltan: ' + missing.join(', '));
+                    Audio.play('error');
+                    return false;
+                }
                 Inventory.removeAll(Game.player.inventory, def.cost);
             }
         }
@@ -39,6 +60,7 @@ var Buildings = {
         Game.stats.buildingsPlaced++;
         Particles.spawn(tx * CFG.TILE + (w * CFG.TILE) / 2, ty * CFG.TILE + (h * CFG.TILE) / 2, 'place');
         Audio.play('place');
+        Tutorial.onEvent('place', type);
         UI.updateResources();
         return true;
     },
@@ -260,7 +282,6 @@ var Buildings = {
     updateGenerator: function(b, def) {
         if (Inventory.isEmpty(b.fuel)) { b.active = false; return; }
         b.active = true;
-        Game.power.production += def.powerOutput;
 
         if (Math.random() < 0.005) {
             Inventory.remove(b.fuel, 'coal', 1);

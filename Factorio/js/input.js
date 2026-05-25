@@ -15,9 +15,12 @@ var Input = {
     selectedBuilding: null,
     beltPath: [],
     ghostTiles: [],
+    isTouchDevice: false,
 
     init: function(canvas) {
         var self = this;
+        this.isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
         canvas.addEventListener('mousedown', function(e) { self.onMouseDown(e); });
         canvas.addEventListener('mousemove', function(e) { self.onMouseMove(e); });
         canvas.addEventListener('mouseup', function(e) { self.onMouseUp(e); });
@@ -108,9 +111,9 @@ var Input = {
 
     onTouchStart: function(e) {
         var touches = e.changedTouches;
+        var rect = e.target.getBoundingClientRect();
         for (var i = 0; i < touches.length; i++) {
             var t = touches[i];
-            var rect = e.target.getBoundingClientRect();
             this.pointers[t.identifier] = {
                 x: t.clientX - rect.left,
                 y: t.clientY - rect.top,
@@ -126,6 +129,9 @@ var Input = {
             this.tapStartTime = Date.now();
             this.tapStartPos = {x: p.x, y: p.y};
             this.isDragging = false;
+            this.mouse.x = p.x;
+            this.mouse.y = p.y;
+            this.mouse.tile = Camera.screenToTile(p.x, p.y);
             var tile = Camera.screenToTile(p.x, p.y);
             this.dragStart = tile;
 
@@ -153,9 +159,12 @@ var Input = {
     onTouchMove: function(e) {
         var touches = e.changedTouches;
         var rect = e.target.getBoundingClientRect();
+
+        var oldPositions = {};
         for (var i = 0; i < touches.length; i++) {
             var t = touches[i];
             if (this.pointers[t.identifier]) {
+                oldPositions[t.identifier] = {x: this.pointers[t.identifier].x, y: this.pointers[t.identifier].y};
                 this.pointers[t.identifier].x = t.clientX - rect.left;
                 this.pointers[t.identifier].y = t.clientY - rect.top;
             }
@@ -172,35 +181,43 @@ var Input = {
             }
             this.lastPinchDist = d;
 
-            if (touches.length === 2) {
-                var dx = 0, dy = 0;
-                for (var j = 0; j < touches.length; j++) {
-                    var p = this.pointers[touches[j].identifier];
-                    if (p) {
-                        dx += (touches[j].clientX - rect.left) - p.x;
-                        dy += (touches[j].clientY - rect.top) - p.y;
-                    }
+            var dx = 0, dy = 0, panCount = 0;
+            for (var j = 0; j < touches.length; j++) {
+                var old = oldPositions[touches[j].identifier];
+                if (old) {
+                    dx += this.pointers[touches[j].identifier].x - old.x;
+                    dy += this.pointers[touches[j].identifier].y - old.y;
+                    panCount++;
                 }
-                Camera.pan(dx / 2, dy / 2);
             }
+            if (panCount > 0) Camera.pan(dx / panCount, dy / panCount);
             return;
         }
 
         if (this.pointerCount === 1) {
-            var p = this.getFirstPointer();
-            if (!p) return;
-            var sdx = p.x - p.startX;
-            var sdy = p.y - p.startY;
-            if (Math.sqrt(sdx*sdx + sdy*sdy) > 10) {
+            var p2 = this.getFirstPointer();
+            if (!p2) return;
+
+            this.mouse.x = p2.x;
+            this.mouse.y = p2.y;
+            this.mouse.tile = Camera.screenToTile(p2.x, p2.y);
+
+            var sdx = p2.x - p2.startX;
+            var sdy = p2.y - p2.startY;
+            if (Math.sqrt(sdx*sdx + sdy*sdy) > 12) {
                 this.isDragging = true;
                 clearTimeout(this.longPressTimer);
             }
 
             if (this.isDragging) {
                 if (this.buildMode === 'belt') {
-                    this.updateBeltPath(Camera.screenToTile(p.x, p.y));
-                } else if (!this.buildMode) {
-                    Camera.pan(touches[0].clientX - rect.left - p.x, touches[0].clientY - rect.top - p.y);
+                    this.updateBeltPath(Camera.screenToTile(p2.x, p2.y));
+                } else {
+                    var firstId = Object.keys(this.pointers)[0];
+                    var oldP = oldPositions[firstId];
+                    if (oldP) {
+                        Camera.pan(p2.x - oldP.x, p2.y - oldP.y);
+                    }
                 }
             }
         }
@@ -265,19 +282,43 @@ var Input = {
         if (this.keys['d'] || this.keys['arrowright']) Camera.targetX += speed;
     },
 
+    vibrate: function(ms) {
+        if (navigator.vibrate) navigator.vibrate(ms);
+    },
+
     handleTap: function(tile) {
+        document.getElementById('context-menu').style.display = 'none';
+
         if (this.buildMode && this.buildMode !== 'belt') {
             Buildings.tryPlace(tile.x, tile.y, this.buildMode, this.buildDirection);
+            this.vibrate(15);
         } else if (this.buildMode === 'belt') {
             Belts.tryPlaceSingle(tile.x, tile.y, this.buildDirection);
+            this.vibrate(10);
         } else {
             var b = World.getBuildingAt(tile.x, tile.y);
             if (b) {
                 this.selectedBuilding = b;
                 UI.showBuildingInfo(b);
             } else {
-                this.selectedBuilding = null;
-                UI.closePanels();
+                var t = World.getTile(tile.x, tile.y);
+                if (t.resource && t.resource.amount > 0) {
+                    var resType = t.resource.type;
+                    t.resource.amount--;
+                    var c = CFG.CHUNK;
+                    var cx = Math.floor(tile.x / c), cy = Math.floor(tile.y / c);
+                    World.getChunk(cx, cy).dirty = true;
+                    Inventory.add(Game.player.inventory, resType, 1);
+                    Game.stats.itemsProduced[resType] = (Game.stats.itemsProduced[resType] || 0) + 1;
+                    Particles.spawn(tile.x * CFG.TILE + CFG.TILE / 2, tile.y * CFG.TILE + CFG.TILE / 2, 'produce', resType);
+                    Audio.play('place');
+                    UI.updateResources();
+                    Tutorial.onEvent('mine');
+                    this.vibrate(10);
+                } else {
+                    this.selectedBuilding = null;
+                    UI.closePanels();
+                }
             }
         }
     },
@@ -291,6 +332,7 @@ var Input = {
     },
 
     handleLongPress: function(tile) {
+        this.vibrate(30);
         var b = World.getBuildingAt(tile.x, tile.y);
         if (b) {
             UI.showContextMenu(tile, b);

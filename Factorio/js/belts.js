@@ -18,6 +18,7 @@ var Belts = {
         });
 
         this.addToLine(tx, ty, dir);
+        Tutorial.onEvent('place', 'belt');
         return true;
     },
 

@@ -25,16 +25,16 @@ var CFG = {
         validPlace: 'rgba(0,200,80,0.25)',
         invalidPlace: 'rgba(200,0,40,0.25)',
         terrain: {
-            grass: ['#2d4a2e','#3a5c39','#2f4f30','#355e36'],
-            earth: ['#3d3427','#4a3f30','#433a2c','#4f4535'],
+            grass: ['#2d5a2e','#3a6639','#2f5530','#357a36'],
+            earth: ['#4d3a27','#5a4530','#4f402c','#5f4b35'],
             water: '#2244aa',
-            sand: '#998877'
+            sand: '#aa9977'
         },
         resources: {
-            iron_ore:   {bg:'#5577aa', fg:'#7799bb', label:'Fe'},
-            copper_ore: {bg:'#aa5522', fg:'#cc7733', label:'Cu'},
-            coal:       {bg:'#1a1a1a', fg:'#333333', label:'C'},
-            stone:      {bg:'#776655', fg:'#998877', label:'St'}
+            iron_ore:   {bg:'#446688', fg:'#88bbdd', label:'Fe'},
+            copper_ore: {bg:'#884411', fg:'#dd8833', label:'Cu'},
+            coal:       {bg:'#222222', fg:'#555555', label:'C'},
+            stone:      {bg:'#665544', fg:'#aa9988', label:'St'}
         },
         items: {
             iron_ore:'#7799bb', copper_ore:'#cc7733', coal:'#333333', stone:'#998877',
@@ -67,61 +67,61 @@ var CFG = {
 
     BUILDING_DEFS: {
         miner: {
-            name:'Minero', size:[2,2], category:'production',
+            name:'Minero', icon:'⛏', size:[2,2], category:'production',
             cost:[{item:'iron_plate',qty:2},{item:'iron_gear',qty:1}],
             miningSpeed:0.015, powerDraw:0, fuelBurner:false,
             outputSlots:1, inputSlots:0, unlocked:true
         },
         belt: {
-            name:'Cinta', size:[1,1], category:'logistics',
+            name:'Cinta', icon:'➡', size:[1,1], category:'logistics',
             cost:[], outputSlots:0, inputSlots:0,
             unlocked:true, speed:0.05
         },
         furnace: {
-            name:'Fundidora', size:[2,2], category:'production',
+            name:'Fundidora', icon:'🔥', size:[2,2], category:'production',
             cost:[{item:'stone',qty:5}],
             craftSpeed:1, powerDraw:0, fuelBurner:true,
             outputSlots:1, inputSlots:1, unlocked:true
         },
         assembler: {
-            name:'Ensamblador', size:[3,3], category:'production',
+            name:'Ensamblador', icon:'🔧', size:[3,3], category:'production',
             cost:[{item:'iron_plate',qty:5},{item:'iron_gear',qty:3},{item:'green_circuit',qty:2}],
             craftSpeed:1, powerDraw:50, fuelBurner:false,
             outputSlots:1, inputSlots:4, unlocked:false, tech:'automation'
         },
         storage: {
-            name:'Almacén', size:[1,1], category:'logistics',
+            name:'Almacén', icon:'📦', size:[1,1], category:'logistics',
             cost:[{item:'iron_plate',qty:2}],
             capacity:200, unlocked:true
         },
         steam_engine: {
-            name:'Motor Vapor', size:[2,3], category:'power',
+            name:'Motor Vapor', icon:'💨', size:[2,3], category:'power',
             cost:[{item:'iron_plate',qty:8},{item:'stone_brick',qty:4}],
             powerOutput:500, fuelBurner:true, unlocked:true
         },
         solar_panel: {
-            name:'Panel Solar', size:[2,2], category:'power',
+            name:'Panel Solar', icon:'☀', size:[2,2], category:'power',
             cost:[{item:'iron_plate',qty:5},{item:'copper_plate',qty:5},{item:'green_circuit',qty:3}],
             powerOutput:60, unlocked:false, tech:'solar_energy'
         },
         lab: {
-            name:'Laboratorio', size:[2,2], category:'production',
+            name:'Laboratorio', icon:'🔬', size:[2,2], category:'production',
             cost:[{item:'iron_plate',qty:4},{item:'copper_plate',qty:4},{item:'green_circuit',qty:2}],
             researchSpeed:1, powerDraw:30, unlocked:true,
             inputSlots:3
         },
         inserter: {
-            name:'Insertador', size:[1,1], category:'logistics',
+            name:'Insertador', icon:'🤏', size:[1,1], category:'logistics',
             cost:[{item:'iron_plate',qty:1},{item:'iron_gear',qty:1}],
             grabSpeed:0.02, unlocked:true
         },
         splitter: {
-            name:'Divisor', size:[1,1], category:'logistics',
+            name:'Divisor', icon:'🔀', size:[1,1], category:'logistics',
             cost:[{item:'iron_plate',qty:3},{item:'green_circuit',qty:1}],
             unlocked:false, tech:'logistics'
         },
         rocket_silo: {
-            name:'Silo Cohete', size:[5,5], category:'production',
+            name:'Silo Cohete', icon:'🚀', size:[5,5], category:'production',
             cost:[{item:'steel',qty:100},{item:'advanced_circuit',qty:50},{item:'green_circuit',qty:100}],
             craftSpeed:1, powerDraw:500, unlocked:false, tech:'rocketry',
             outputSlots:1, inputSlots:4

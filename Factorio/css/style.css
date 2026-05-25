@@ -91,6 +91,12 @@ html, body {
     color: #eeeedd;
 }
 
+.resource-rate {
+    font-size: 8px;
+    color: #44cc66;
+    font-variant-numeric: tabular-nums;
+}
+
 /* ===== POWER & RESEARCH BARS ===== */
 #power-bar, #research-bar {
     height: 14px;
@@ -155,6 +161,7 @@ html, body {
     z-index: 20;
     padding: 4px;
     padding-bottom: max(4px, env(safe-area-inset-bottom));
+    -webkit-tap-highlight-color: transparent;
 }
 
 #toolbar-buildings {
@@ -185,10 +192,11 @@ html, body {
 }
 
 .building-btn:hover { transform: scale(1.05); border-color: #e6a832; }
+.building-btn:active { transform: scale(0.95); }
 
 .building-btn.selected {
     border-color: #e6a832;
-    box-shadow: 0 0 8px rgba(230,168,50,0.5);
+    box-shadow: 0 0 10px rgba(230,168,50,0.6), inset 0 0 8px rgba(230,168,50,0.15);
     transform: scale(1.1);
 }
 
@@ -197,8 +205,13 @@ html, body {
     filter: grayscale(0.8);
 }
 
+.btn-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
 .btn-label {
-    font-size: 8px;
+    font-size: 7px;
     text-align: center;
     line-height: 1.1;
     max-width: 48px;
@@ -224,6 +237,14 @@ html, body {
 #build-cost {
     font-size: 11px;
     color: #aaa;
+}
+
+#build-direction {
+    font-size: 18px;
+    color: #e6a832;
+    font-weight: bold;
+    width: 28px;
+    text-align: center;
 }
 
 #build-actions button {
@@ -252,6 +273,7 @@ html, body {
     display: none;
     z-index: 15;
     border-radius: 0 0 0 8px;
+    -webkit-overflow-scrolling: touch;
 }
 
 #info-panel h3 { color: #e6a832; margin-bottom: 8px; font-size: 14px; }
@@ -396,6 +418,50 @@ html, body {
 
 #modal-close:hover { color: #eee; }
 
+/* ===== GLOSSARY ===== */
+.glossary-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    flex-wrap: wrap;
+    font-size: 12px;
+}
+
+.glossary-item strong {
+    min-width: 100px;
+    color: #eeeedd;
+}
+
+.glossary-arrow {
+    color: #e6a832;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.glossary-input {
+    color: #aaa;
+    font-size: 11px;
+}
+
+.glossary-time {
+    color: #888;
+    font-size: 10px;
+    margin-left: auto;
+}
+
+.glossary-lock {
+    color: #dd4444;
+    font-size: 10px;
+    width: 100%;
+    padding-left: 14px;
+}
+
+.glossary-locked {
+    opacity: 0.5;
+}
+
 /* ===== TECH TREE ===== */
 .tech-node {
     border: 1px solid #444;
@@ -508,21 +574,29 @@ html, body {
 
 .toast {
     background: rgba(26,26,46,0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border-left: 3px solid #e6a832;
-    border-radius: 4px;
-    padding: 8px 16px;
+    border-radius: 6px;
+    padding: 10px 18px;
     color: #eeeedd;
     font-size: 13px;
-    animation: slideDown 0.2s ease-out;
+    animation: slideDown 0.3s cubic-bezier(0.34,1.56,0.64,1);
     max-width: min(400px, 90vw);
     text-align: center;
     pointer-events: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
 .toast-achievement {
     border-left-color: #ffd700;
-    background: linear-gradient(90deg, rgba(255,215,0,0.12), rgba(26,26,46,0.92) 30%);
+    border-width: 3px;
+    border-style: solid;
+    border-image: linear-gradient(180deg, #ffd700, #e6a832) 1;
+    border-right: none; border-top: none; border-bottom: none;
+    background: linear-gradient(90deg, rgba(255,215,0,0.15), rgba(26,26,46,0.95) 40%);
     font-weight: bold;
+    font-size: 14px;
 }
 
 .toast-fade { opacity: 0; transition: opacity 0.3s; }
@@ -533,48 +607,94 @@ html, body {
 }
 
 /* ===== TUTORIAL ===== */
+#tutorial-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 34;
+    display: none;
+    pointer-events: auto;
+}
+
 #tutorial-box {
     position: fixed;
     bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(26,26,46,0.95);
+    background: rgba(20,20,40,0.97);
     border: 2px solid #e6a832;
-    border-radius: 10px;
-    padding: 12px 20px;
-    max-width: min(400px, 90vw);
-    font-size: 13px;
-    line-height: 1.5;
-    z-index: 35;
+    border-radius: 12px;
+    padding: 16px 24px;
+    max-width: min(420px, 92vw);
+    font-size: 14px;
+    line-height: 1.6;
+    z-index: 36;
     display: none;
     text-align: center;
     animation: pulse-border 2s ease-in-out infinite;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
 }
+
+.tutorial-text {
+    margin-bottom: 12px;
+}
+
+.tutorial-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+}
+
+.tutorial-next {
+    padding: 10px 24px;
+    background: linear-gradient(135deg, rgba(230,168,50,0.3), rgba(230,168,50,0.15));
+    border: 2px solid #e6a832;
+    color: #ffd700;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    min-height: 44px;
+    transition: all 0.15s;
+}
+
+.tutorial-next:hover { background: rgba(230,168,50,0.4); }
+.tutorial-next:active { transform: scale(0.95); }
+
+.tutorial-hint {
+    font-size: 11px;
+    color: #888;
+    font-style: italic;
+}
+
+.tutorial-skip {
+    padding: 8px 16px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid #555;
+    color: #888;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    min-height: 40px;
+}
+
+.tutorial-skip:hover { border-color: #888; color: #aaa; }
 
 @keyframes pulse-border {
     0%, 100% { border-color: #e6a832; }
     50% { border-color: #ffd700; }
 }
 
-.tutorial-skip {
-    display: block;
-    margin: 8px auto 0;
-    padding: 4px 12px;
-    background: none;
-    border: 1px solid #555;
-    color: #888;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 11px;
-}
-
 .tutorial-highlight {
     animation: highlight-pulse 1s ease-in-out infinite;
+    z-index: 37 !important;
+    position: relative;
 }
 
 @keyframes highlight-pulse {
     0%, 100% { box-shadow: 0 0 5px #e6a832; }
-    50% { box-shadow: 0 0 15px #ffd700; }
+    50% { box-shadow: 0 0 20px #ffd700, 0 0 40px rgba(230,168,50,0.3); }
 }
 
 /* ===== PAUSE ===== */
@@ -592,10 +712,66 @@ html, body {
     pointer-events: none;
 }
 
+/* ===== MOBILE CONTROLS ===== */
+#mobile-controls {
+    position: fixed;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 25;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#mobile-controls button {
+    width: 48px; height: 48px;
+    border: 1px solid #555;
+    background: rgba(26,26,46,0.85);
+    color: #eeeedd;
+    border-radius: 12px;
+    font-size: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#mobile-controls button:active { background: rgba(230,168,50,0.3); border-color: #e6a832; }
+
+/* ===== TOOLBAR SCROLL HINT ===== */
+#toolbar-scroll-hint {
+    display: none;
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 24px;
+    background: linear-gradient(to right, transparent, rgba(26,26,46,0.95));
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* ===== INFO PANEL CLOSE (mobile) ===== */
+.info-close {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 32px; height: 32px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid #555;
+    border-radius: 8px;
+    color: #eeeedd;
+    font-size: 18px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
     .building-btn {
-        width: 46px; height: 46px;
+        width: 56px; height: 56px;
     }
 
     .btn-shortcut { display: none; }
@@ -604,13 +780,17 @@ html, body {
         position: fixed;
         right: 0; left: 0;
         top: auto;
-        bottom: 70px;
+        bottom: 0;
         width: 100%;
-        max-height: 40vh;
+        max-height: 50vh;
         border-radius: 12px 12px 0 0;
         border-left: none;
-        border-top: 1px solid #555;
+        border-top: 2px solid #e6a832;
+        padding-top: 16px;
+        z-index: 22;
     }
+
+    .info-close { display: flex; }
 
     #resource-bar {
         padding: 2px 4px;
@@ -619,16 +799,107 @@ html, body {
     .resource-item { font-size: 10px; padding: 1px 3px; }
     .resource-name { display: none; }
 
+    #top-buttons {
+        top: auto;
+        bottom: max(80px, calc(env(safe-area-inset-bottom) + 76px));
+        right: 8px;
+        flex-direction: column;
+    }
+
     #top-buttons button {
-        width: 32px; height: 32px;
+        width: 44px; height: 44px;
+        font-size: 18px;
+    }
+
+    #mobile-controls { display: flex; }
+
+    #toolbar {
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+    }
+
+    #toolbar-scroll-hint { display: block; }
+
+    #build-actions button {
+        padding: 8px 18px;
+        font-size: 16px;
+    }
+
+    #context-menu {
+        border-radius: 12px;
+    }
+
+    .ctx-btn {
+        padding: 14px 20px;
+        font-size: 15px;
+    }
+
+    .recipe-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+
+    .btn-delete {
+        padding: 12px 16px;
         font-size: 14px;
+    }
+
+    .btn-action {
+        padding: 12px 16px;
+        font-size: 14px;
+    }
+
+    #tutorial-box {
+        bottom: 90px;
+        font-size: 14px;
+        padding: 14px 20px;
+    }
+
+    #pause-indicator {
+        font-size: 28px;
+    }
+
+    #modal-close {
+        width: 44px; height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        top: 6px; right: 6px;
     }
 }
 
 @media (max-width: 480px) {
     .building-btn {
-        width: 44px; height: 44px;
+        width: 52px; height: 52px;
     }
 
     .btn-label { font-size: 7px; }
+
+    #mobile-controls button {
+        width: 42px; height: 42px;
+        font-size: 18px;
+    }
+
+    #top-buttons button {
+        width: 40px; height: 40px;
+        font-size: 16px;
+    }
+}
+
+@media (pointer: coarse) {
+    .building-btn {
+        min-width: 52px; min-height: 52px;
+    }
+
+    .ctx-btn {
+        min-height: 44px;
+    }
+
+    .recipe-btn {
+        min-height: 40px;
+    }
+
+    .btn-delete, .btn-action, .btn-research, .btn-upgrade {
+        min-height: 44px;
+    }
 }
