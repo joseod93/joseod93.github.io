@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>BJ Advisor</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
+</head>
+<body>
+    <div class="app">
+        <nav class="tab-bar">
+            <button class="tab active" data-tab="manual">&#9824; Advisor</button>
+            <button class="tab" data-tab="detect">&#128247; Deteccion</button>
+        </nav>
+
+        <!-- ============ TAB 1: MANUAL ADVISOR ============ -->
+        <div id="tabManual" class="tab-content active">
+
+            <!-- Config bar -->
+            <div class="config-bar">
+                <label class="config-label">
+                    <select id="deckCount">
+                        <option value="1">1 baraja</option>
+                        <option value="2">2 barajas</option>
+                        <option value="4">4 barajas</option>
+                        <option value="6" selected>6 barajas</option>
+                        <option value="8">8 barajas</option>
+                    </select>
+                </label>
+                <label class="config-label">
+                    <select id="countSystem">
+                        <option value="Hi-Lo" selected>Hi-Lo</option>
+                        <option value="Hi-Opt II">Hi-Opt II</option>
+                        <option value="Zen">Zen</option>
+                        <option value="Halves">Halves</option>
+                        <option value="KO">KO</option>
+                    </select>
+                </label>
+            </div>
+
+            <!-- Advice banner -->
+            <section class="advice-section">
+                <div id="adviceBox" class="advice-box waiting">
+                    <span id="adviceAction" class="advice-action">&mdash;</span>
+                    <span id="adviceReason" class="advice-reason">Esperando cartas...</span>
+                </div>
+                <div id="insuranceBanner" class="insurance-banner" style="display:none">
+                    &#128737; <span id="insuranceText">SEGURO: SI (TC&#8805;+3)</span>
+                </div>
+            </section>
+
+            <!-- Bet + Wong row -->
+            <section class="bet-wong-section">
+                <div class="bet-box">
+                    <span class="bw-label">Apuesta</span>
+                    <span id="betUnits" class="bet-value">1u</span>
+                </div>
+                <div class="edge-box">
+                    <span class="bw-label">Ventaja</span>
+                    <span id="edgeValue" class="edge-value">-0.5%</span>
+                </div>
+                <div id="wongBox" class="wong-box">
+                    <span class="bw-label">Wong</span>
+                    <span id="wongSignal" class="wong-value">MINIMO</span>
+                </div>
+            </section>
+
+            <!-- Hands display -->
+            <section class="hands-section">
+                <div class="hand-panel dealer-panel">
+                    <h3>&#127970; BANCA <span id="dealerTotal" class="hand-total"></span></h3>
+                    <div class="hand-cards" id="dealerCards"></div>
+                </div>
+                <div class="hand-panel player-panel">
+                    <h3>&#127183; TU <span id="playerTotal" class="hand-total"></span></h3>
+                    <div class="hand-cards" id="playerCards"></div>
+                </div>
+                <div class="hand-panel others-panel">
+                    <h3>&#128101; OTROS <span id="othersCount" class="hand-total"></span></h3>
+                    <div class="hand-cards" id="othersCards"></div>
+                </div>
+            </section>
+
+            <!-- Stats -->
+            <section class="stats-section">
+                <div class="count-boxes">
+                    <div class="count-box">
+                        <span class="count-label">Running</span>
+                        <span id="runningCount" class="count-value">0</span>
+                    </div>
+                    <div class="count-box">
+                        <span class="count-label" id="tcLabel">True Count</span>
+                        <span id="trueCount" class="count-value">0.0</span>
+                    </div>
+                    <div class="count-box">
+                        <span class="count-label">Ventaja</span>
+                        <span id="advantage" class="count-value">-0.5%</span>
+                    </div>
+                    <div class="count-box">
+                        <span class="count-label">Restantes</span>
+                        <span id="remaining" class="count-value">312</span>
+                    </div>
+                </div>
+
+                <!-- Penetration bar -->
+                <div class="penetration-row">
+                    <span class="pen-label">Penetracion</span>
+                    <div class="pen-bar-bg">
+                        <div id="penBar" class="pen-bar" style="width:0%"></div>
+                    </div>
+                    <span id="penValue" class="pen-value">0%</span>
+                </div>
+
+                <div class="prob-row">
+                    <span>Bust si pides:</span>
+                    <span id="bustProb" class="prob-value">&mdash;</span>
+                    <span>Bust banca:</span>
+                    <span id="dealerBust" class="prob-value">&mdash;</span>
+                </div>
+            </section>
+
+            <!-- Card input -->
+            <section class="input-section">
+                <div class="zone-selector">
+                    <span>Asignar a:</span>
+                    <button class="zone-btn active" data-target="player">Tu</button>
+                    <button class="zone-btn" data-target="dealer">Banca</button>
+                    <button class="zone-btn" data-target="others">Otros</button>
+                </div>
+                <div id="cardsGrid" class="cards-grid"></div>
+            </section>
+
+            <!-- Actions -->
+            <section class="actions-section">
+                <button id="btnNewHand" class="btn btn-primary btn-large">&#128260; Nueva Mano</button>
+                <div class="secondary-actions">
+                    <button id="btnUndo" class="btn btn-secondary" disabled>&#8617; Deshacer</button>
+                    <button id="btnReset" class="btn btn-danger">Nuevo Zapato</button>
+                </div>
+            </section>
+
+            <!-- Rules config -->
+            <details class="rules-details">
+                <summary>&#9881; Reglas de mesa</summary>
+                <div class="rules-content">
+                    <label>Dealer soft 17:
+                        <select id="ruleS17">
+                            <option value="true" selected>Se planta (S17)</option>
+                            <option value="false">Pide (H17)</option>
+                        </select>
+                    </label>
+                    <label class="switch-label">
+                        <input type="checkbox" id="ruleDAS" checked>
+                        Doblar tras dividir (DAS)
+                    </label>
+                    <label class="switch-label">
+                        <input type="checkbox" id="ruleSurrender" checked>
+                        Rendicion tardia
+                    </label>
+                    <label>Pago Blackjack:
+                        <select id="ruleBJPayout">
+                            <option value="1.5" selected>3:2</option>
+                            <option value="1.2">6:5</option>
+                            <option value="1">1:1</option>
+                        </select>
+                    </label>
+                    <label class="switch-label">
+                        <input type="checkbox" id="rulePeek" checked>
+                        Dealer mira BJ (Peek)
+                    </label>
+                    <div class="rules-edge">
+                        Ventaja casa base: <strong id="baseEdge">0.54%</strong>
+                    </div>
+                </div>
+            </details>
+
+            <!-- Count system info -->
+            <details class="system-details">
+                <summary>&#128202; Info sistema conteo</summary>
+                <div class="system-content">
+                    <div id="systemInfo" class="system-info"></div>
+                </div>
+            </details>
+
+            <!-- History -->
+            <details class="history-details">
+                <summary>&#128203; Historial</summary>
+                <div id="history" class="history"></div>
+            </details>
+        </div>
+
+        <!-- ============ TAB 2: DETECTION ============ -->
+        <div id="tabDetect" class="tab-content">
+            <div class="detect-controls">
+                <p id="modelStatus" class="model-status init">Modelo: no cargado</p>
+                <div class="detect-buttons">
+                    <button id="btnStartCam" class="btn btn-primary">&#128247; Iniciar camara</button>
+                    <label class="btn btn-secondary model-file-label">
+                        &#128194; Cargar .onnx
+                        <input type="file" id="modelFile" accept=".onnx" style="display:none">
+                    </label>
+                </div>
+            </div>
+            <div id="videoContainer" class="video-container" style="display:none">
+                <video id="video" autoplay playsinline muted></video>
+                <canvas id="overlay"></canvas>
+            </div>
+            <section id="detectedPanel" class="detected-panel" style="display:none">
+                <div class="detected-header">
+                    <h3>Cartas en mesa</h3>
+                    <span id="detectedCount" class="detected-count">0</span>
+                </div>
+                <div id="detectedList" class="detected-list"></div>
+            </section>
+            <details class="settings-details">
+                <summary>&#9881; Ajustes deteccion</summary>
+                <div class="settings-content">
+                    <span id="modelBadge" class="model-badge">Sin modelo</span>
+                    <label>Confianza: <input type="range" id="confThreshold" min="10" max="90" value="40"> <span id="confValue">40%</span></label>
+                    <label>FPS: <input type="range" id="detectionFps" min="1" max="15" value="5"> <span id="fpsValue">5</span></label>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <script src="detector.js"></script>
+    <script src="strategy.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
