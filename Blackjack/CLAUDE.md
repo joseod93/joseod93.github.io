@@ -17,9 +17,7 @@ Blackjack/
   model/
     cards.onnx        — YOLOv8n model (52 classes, 640x640, ~11.7MB)
     classes.json      — 52 class names: 10C,10D,...,QS
-  data/
-    Playing-Cards-4/  — Roboflow training dataset (Augmented Startups)
-    runs/             — Local training results (CPU, low quality)
+  ImagenesTest/       — Test images for detection validation
 ```
 
 ## Tab 1: Manual Advisor (ManualMode)
@@ -38,6 +36,9 @@ Card-by-card input. Strategy engine gives optimal play advice.
 - House edge calculation with rule adjustments
 - KO unbalanced count: IRC = 4 - (4 x decks), pivot = +4
 
+- Individual card removal from hands (click × on card)
+- Undo support (full history stack)
+
 **Classes:** `StrategyEngine` (strategy.js), `ManualMode` (app.js)
 
 ## Tab 2: Detection (ScannerMode)
@@ -49,7 +50,9 @@ Camera-based card detection via YOLOv8n + ONNX Runtime Web.
 - Letterbox preprocessing (640x640, gray padding #727272)
 - Output: [1, 56, 8400] — 52 classes + 4 box coords
 - NMS post-processing, configurable confidence threshold
-- Detection-only mode: identifies cards on table, no strategy
+- Detection-only mode: identifies cards on table, no strategy integration
+- Active cards tracked with 2s timeout, deduplication by rank + proximity (80px)
+- Debug overlay draws bounding boxes + confidence on canvas
 
 **Classes:** `CardDetector` (detector.js), `ScannerMode` (app.js)
 
@@ -59,7 +62,8 @@ Camera-based card detection via YOLOv8n + ONNX Runtime Web.
 - Model input: CHW float32 normalized [0,1], shape [1, 3, 640, 640]
 - Class format: `{rank}{suit}` uppercase — 10C, AD, KH, QS etc.
 - `_classToRank()` strips suit suffix → rank only (A, K, Q, J, 10, 2-9)
-- detector.js has debug logging for first 3 frames (diagnostic, can remove)
+- NMS IoU threshold default: 0.45
+- `sensitivity` property exists in CardDetector but is unused
 
 ## Model Training
 
@@ -71,6 +75,7 @@ To retrain with GPU (recommended):
 3. Replace `model/cards.onnx` with new `best.onnx`
 
 Dataset: Roboflow "Augmented Startups" playing-cards-ow27d v4, 10100 images, 52 classes.
+Training params: YOLOv8n, 50 epochs, imgsz=640, batch=32, patience=10.
 
 **Do NOT train on CPU** — model won't converge (tested: max 6.9% confidence).
 

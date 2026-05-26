@@ -23,6 +23,7 @@ class CardDetector {
         this.debugCtx = null;
         this.drawDebug = false;
         this.sensitivity = 128;
+        this._modelData = null;
 
         this.canvas = document.createElement('canvas');
         this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
@@ -42,6 +43,7 @@ class CardDetector {
             ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
 
             const modelData = await this._loadModelData(modelSource);
+            this._modelData = modelData.slice();
 
             this._progress('session', 'Creando sesión de inferencia...');
 
@@ -157,12 +159,26 @@ class CardDetector {
 
         const vw = videoElement.videoWidth;
         const vh = videoElement.videoHeight;
-        if (!vw || !vh) return [];
+        if (!vw || !vh || videoElement.readyState < 2) return [];
 
         const { tensor, scale, padX, padY } = this._preprocess(videoElement, vw, vh);
 
         const inputName = this.session.inputNames[0];
-        const results = await this.session.run({ [inputName]: tensor });
+        let results;
+        try {
+            results = await this.session.run({ [inputName]: tensor });
+        } catch (e) {
+            if (this.backend !== 'wasm' && this._modelData) {
+                console.warn(`${this.backend} inference failed, falling back to WASM:`, e.message);
+                const opts = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
+                this.session = await ort.InferenceSession.create(this._modelData.buffer, opts);
+                this.backend = 'wasm';
+                this._progress('ready', 'Modelo listo (WASM fallback)');
+                results = await this.session.run({ [inputName]: tensor });
+            } else {
+                throw e;
+            }
+        }
 
         const outputName = this.session.outputNames[0];
         const output = results[outputName];

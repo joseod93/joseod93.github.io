@@ -16,6 +16,146 @@ const CARDS = [
     { name: 'K',  display: 'K' },
 ];
 
+// ===== TAB 0: BASIC MODE =====
+
+class BasicMode {
+    constructor() {
+        this.strategy = new StrategyEngine({ ...DEFAULT_RULES });
+        this.playerHand = [];
+        this.dealerHand = [];
+        this.currentTarget = 'player';
+
+        this.els = {
+            adviceBox: document.getElementById('bAdviceBox'),
+            adviceAction: document.getElementById('bAdviceAction'),
+            adviceReason: document.getElementById('bAdviceReason'),
+            playerCards: document.getElementById('bPlayerCards'),
+            dealerCards: document.getElementById('bDealerCards'),
+            playerTotal: document.getElementById('bPlayerTotal'),
+            dealerTotal: document.getElementById('bDealerTotal'),
+            cardsGrid: document.getElementById('bCardsGrid'),
+            btnNewHand: document.getElementById('bBtnNewHand'),
+        };
+
+        this.initEvents();
+        this.renderGrid();
+    }
+
+    initEvents() {
+        this.els.btnNewHand.addEventListener('click', () => {
+            this.playerHand = [];
+            this.dealerHand = [];
+            this.render();
+        });
+
+        document.querySelectorAll('.bzone-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.bzone-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.currentTarget = btn.dataset.target;
+            });
+        });
+    }
+
+    addCard(name) {
+        if (this.currentTarget === 'dealer' && this.dealerHand.length >= 1) return;
+        if (this.currentTarget === 'player') this.playerHand.push(name);
+        else this.dealerHand.push(name);
+        this.render();
+    }
+
+    removeCard(target, idx) {
+        if (target === 'player') this.playerHand.splice(idx, 1);
+        else this.dealerHand.splice(idx, 1);
+        this.render();
+    }
+
+    renderGrid() {
+        this.els.cardsGrid.innerHTML = '';
+        CARDS.forEach(card => {
+            const btn = document.createElement('button');
+            btn.className = 'card-btn';
+            btn.innerHTML = `<span class="card-face">${card.display}</span>`;
+            btn.addEventListener('click', () => this.addCard(card.name));
+            this.els.cardsGrid.appendChild(btn);
+        });
+    }
+
+    render() {
+        this._renderHand(this.els.playerCards, this.playerHand, 'player');
+        this._renderHand(this.els.dealerCards, this.dealerHand, 'dealer');
+
+        const pv = this.strategy.getHandValue(this.playerHand);
+        const dv = this.strategy.getHandValue(this.dealerHand);
+        this.els.playerTotal.textContent = this.playerHand.length > 0 ?
+            (pv.soft ? `${pv.total}(soft)` : pv.total) : '';
+        this.els.dealerTotal.textContent = this.dealerHand.length > 0 ? dv.total : '';
+
+        this.renderAdvice();
+    }
+
+    _renderHand(container, cards, target) {
+        container.innerHTML = '';
+        cards.forEach((name, idx) => {
+            const el = document.createElement('div');
+            el.className = 'hand-card';
+            el.textContent = name;
+            const rm = document.createElement('span');
+            rm.className = 'card-remove';
+            rm.textContent = '×';
+            rm.addEventListener('click', e => { e.stopPropagation(); this.removeCard(target, idx); });
+            el.appendChild(rm);
+            container.appendChild(el);
+        });
+    }
+
+    renderAdvice() {
+        const box = this.els.adviceBox;
+        const actionEl = this.els.adviceAction;
+        const reasonEl = this.els.adviceReason;
+        box.className = 'advice-box';
+
+        const pv = this.strategy.getHandValue(this.playerHand);
+
+        if (pv.total > 21) {
+            box.classList.add('bust');
+            actionEl.textContent = 'BUST';
+            reasonEl.textContent = `Te pasaste: ${pv.total}`;
+            return;
+        }
+
+        if (pv.total === 21 && this.playerHand.length === 2) {
+            box.classList.add('blackjack');
+            actionEl.textContent = 'BLACKJACK!';
+            reasonEl.textContent = 'Paga 3:2';
+            return;
+        }
+
+        if (this.playerHand.length < 2 || this.dealerHand.length < 1) {
+            box.classList.add('waiting');
+            actionEl.textContent = '—';
+            reasonEl.textContent = this.playerHand.length < 2 ?
+                'Pon tus cartas y la de la banca' : 'Falta carta de la banca';
+            return;
+        }
+
+        const advice = this.strategy.getAdvice(this.playerHand, this.dealerHand[0], 0, 'Hi-Lo');
+
+        const actionMap = {
+            'HIT':       { cls: 'hit',       txt: 'PEDIR' },
+            'STAND':     { cls: 'stand',     txt: 'PLANTARSE' },
+            'DOUBLE':    { cls: 'double',    txt: 'DOBLAR' },
+            'SPLIT':     { cls: 'split',     txt: 'DIVIDIR' },
+            'SURRENDER': { cls: 'surrender', txt: 'RENDIRSE' },
+        };
+
+        const disp = actionMap[advice.action] || { cls: 'waiting', txt: advice.action };
+        box.classList.add(disp.cls);
+        actionEl.textContent = disp.txt;
+        reasonEl.textContent = advice.reason;
+    }
+}
+
 // ===== TAB 1: MANUAL ADVISOR (Thorp / Snyder / Wong) =====
 
 class ManualMode {
@@ -574,6 +714,10 @@ class ScannerMode {
                 video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
             });
             this.els.video.srcObject = this.stream;
+            await new Promise(resolve => {
+                if (this.els.video.readyState >= 2) return resolve();
+                this.els.video.addEventListener('loadeddata', resolve, { once: true });
+            });
             this.els.videoContainer.style.display = 'block';
             this.els.detectedPanel.style.display = 'block';
             this.els.btnStartCam.textContent = '⏹ Parar camara';
@@ -662,13 +806,15 @@ class ScannerMode {
 
 class App {
     constructor() {
+        this.basic = new BasicMode();
         this.manual = new ManualMode();
         this.scanner = new ScannerMode();
-        this.currentTab = 'manual';
+        this.currentTab = 'basic';
         this.initTabs();
     }
 
     initTabs() {
+        const tabMap = { basic: 'tabBasic', manual: 'tabManual', detect: 'tabDetect' };
         document.querySelectorAll('.tab-bar .tab').forEach(btn => {
             btn.addEventListener('click', () => {
                 const tab = btn.dataset.tab;
@@ -676,7 +822,7 @@ class App {
                 document.querySelectorAll('.tab-bar .tab').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                document.getElementById(tab === 'manual' ? 'tabManual' : 'tabDetect').classList.add('active');
+                document.getElementById(tabMap[tab]).classList.add('active');
                 if (this.currentTab === 'detect') this.scanner.onDeactivate();
                 this.currentTab = tab;
                 if (tab === 'detect') this.scanner.onActivate();

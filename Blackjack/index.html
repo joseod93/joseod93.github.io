@@ -10,12 +10,47 @@
 <body>
     <div class="app">
         <nav class="tab-bar">
-            <button class="tab active" data-tab="manual">&#9824; Advisor</button>
+            <button class="tab active" data-tab="basic">&#127183; Basico</button>
+            <button class="tab" data-tab="manual">&#9824; Avanzado</button>
             <button class="tab" data-tab="detect">&#128247; Deteccion</button>
         </nav>
 
+        <!-- ============ TAB 0: BASIC ============ -->
+        <div id="tabBasic" class="tab-content active">
+            <section class="advice-section">
+                <div id="bAdviceBox" class="advice-box waiting">
+                    <span id="bAdviceAction" class="advice-action">&mdash;</span>
+                    <span id="bAdviceReason" class="advice-reason">Pon tus cartas y la de la banca</span>
+                </div>
+            </section>
+
+            <section class="basic-hands">
+                <div class="basic-hand-panel player-panel">
+                    <h3>&#127183; TU MANO <span id="bPlayerTotal" class="hand-total"></span></h3>
+                    <div class="hand-cards" id="bPlayerCards"></div>
+                </div>
+                <div class="basic-hand-panel dealer-panel">
+                    <h3>&#127970; BANCA <span id="bDealerTotal" class="hand-total"></span></h3>
+                    <div class="hand-cards" id="bDealerCards"></div>
+                </div>
+            </section>
+
+            <section class="input-section">
+                <div class="zone-selector">
+                    <span>Asignar a:</span>
+                    <button class="zone-btn active bzone-btn" data-target="player">Tu</button>
+                    <button class="zone-btn bzone-btn" data-target="dealer">Banca</button>
+                </div>
+                <div id="bCardsGrid" class="cards-grid"></div>
+            </section>
+
+            <section class="actions-section">
+                <button id="bBtnNewHand" class="btn btn-primary btn-large">&#128260; Nueva Mano</button>
+            </section>
+        </div>
+
         <!-- ============ TAB 1: MANUAL ADVISOR ============ -->
-        <div id="tabManual" class="tab-content active">
+        <div id="tabManual" class="tab-content">
 
             <!-- Config bar -->
             <div class="config-bar">

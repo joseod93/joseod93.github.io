@@ -886,6 +886,30 @@ body {
 .history-chip.dealer { color: var(--accent2); border-left: 2px solid var(--accent2); }
 .history-chip.others { color: var(--text-dim); border-left: 2px solid var(--text-dim); }
 
+/* ===== BASIC TAB ===== */
+
+.basic-hands {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.basic-hand-panel {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 14px;
+    border: 1px solid var(--surface3);
+}
+
+.basic-hand-panel h3 {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 /* ===== RESPONSIVE ===== */
 
 @media (max-width: 700px) {
