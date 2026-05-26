@@ -33,7 +33,7 @@ var Prestige = {
         pts += Math.floor(Game.stats.buildingsPlaced / 10);
         pts += Game.stats.rocketsLaunched * 50;
 
-        var tickBonus = Math.max(0, 100000 - Game.tick) / 10000;
+        var tickBonus = 20 / (1 + Game.tick / 50000);
         pts += Math.floor(tickBonus);
 
         return Math.max(1, pts);

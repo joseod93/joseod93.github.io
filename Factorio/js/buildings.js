@@ -16,7 +16,7 @@ var Buildings = {
             return false;
         }
 
-        if (type === 'miner' && !World.hasResource(tx, ty, w, h)) {
+        if ((type === 'miner' || type === 'electric_miner') && !World.hasResource(tx, ty, w, h)) {
             UI.showToast('Necesita veta de recurso debajo');
             return false;
         }
@@ -43,7 +43,8 @@ var Buildings = {
             type: type, x: tx, y: ty, direction: dir || 0,
             input: {}, output: {}, fuel: {},
             progress: 0, active: false, removed: false,
-            recipe: null, recipeId: null
+            recipe: null, recipeId: null,
+            placedAt: performance.now()
         };
 
         if (type === 'storage') {
@@ -54,6 +55,10 @@ var Buildings = {
         if (type === 'rocket_silo') {
             b.rocketParts = 0;
             b.rocketReady = false;
+        }
+
+        if (type === 'splitter') {
+            b.splitToggle = 0;
         }
 
         World.placeBuilding(b);
@@ -69,15 +74,15 @@ var Buildings = {
         var b = World.buildings[id];
         if (!b || b.removed) return;
 
-        if (b.type === 'belt') {
+        if (b.type === 'belt' || b.type === 'fast_belt') {
             Belts.removeBelt(b.x, b.y);
         }
 
         if (!Game.creativeModeOn) {
             var def = CFG.BUILDING_DEFS[b.type];
-            if (def.cost) {
+            if (def && def.cost) {
                 for (var i = 0; i < def.cost.length; i++) {
-                    Inventory.add(Game.player.inventory, def.cost[i].item, Math.floor(def.cost[i].qty * 0.5));
+                    Inventory.add(Game.player.inventory, def.cost[i].item, def.cost[i].qty);
                 }
             }
         }
@@ -88,9 +93,66 @@ var Buildings = {
         for (var item2 in b.input) {
             Inventory.add(Game.player.inventory, item2, b.input[item2]);
         }
+        for (var item3 in b.fuel) {
+            if (b.fuel[item3] > 0) Inventory.add(Game.player.inventory, item3, b.fuel[item3]);
+        }
+        if (b.stored) {
+            for (var item4 in b.stored) {
+                if (b.stored[item4] > 0) Inventory.add(Game.player.inventory, item4, b.stored[item4]);
+            }
+        }
 
         World.removeBuilding(id);
         UI.updateResources();
+    },
+
+    playerTransfer: function(buildingId, itemType, qty) {
+        var b = World.buildings[buildingId];
+        if (!b || b.removed) return;
+        if (!qty) qty = 1;
+        var transferred = 0;
+        for (var i = 0; i < qty; i++) {
+            if (!Inventory.has(Game.player.inventory, itemType, 1)) break;
+            if (this.tryAcceptItem(b, itemType)) {
+                Inventory.remove(Game.player.inventory, itemType, 1);
+                transferred++;
+            } else {
+                break;
+            }
+        }
+        if (transferred > 0) {
+            Audio.play('place');
+            UI.updateResources();
+            if (Input.selectedBuilding && Input.selectedBuilding.id === buildingId) {
+                UI.showBuildingInfo(b);
+            }
+        }
+    },
+
+    playerExtract: function(buildingId, source, itemType, qty) {
+        var b = World.buildings[buildingId];
+        if (!b || b.removed) return;
+        if (!qty) qty = 1;
+
+        var container;
+        if (source === 'output') container = b.output;
+        else if (source === 'input') container = b.input;
+        else if (source === 'fuel') container = b.fuel;
+        else if (source === 'stored') container = b.stored;
+        else return;
+
+        if (!container) return;
+        var available = container[itemType] || 0;
+        var toExtract = Math.min(qty, available);
+        if (toExtract <= 0) return;
+
+        Inventory.remove(container, itemType, toExtract);
+        Inventory.add(Game.player.inventory, itemType, toExtract);
+        Audio.play('place');
+        UI.updateResources();
+        if (Input.selectedBuilding && Input.selectedBuilding.id === buildingId) {
+            UI.showBuildingInfo(b);
+        }
     },
 
     tryAcceptItem: function(b, itemType) {
@@ -107,7 +169,7 @@ var Buildings = {
             }
             var recipe = CFG.SMELTING_RECIPES[itemType];
             if (!recipe) return false;
-            if (Inventory.total(b.input) >= 5) return false;
+            if (Inventory.total(b.input) >= CFG.INPUT_BUFFER_MAX) return false;
             Inventory.add(b.input, itemType, 1);
             return true;
         }
@@ -179,13 +241,17 @@ var Buildings = {
         var speedMult = 1 + (Game.prestige ? (Game.prestige.upgrades.craft_speed || 0) * 0.1 : 0);
         var miningMult = 1 + (Game.prestige ? (Game.prestige.upgrades.mining_speed || 0) * 0.1 : 0);
 
+        if (Tech.isCompleted('mass_production')) speedMult *= 1.5;
+        var fastInserters = Tech.isCompleted('fast_inserters');
+
         for (var i = 0; i < World.buildings.length; i++) {
             var b = World.buildings[i];
-            if (!b || b.removed || b.type === 'belt') continue;
+            if (!b || b.removed || b.type === 'belt' || b.type === 'fast_belt') continue;
 
             var def = CFG.BUILDING_DEFS[b.type];
+            if (!def) continue;
 
-            if (b.type === 'miner') {
+            if (b.type === 'miner' || b.type === 'electric_miner') {
                 this.updateMiner(b, def, miningMult);
             } else if (b.type === 'furnace') {
                 this.updateFurnace(b, def, speedMult);
@@ -196,7 +262,9 @@ var Buildings = {
             } else if (b.type === 'lab') {
                 this.updateLab(b, def, speedMult);
             } else if (b.type === 'inserter') {
-                this.updateInserter(b, def);
+                this.updateInserter(b, def, fastInserters);
+            } else if (b.type === 'splitter') {
+                this.updateSplitter(b, def);
             }
 
             this.tryPushOutput(b, def);
@@ -206,10 +274,13 @@ var Buildings = {
     updateMiner: function(b, def, mult) {
         var w = def.size[0], h = def.size[1];
         if (!World.hasResource(b.x, b.y, w, h)) { b.active = false; return; }
-        if (Inventory.total(b.output) >= 5) { b.active = false; return; }
+        if (Inventory.total(b.output) >= CFG.OUTPUT_BUFFER_MAX) { b.active = false; return; }
+
+        if (def.powerDraw > 0 && Game.power.satisfaction < 0.1) { b.active = false; return; }
 
         b.active = true;
-        b.progress += def.miningSpeed * mult;
+        var pMult = def.powerDraw > 0 ? Game.power.satisfaction : 1;
+        b.progress += def.miningSpeed * mult * pMult;
         if (b.progress >= 1) {
             b.progress = 0;
             var resType = World.mineResource(b.x, b.y, w, h);
@@ -230,7 +301,7 @@ var Buildings = {
 
         var recipe = CFG.SMELTING_RECIPES[inputItem];
         if (!recipe) { b.active = false; return; }
-        if (Inventory.total(b.output) >= 5) { b.active = false; return; }
+        if (Inventory.total(b.output) >= CFG.OUTPUT_BUFFER_MAX) { b.active = false; return; }
 
         if (def.fuelBurner && Inventory.isEmpty(b.fuel)) { b.active = false; return; }
 
@@ -259,7 +330,7 @@ var Buildings = {
         if (!b.recipeId) { b.active = false; return; }
         var recipe = this.getAssemblyRecipe(b.recipeId);
         if (!recipe) { b.active = false; return; }
-        if (Inventory.total(b.output) >= 5) { b.active = false; return; }
+        if (Inventory.total(b.output) >= CFG.OUTPUT_BUFFER_MAX) { b.active = false; return; }
         if (!Inventory.hasAll(b.input, recipe.inputs)) { b.active = false; return; }
 
         if (def.powerDraw > 0 && Game.power.satisfaction < 0.1) { b.active = false; return; }
@@ -315,8 +386,9 @@ var Buildings = {
         }
     },
 
-    updateInserter: function(b, def) {
-        b.progress += def.grabSpeed;
+    updateInserter: function(b, def, fastInserters) {
+        var grabMult = fastInserters ? 2 : 1;
+        b.progress += def.grabSpeed * grabMult;
         if (b.progress < 1) return;
         b.progress = 0;
 
@@ -331,7 +403,7 @@ var Buildings = {
 
         var item = null;
 
-        if (fromBuilding && fromBuilding.type !== 'belt' && !fromBuilding.removed) {
+        if (fromBuilding && fromBuilding.type !== 'belt' && fromBuilding.type !== 'fast_belt' && !fromBuilding.removed) {
             var src = fromBuilding.type === 'storage' ? fromBuilding.stored : fromBuilding.output;
             item = Inventory.firstItem(src);
             if (item) {
@@ -356,7 +428,7 @@ var Buildings = {
 
         if (!item) return;
 
-        if (toBuilding && toBuilding.type !== 'belt' && !toBuilding.removed) {
+        if (toBuilding && toBuilding.type !== 'belt' && toBuilding.type !== 'fast_belt' && !toBuilding.removed) {
             if (this.tryAcceptItem(toBuilding, item)) {
                 b.active = true;
                 return;
@@ -373,14 +445,65 @@ var Buildings = {
             }
         }
 
-        if (fromBuilding && fromBuilding.type !== 'belt') {
+        if (fromBuilding && fromBuilding.type !== 'belt' && fromBuilding.type !== 'fast_belt') {
             var src2 = fromBuilding.type === 'storage' ? fromBuilding.stored : fromBuilding.output;
             Inventory.add(src2, item, 1);
         }
     },
 
+    updateSplitter: function(b, def) {
+        var d = CFG.DIRECTIONS[b.direction];
+        var fromX = b.x - d.dx, fromY = b.y - d.dy;
+
+        var fromLine = Belts.getLineAt(fromX, fromY);
+        if (!fromLine || fromLine.items.length === 0) { b.active = false; return; }
+
+        var headTile = fromLine.tiles[fromLine.tiles.length - 1];
+        if (headTile.x !== fromX || headTile.y !== fromY) { b.active = false; return; }
+        if (fromLine.headGap > 0.1) { b.active = false; return; }
+
+        if (!b.splitToggle) b.splitToggle = 0;
+
+        var leftDir = (b.direction + 3) % 4;
+        var rightDir = (b.direction + 1) % 4;
+        var leftD = CFG.DIRECTIONS[leftDir];
+        var rightD = CFG.DIRECTIONS[rightDir];
+
+        var outputs = [];
+        var straight = Belts.getLineAt(b.x + d.dx, b.y + d.dy);
+        var left = Belts.getLineAt(b.x + leftD.dx, b.y + leftD.dy);
+        var right = Belts.getLineAt(b.x + rightD.dx, b.y + rightD.dy);
+
+        if (straight) outputs.push(straight);
+        if (left) outputs.push(left);
+        if (right) outputs.push(right);
+
+        if (outputs.length === 0) { b.active = false; return; }
+
+        var itemType = fromLine.items[fromLine.items.length - 1].type;
+        var startIdx = b.splitToggle % outputs.length;
+
+        for (var attempt = 0; attempt < outputs.length; attempt++) {
+            var idx = (startIdx + attempt) % outputs.length;
+            if (Belts.insertItem(outputs[idx], itemType)) {
+                fromLine.items.pop();
+                if (fromLine.items.length > 0) {
+                    fromLine.headGap = 0;
+                } else {
+                    fromLine.headGap = fromLine.tiles.length;
+                }
+                Belts.recalcHeadGap(fromLine);
+                Belts.recalcLastPositive(fromLine);
+                b.splitToggle = idx + 1;
+                b.active = true;
+                return;
+            }
+        }
+        b.active = false;
+    },
+
     tryPushOutput: function(b, def) {
-        if (b.type === 'belt' || b.type === 'inserter' || b.type === 'steam_engine' || b.type === 'solar_panel') return;
+        if (b.type === 'belt' || b.type === 'fast_belt' || b.type === 'inserter' || b.type === 'steam_engine' || b.type === 'solar_panel' || b.type === 'splitter') return;
         if (Inventory.isEmpty(b.output)) return;
 
         var w = def.size[0], h = def.size[1];

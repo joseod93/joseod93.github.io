@@ -202,7 +202,8 @@ var UI = {
                     var c = def2.cost[j];
                     var has = Inventory.count(Game.player.inventory, c.item);
                     var color = has >= c.qty ? '#44cc66' : '#dd4444';
-                    parts.push('<span style="color:' + color + '">' + c.qty + 'x ' + (ITEM_NAMES[c.item] || c.item) + '</span>');
+                    var symbol = has >= c.qty ? ' ✓' : ' ✗';
+                    parts.push('<span style="color:' + color + '">' + c.qty + 'x ' + (ITEM_NAMES[c.item] || c.item) + symbol + '</span>');
                 }
                 costEl.innerHTML = parts.join(' ');
             } else {
@@ -210,6 +211,20 @@ var UI = {
             }
             var arrows = ['↑','→','↓','←'];
             dirEl.textContent = arrows[Input.buildDirection];
+        }
+
+        var indicator = document.getElementById('build-indicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'build-indicator';
+            document.getElementById('ui-overlay').appendChild(indicator);
+        }
+        if (Input.buildMode) {
+            var bDef = CFG.BUILDING_DEFS[Input.buildMode];
+            indicator.textContent = 'CONSTRUYENDO: ' + (bDef ? bDef.name : Input.buildMode);
+            indicator.style.display = 'block';
+        } else {
+            indicator.style.display = 'none';
         }
     },
 
@@ -302,7 +317,7 @@ var UI = {
         var html = '<button class="info-close" onclick="UI.closePanels()">✕</button>';
         html += '<h3>' + def.name + '</h3>';
 
-        if (b.type === 'miner') {
+        if (b.type === 'miner' || b.type === 'electric_miner') {
             var resType = World.getResourceType(b.x, b.y, def.size[0], def.size[1]);
             html += '<p>Minando: ' + (ITEM_NAMES[resType] || 'Nada') + '</p>';
         }
@@ -321,19 +336,62 @@ var UI = {
                 html += b.output[item2] + 'x ' + (ITEM_NAMES[item2] || item2) + ' ';
             }
             html += '</p>';
+            html += '<div class="transfer-section">';
+            for (var eItem in b.output) {
+                if (b.output[eItem] > 0) {
+                    html += '<button class="btn-transfer btn-extract" onclick="Buildings.playerExtract(' + b.id + ',\'output\',\'' + eItem + '\',1)">-1 ' + (ITEM_NAMES[eItem] || eItem) + '</button>';
+                    if (b.output[eItem] >= 5) html += '<button class="btn-transfer btn-extract" onclick="Buildings.playerExtract(' + b.id + ',\'output\',\'' + eItem + '\',5)">-5</button>';
+                    html += '<button class="btn-transfer btn-extract" onclick="Buildings.playerExtract(' + b.id + ',\'output\',\'' + eItem + '\',9999)">Todo</button>';
+                }
+            }
+            html += '</div>';
         }
 
-        if (b.type === 'furnace' && !Inventory.isEmpty(b.fuel)) {
+        if (b.type === 'furnace') {
             html += '<p>Combustible: ' + (b.fuel.coal || 0) + 'x Carbón</p>';
+            if ((b.fuel.coal || 0) > 0) {
+                html += '<div class="transfer-section">';
+                html += '<button class="btn-transfer btn-extract" onclick="Buildings.playerExtract(' + b.id + ',\'fuel\',\'coal\',1)">-1 Carbón</button>';
+                html += '<button class="btn-transfer btn-extract" onclick="Buildings.playerExtract(' + b.id + ',\'fuel\',\'coal\',9999)">Todo</button>';
+                html += '</div>';
+            }
+            html += '<div class="transfer-section"><p style="font-size:11px;color:#aaa;margin:4px 0;">Añadir:</p>';
+            var smeltables = ['iron_ore','copper_ore','iron_plate','stone','coal'];
+            for (var si = 0; si < smeltables.length; si++) {
+                var sItem = smeltables[si];
+                var sQty = Inventory.count(Game.player.inventory, sItem);
+                if (sQty > 0) {
+                    html += '<button class="btn-transfer" onclick="Buildings.playerTransfer(' + b.id + ',\'' + sItem + '\',1)">+1 ' + (ITEM_NAMES[sItem] || sItem) + ' (' + sQty + ')</button>';
+                    if (sQty > 5) html += '<button class="btn-transfer" onclick="Buildings.playerTransfer(' + b.id + ',\'' + sItem + '\',5)">+5</button>';
+                    if (sQty > 10) html += '<button class="btn-transfer" onclick="Buildings.playerTransfer(' + b.id + ',\'' + sItem + '\',10)">+10</button>';
+                    html += '<button class="btn-transfer" onclick="Buildings.playerTransfer(' + b.id + ',\'' + sItem + '\',' + sQty + ')">+Todo</button>';
+                }
+            }
+            html += '</div>';
         }
 
         if (b.type === 'storage') {
             html += '<p>Almacenado: ' + Inventory.total(b.stored) + '/' + b.capacity + '</p>';
             for (var item3 in b.stored) {
                 if (b.stored[item3] > 0) {
-                    html += '<p>' + b.stored[item3] + 'x ' + (ITEM_NAMES[item3] || item3) + '</p>';
+                    html += '<p>' + b.stored[item3] + 'x ' + (ITEM_NAMES[item3] || item3);
+                    html += ' <button class="btn-transfer btn-extract" onclick="Buildings.playerExtract(' + b.id + ',\'stored\',\'' + item3 + '\',1)">-1</button>';
+                    if (b.stored[item3] >= 5) html += '<button class="btn-transfer btn-extract" onclick="Buildings.playerExtract(' + b.id + ',\'stored\',\'' + item3 + '\',5)">-5</button>';
+                    html += '<button class="btn-transfer btn-extract" onclick="Buildings.playerExtract(' + b.id + ',\'stored\',\'' + item3 + '\',9999)">Todo</button>';
+                    html += '</p>';
                 }
             }
+            html += '<div class="transfer-section"><p style="font-size:11px;color:#aaa;margin:4px 0;">Añadir:</p>';
+            var inv = Game.player.inventory;
+            for (var invItem in inv) {
+                if (inv[invItem] > 0) {
+                    html += '<button class="btn-transfer" onclick="Buildings.playerTransfer(' + b.id + ',\'' + invItem + '\',1)">+1 ' + (ITEM_NAMES[invItem] || invItem) + ' (' + inv[invItem] + ')</button>';
+                    if (inv[invItem] > 5) html += '<button class="btn-transfer" onclick="Buildings.playerTransfer(' + b.id + ',\'' + invItem + '\',5)">+5</button>';
+                    if (inv[invItem] > 10) html += '<button class="btn-transfer" onclick="Buildings.playerTransfer(' + b.id + ',\'' + invItem + '\',10)">+10</button>';
+                    html += '<button class="btn-transfer" onclick="Buildings.playerTransfer(' + b.id + ',\'' + invItem + '\',' + inv[invItem] + ')">+Todo</button>';
+                }
+            }
+            html += '</div>';
         }
 
         if (b.type === 'rocket_silo') {
@@ -617,6 +675,21 @@ var UI = {
         html += '<button class="btn-action" onclick="var d=document.getElementById(\'import-text\').value;if(d&&Save.importSave(d)){UI.showToast(\'¡Importado!\');UI.closeModal();}else if(d){UI.showToast(\'Datos inválidos\');}">Confirmar Importación</button>';
         html += '</div>';
         html += '<button class="btn-action" onclick="document.getElementById(\'import-area\').style.display=\'block\';this.style.display=\'none\';">Importar</button>';
+        html += '<br><br>';
+        html += '<button class="btn-action" onclick="if(Save.loadBackup()){UI.showToast(\'¡Backup restaurado!\');UI.closeModal();}else{UI.showToast(\'No hay backup\');}">Restaurar Backup</button>';
+
+        html += '<h3>Controles</h3>';
+        html += '<div style="font-size:12px;color:#ccc;line-height:2;">';
+        html += '<p><kbd>WASD</kbd> / Flechas — Mover cámara</p>';
+        html += '<p><kbd>R</kbd> — Rotar dirección</p>';
+        html += '<p><kbd>Espacio</kbd> — Pausar / Reanudar</p>';
+        html += '<p><kbd>Esc</kbd> — Cancelar modo construcción</p>';
+        html += '<p><kbd>1-9</kbd> — Seleccionar edificio</p>';
+        html += '<p><kbd>Clic derecho</kbd> — Eliminar edificio</p>';
+        html += '<p><kbd>Clic medio / derecho + arrastrar</kbd> — Mover cámara</p>';
+        html += '<p><kbd>Rueda ratón</kbd> — Zoom</p>';
+        html += '<p><kbd>?</kbd> — Mostrar esta ayuda</p>';
+        html += '</div>';
 
         content.innerHTML = html;
         modal.style.display = 'flex';

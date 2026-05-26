@@ -13,6 +13,8 @@ var CFG = {
     ITEM_SPACING: 0.35,
     AUTOSAVE_INTERVAL: 60000,
     MAX_PARTICLES: 200,
+    OUTPUT_BUFFER_MAX: 15,
+    INPUT_BUFFER_MAX: 10,
 
     COLORS: {
         bg: '#1a1a2e',
@@ -45,7 +47,9 @@ var CFG = {
         },
         buildings: {
             miner:      {bg:'#336699', fg:'#4488cc', label:'MI'},
+            electric_miner:{bg:'#3377aa', fg:'#55aadd', label:'EM'},
             belt:       {bg:'#aa8833', fg:'#ccaa44', label:''},
+            fast_belt:  {bg:'#bb9933', fg:'#ddcc55', label:''},
             furnace:    {bg:'#993311', fg:'#cc4422', label:'FU'},
             assembler:  {bg:'#338855', fg:'#44aa66', label:'AS'},
             storage:    {bg:'#666655', fg:'#888877', label:'ST'},
@@ -72,10 +76,22 @@ var CFG = {
             miningSpeed:0.015, powerDraw:0, fuelBurner:false,
             outputSlots:1, inputSlots:0, unlocked:true
         },
+        electric_miner: {
+            name:'Minero Eléctrico', icon:'⚡', size:[2,2], category:'production',
+            cost:[{item:'iron_plate',qty:5},{item:'iron_gear',qty:3},{item:'green_circuit',qty:2}],
+            miningSpeed:0.03, powerDraw:60, fuelBurner:false,
+            outputSlots:1, inputSlots:0, unlocked:false, tech:'electric_mining'
+        },
         belt: {
             name:'Cinta', icon:'➡', size:[1,1], category:'logistics',
             cost:[], outputSlots:0, inputSlots:0,
             unlocked:true, speed:0.05
+        },
+        fast_belt: {
+            name:'Cinta Rápida', icon:'⏩', size:[1,1], category:'logistics',
+            cost:[{item:'iron_plate',qty:2},{item:'iron_gear',qty:1}],
+            outputSlots:0, inputSlots:0,
+            unlocked:false, tech:'logistics', speed:0.1
         },
         furnace: {
             name:'Fundidora', icon:'🔥', size:[2,2], category:'production',
@@ -122,7 +138,7 @@ var CFG = {
         },
         rocket_silo: {
             name:'Silo Cohete', icon:'🚀', size:[5,5], category:'production',
-            cost:[{item:'steel',qty:100},{item:'advanced_circuit',qty:50},{item:'green_circuit',qty:100}],
+            cost:[{item:'steel',qty:50},{item:'advanced_circuit',qty:20},{item:'green_circuit',qty:50}],
             craftSpeed:1, powerDraw:500, unlocked:false, tech:'rocketry',
             outputSlots:1, inputSlots:4
         }
@@ -150,11 +166,15 @@ var CFG = {
 
     TECH_TREE: {
         automation:           {name:'Automatización',       cost:{red_science:10},                              prereqs:[], unlocks:['ensamblador']},
-        logistics:            {name:'Logística',            cost:{red_science:20},                              prereqs:['automation'], unlocks:['divisor','cinta rápida']},
-        electric_mining:      {name:'Minería Eléctrica',    cost:{red_science:30, green_science:15},            prereqs:['automation'], unlocks:['minero eléctrico']},
+        logistics:            {name:'Logística',            cost:{red_science:20},                              prereqs:['automation'], unlocks:['Divisor','Cinta Rápida']},
+        electric_mining:      {name:'Minería Eléctrica',    cost:{red_science:30, green_science:15},            prereqs:['automation'], unlocks:['Minero Eléctrico']},
         advanced_electronics: {name:'Electrónica Avanzada', cost:{red_science:40, green_science:40},            prereqs:['automation'], unlocks:['circuito avanzado']},
         solar_energy:         {name:'Energía Solar',        cost:{red_science:50, green_science:30},            prereqs:['electric_mining'], unlocks:['panel solar']},
-        rocketry:             {name:'Cohetería',            cost:{red_science:200,green_science:200,blue_science:200}, prereqs:['advanced_electronics'], unlocks:['silo cohete','pieza cohete']}
+        rocketry:             {name:'Cohetería',            cost:{red_science:200,green_science:200,blue_science:200}, prereqs:['advanced_electronics'], unlocks:['Silo Cohete','Pieza Cohete']},
+        fast_inserters:       {name:'Insertadores Rápidos', cost:{red_science:40, green_science:40},             prereqs:['logistics'], unlocks:['Insertadores x2 velocidad']},
+        efficiency:           {name:'Eficiencia Energética',cost:{red_science:60, green_science:60},             prereqs:['solar_energy'], unlocks:['-25% consumo energía']},
+        mass_production:      {name:'Producción en Masa',  cost:{red_science:80, green_science:80, blue_science:40}, prereqs:['advanced_electronics'], unlocks:['+50% vel. fabricación']},
+        logistics_2:          {name:'Logística Avanzada',  cost:{red_science:100,green_science:100,blue_science:50}, prereqs:['logistics','advanced_electronics'], unlocks:['+50% vel. cintas']}
     },
 
     PRESTIGE_UPGRADES: [

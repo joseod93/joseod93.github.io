@@ -115,7 +115,10 @@ var Game = {
             var b = World.buildings[i];
             if (!b || b.removed) continue;
             var def = CFG.BUILDING_DEFS[b.type];
-            if (def.powerDraw) this.power.consumption += def.powerDraw;
+            if (def.powerDraw) {
+                var effMult = Tech.isCompleted('efficiency') ? 0.75 : 1;
+                this.power.consumption += def.powerDraw * effMult;
+            }
             if (b.type === 'solar_panel') {
                 b.active = true;
                 this.power.production += def.powerOutput;
@@ -130,6 +133,10 @@ var Game = {
 
         Buildings.update();
         Belts.update();
+
+        if (this.power.satisfaction < 0.5 && this.tick % 200 === 0) {
+            Audio.play('power_warning');
+        }
 
         if (this.tick % 100 === 0) {
             this.checkMilestones();

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -21,11 +21,11 @@
 
         <!-- Top Buttons -->
         <div id="top-buttons">
-            <button id="btn-tech" title="Árbol Tecnológico">🔬</button>
-            <button id="btn-stats" title="Estadísticas">📊</button>
-            <button id="btn-prestige" title="Prestigio">⭐</button>
-            <button id="btn-glossary" title="Glosario">📖</button>
-            <button id="btn-settings" title="Ajustes">⚙️</button>
+            <button id="btn-tech" title="Árbol Tecnológico" aria-label="Árbol Tecnológico">🔬</button>
+            <button id="btn-stats" title="Estadísticas" aria-label="Estadísticas">📊</button>
+            <button id="btn-prestige" title="Prestigio" aria-label="Prestigio">⭐</button>
+            <button id="btn-glossary" title="Glosario" aria-label="Glosario">📖</button>
+            <button id="btn-settings" title="Ajustes" aria-label="Ajustes">⚙️</button>
         </div>
 
         <!-- Toast Container -->
@@ -43,10 +43,10 @@
 
         <!-- Mobile Controls -->
         <div id="mobile-controls">
-            <button id="btn-zoom-in" title="Acercar">+</button>
-            <button id="btn-zoom-out" title="Alejar">−</button>
-            <button id="btn-pause-mobile" title="Pausar">⏸</button>
-            <button id="btn-fullscreen" title="Pantalla Completa">⛶</button>
+            <button id="btn-zoom-in" title="Acercar" aria-label="Acercar zoom">+</button>
+            <button id="btn-zoom-out" title="Alejar" aria-label="Alejar zoom">−</button>
+            <button id="btn-pause-mobile" title="Pausar" aria-label="Pausar juego">⏸</button>
+            <button id="btn-fullscreen" title="Pantalla Completa" aria-label="Pantalla completa">⛶</button>
         </div>
 
         <!-- Toolbar -->
@@ -54,8 +54,8 @@
             <div id="build-actions">
                 <span id="build-cost"></span>
                 <span id="build-direction"></span>
-                <button id="btn-rotate" title="Rotar (R)">↻</button>
-                <button id="btn-cancel" title="Cancelar (Esc)">✕</button>
+                <button id="btn-rotate" title="Rotar (R)" aria-label="Rotar edificio">↻</button>
+                <button id="btn-cancel" title="Cancelar (Esc)" aria-label="Cancelar construcción">✕</button>
             </div>
             <div id="toolbar-buildings"></div>
             <div id="toolbar-scroll-hint"></div>
@@ -67,7 +67,7 @@
         <!-- Modal -->
         <div id="modal">
             <div id="modal-inner">
-                <button id="modal-close">×</button>
+                <button id="modal-close" aria-label="Cerrar ventana">×</button>
                 <div id="modal-content"></div>
             </div>
         </div>

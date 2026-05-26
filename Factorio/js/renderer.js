@@ -50,6 +50,7 @@ var Renderer = {
 
         this.drawVignette(ctx, w, h);
         Particles.render(ctx);
+        this.drawMinimap(ctx, w, h);
     },
 
     drawVignette: function(ctx, w, h) {
@@ -173,7 +174,7 @@ var Renderer = {
     },
 
     drawResourceHighlight: function() {
-        if (Input.buildMode !== 'miner') return;
+        if (Input.buildMode !== 'miner' && Input.buildMode !== 'electric_miner') return;
         var ctx = this.ctx;
         var bounds = Camera.getVisibleBounds();
         var t = CFG.TILE;
@@ -255,6 +256,16 @@ var Renderer = {
             var px = b.x * t, py = b.y * t;
             var pw = w * t, ph = h * t;
 
+            var placeAge = performance.now() - (b.placedAt || 0);
+            var hasPlaceAnim = placeAge < 200;
+            if (hasPlaceAnim) {
+                var sc = 0.8 + 0.2 * (placeAge / 200);
+                ctx.save();
+                ctx.translate(px + pw/2, py + ph/2);
+                ctx.scale(sc, sc);
+                ctx.translate(-(px + pw/2), -(py + ph/2));
+            }
+
             ctx.fillStyle = 'rgba(0,0,0,0.3)';
             this.roundRect(ctx, px + 2, py + 2, pw - 1, ph - 1, 3);
             ctx.fill();
@@ -283,6 +294,19 @@ var Renderer = {
                 this.roundRect(ctx, px + 1, py + 1, pw - 2, ph - 2, 3);
                 ctx.stroke();
                 ctx.shadowBlur = 0;
+            }
+
+            if (def.powerDraw > 0 && Game.power.satisfaction < 1) {
+                var dimAlpha = 0.3 * (1 - Game.power.satisfaction);
+                ctx.fillStyle = 'rgba(0,0,0,' + dimAlpha + ')';
+                this.roundRect(ctx, px + 1, py + 1, pw - 2, ph - 2, 3);
+                ctx.fill();
+                if (Game.power.satisfaction < 0.5) {
+                    var flash = 0.08 + Math.sin(this.time * 6) * 0.04;
+                    ctx.fillStyle = 'rgba(255,50,50,' + flash + ')';
+                    this.roundRect(ctx, px + 1, py + 1, pw - 2, ph - 2, 3);
+                    ctx.fill();
+                }
             }
 
             if (def.icon && Camera.zoom > 0.4) {
@@ -323,7 +347,14 @@ var Renderer = {
                 var d = CFG.DIRECTIONS[b.direction];
                 var cx = px + pw/2, cy = py + ph/2;
                 var arrowSize = Math.min(w, h) * t * 0.13;
-                ctx.fillStyle = 'rgba(255,255,255,0.25)';
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.beginPath();
+                ctx.moveTo(cx + d.dx * arrowSize * 2.2 + 1, cy + d.dy * arrowSize * 2.2 + 1);
+                ctx.lineTo(cx + d.dy * arrowSize - d.dx * arrowSize * 0.5 + 1, cy - d.dx * arrowSize - d.dy * arrowSize * 0.5 + 1);
+                ctx.lineTo(cx - d.dy * arrowSize - d.dx * arrowSize * 0.5 + 1, cy + d.dx * arrowSize - d.dy * arrowSize * 0.5 + 1);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.55)';
                 ctx.beginPath();
                 ctx.moveTo(cx + d.dx * arrowSize * 2.2, cy + d.dy * arrowSize * 2.2);
                 ctx.lineTo(cx + d.dy * arrowSize - d.dx * arrowSize * 0.5, cy - d.dx * arrowSize - d.dy * arrowSize * 0.5);
@@ -358,6 +389,8 @@ var Renderer = {
                 ctx.fillStyle = '#fff';
                 ctx.fillText(b.rocketParts + '/100', px + pw/2, py + 13);
             }
+
+            if (hasPlaceAnim) ctx.restore();
         }
     },
 
@@ -408,7 +441,7 @@ var Renderer = {
 
         for (var i = 0; i < World.buildings.length; i++) {
             var b = World.buildings[i];
-            if (!b || b.removed || b.type !== 'belt') continue;
+            if (!b || b.removed || (b.type !== 'belt' && b.type !== 'fast_belt')) continue;
             if (b.x < bounds.minX - 1 || b.x > bounds.maxX + 1) continue;
             if (b.y < bounds.minY - 1 || b.y > bounds.maxY + 1) continue;
 
@@ -416,13 +449,14 @@ var Renderer = {
             var d = CFG.DIRECTIONS[b.direction];
             var margin = 3;
 
-            ctx.fillStyle = '#554418';
+            var isFast = b.type === 'fast_belt';
+            ctx.fillStyle = isFast ? '#665522' : '#554418';
             ctx.fillRect(px, py, t, t);
 
             if (d.dx !== 0) {
-                ctx.fillStyle = '#99882e';
+                ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
                 ctx.fillRect(px, py + margin, t, t - margin * 2);
-                ctx.fillStyle = '#bbaa44';
+                ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
                 ctx.fillRect(px, py + margin + 1, t, t - margin * 2 - 2);
 
                 ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -430,9 +464,9 @@ var Renderer = {
                 ctx.fillStyle = 'rgba(0,0,0,0.1)';
                 ctx.fillRect(px, py + t - margin - 1, t, 1);
             } else {
-                ctx.fillStyle = '#99882e';
+                ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
                 ctx.fillRect(px + margin, py, t - margin * 2, t);
-                ctx.fillStyle = '#bbaa44';
+                ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
                 ctx.fillRect(px + margin + 1, py, t - margin * 2 - 2, t);
 
                 ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -441,9 +475,10 @@ var Renderer = {
                 ctx.fillRect(px + t - margin - 1, py, 1, t);
             }
 
-            ctx.fillStyle = 'rgba(80,60,20,0.35)';
-            for (var a = 0; a < 3; a++) {
-                var frac = ((a / 3) + off) % 1;
+            var arrowCount = isFast ? 5 : 3;
+            ctx.fillStyle = isFast ? 'rgba(100,80,30,0.4)' : 'rgba(80,60,20,0.35)';
+            for (var a = 0; a < arrowCount; a++) {
+                var frac = ((a / arrowCount) + off) % 1;
                 var ax = px + t * 0.5 + d.dx * (frac - 0.5) * t * 0.75;
                 var ay = py + t * 0.5 + d.dy * (frac - 0.5) * t * 0.75;
                 var as = 2.5;
@@ -497,7 +532,7 @@ var Renderer = {
         var ctx = this.ctx;
         var t = CFG.TILE;
 
-        if (Input.buildMode && Input.buildMode !== 'belt') {
+        if (Input.buildMode && !Input.isBeltMode()) {
             var def = CFG.BUILDING_DEFS[Input.buildMode];
             if (!def) return;
             var tile = Input.mouse.tile;
@@ -530,7 +565,7 @@ var Renderer = {
                 ctx.fillText(def.icon, tile.x * t + w * t / 2, tile.y * t + h * t / 2 - 2);
             }
 
-            if (Input.buildMode === 'miner') {
+            if (Input.buildMode === 'miner' || Input.buildMode === 'electric_miner') {
                 var resType = World.getResourceType(tile.x, tile.y, w, h);
                 if (resType) {
                     var rn = ITEM_NAMES[resType] || resType;
@@ -560,7 +595,7 @@ var Renderer = {
             ctx.globalAlpha = 1;
         }
 
-        if (Input.buildMode === 'belt') {
+        if (Input.isBeltMode()) {
             if (Input.ghostTiles.length > 0) {
                 for (var i = 0; i < Input.ghostTiles.length; i++) {
                     var g = Input.ghostTiles[i];
@@ -569,7 +604,7 @@ var Renderer = {
                     if (exists) {
                         ctx.fillStyle = 'rgba(220,0,40,0.3)';
                     } else {
-                        ctx.fillStyle = '#bbaa44';
+                        ctx.fillStyle = Input.buildMode === 'fast_belt' ? '#ddcc55' : '#bbaa44';
                     }
                     this.roundRect(ctx, g.x * t + 1, g.y * t + 1, t - 2, t - 2, 2);
                     ctx.fill();
@@ -590,7 +625,7 @@ var Renderer = {
             } else {
                 var tile2 = Input.mouse.tile;
                 ctx.globalAlpha = 0.55;
-                ctx.fillStyle = '#bbaa44';
+                ctx.fillStyle = Input.buildMode === 'fast_belt' ? '#ddcc55' : '#bbaa44';
                 this.roundRect(ctx, tile2.x * t + 1, tile2.y * t + 1, t - 2, t - 2, 2);
                 ctx.fill();
 
@@ -645,5 +680,41 @@ var Renderer = {
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.shadowBlur = 0;
+    },
+
+    drawMinimap: function(ctx, w, h) {
+        var mmSize = 120;
+        var mmX = 8, mmY = h - mmSize - 70;
+        var mmScale = 0.5;
+        var t = CFG.TILE;
+
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(mmX, mmY, mmSize, mmSize);
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(mmX, mmY, mmSize, mmSize);
+
+        var centerTX = Math.floor((Camera.x + Camera.vw / Camera.zoom / 2) / t);
+        var centerTY = Math.floor((Camera.y + Camera.vh / Camera.zoom / 2) / t);
+
+        for (var i = 0; i < World.buildings.length; i++) {
+            var b = World.buildings[i];
+            if (!b || b.removed) continue;
+            var rx = (b.x - centerTX) * mmScale + mmSize / 2;
+            var ry = (b.y - centerTY) * mmScale + mmSize / 2;
+            if (rx < 0 || rx > mmSize || ry < 0 || ry > mmSize) continue;
+            var bc = CFG.COLORS.buildings[b.type];
+            ctx.fillStyle = bc ? bc.fg : '#888';
+            var bDef = CFG.BUILDING_DEFS[b.type];
+            var bw = bDef ? bDef.size[0] * mmScale : mmScale;
+            var bh = bDef ? bDef.size[1] * mmScale : mmScale;
+            ctx.fillRect(mmX + rx, mmY + ry, Math.max(1, bw), Math.max(1, bh));
+        }
+
+        var vpW = (Camera.vw / Camera.zoom / t) * mmScale;
+        var vpH = (Camera.vh / Camera.zoom / t) * mmScale;
+        ctx.strokeStyle = '#e6a832';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(mmX + mmSize / 2 - vpW / 2, mmY + mmSize / 2 - vpH / 2, vpW, vpH);
     }
 };

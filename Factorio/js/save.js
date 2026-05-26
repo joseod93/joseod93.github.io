@@ -29,6 +29,8 @@ var Save = {
         };
 
         try {
+            var prev = localStorage.getItem(key);
+            if (prev) localStorage.setItem(key + '_backup', prev);
             localStorage.setItem(key, JSON.stringify(data));
             return true;
         } catch(e) {
@@ -59,7 +61,28 @@ var Save = {
         localStorage.removeItem(key);
     },
 
+    loadBackup: function(slot) {
+        var key = slot ? 'factoryEmpire_' + slot : 'factoryEmpire_auto';
+        try {
+            var raw = localStorage.getItem(key + '_backup');
+            if (!raw) return false;
+            var data = JSON.parse(raw);
+            this.applyLoad(data);
+            return true;
+        } catch(e) {
+            return false;
+        }
+    },
+
     applyLoad: function(data) {
+        if (!data || typeof data !== 'object') return;
+        if (!data.player) data.player = {inventory:{}};
+        if (!data.camera) data.camera = {x:0, y:0, zoom:1};
+        if (!data.buildings) data.buildings = [];
+        if (!data.belts) data.belts = [];
+        if (!data.stats) data.stats = null;
+        if (!data.research) data.research = {};
+
         World.init(data.seed);
         Belts.init();
         Game.tick = data.tick || 0;
@@ -80,8 +103,8 @@ var Save = {
         Tech.completed = data.research ? data.research.completed : {};
         Tech.progress = data.research ? data.research.progress : {};
 
-        this.deserializeBuildings(data.buildings);
-        this.deserializeBelts(data.belts);
+        try { this.deserializeBuildings(data.buildings); } catch(e) {}
+        try { this.deserializeBelts(data.belts); } catch(e) {}
 
         var elapsed = Date.now() - (data.timestamp || Date.now());
         var offlineTicks = Math.min(Math.floor(elapsed / CFG.TICK_MS), 20 * 60 * 60 * 8);
@@ -122,10 +145,13 @@ var Save = {
             };
 
             if (d.t === 'storage') {
-                b.capacity = CFG.BUILDING_DEFS.storage.capacity || 200;
+                b.capacity = (CFG.BUILDING_DEFS.storage && CFG.BUILDING_DEFS.storage.capacity) || 200;
             }
             if (d.t === 'rocket_silo') {
                 b.rocketReady = b.rocketParts >= 100;
+            }
+            if (d.t === 'splitter') {
+                b.splitToggle = 0;
             }
 
             World.placeBuilding(b);

@@ -748,10 +748,13 @@ class ScannerMode {
 
     handleDetections(cards) {
         const now = Date.now();
+        const vw = this.els.video.videoWidth || 1280;
+        const vh = this.els.video.videoHeight || 720;
+        const dedupRadius = Math.min(vw, vh) * 0.08;
         for (const card of cards) {
             const existing = this.activeCards.find(a =>
                 a.rank === card.rank &&
-                Math.hypot(a.centerX - card.centerX, a.centerY - card.centerY) < 80
+                Math.hypot(a.centerX - card.centerX, a.centerY - card.centerY) < dedupRadius
             );
             if (existing) {
                 existing.centerX = card.centerX;

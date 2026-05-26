@@ -47,7 +47,23 @@ var Tutorial = {
             action: 'next'
         },
         {
+            text: '⚡ Fíjate en la barra de energía arriba. Si la producción baja del consumo, los edificios eléctricos irán más lentos o se detendrán.',
+            action: 'next'
+        },
+        {
+            text: '📦 El ALMACÉN sirve como buffer. Colócalo entre máquinas para evitar atascos cuando las cintas están llenas.',
+            action: 'next'
+        },
+        {
             text: '🔬 Construye un LABORATORIO y dale packs de ciencia para investigar tecnologías nuevas. Abre el Árbol Tecnológico (🔬).',
+            action: 'next'
+        },
+        {
+            text: '🔀 Investiga Logística para desbloquear el DIVISOR (reparte items entre cintas) y la CINTA RÁPIDA.',
+            action: 'next'
+        },
+        {
+            text: '⭐ Cuando lances tu primer cohete, podrás PRESTIGIAR: reiniciar la fábrica con bonificaciones permanentes.',
             action: 'next'
         },
         {

@@ -7,22 +7,27 @@ var Belts = {
         this.tileToLine = {};
     },
 
-    tryPlaceSingle: function(tx, ty, dir) {
+    tryPlaceSingle: function(tx, ty, dir, beltType) {
+        if (!beltType) beltType = 'belt';
         var tile = World.getTile(tx, ty);
         if (tile.terrain === 'water') return false;
         if (tile.buildingId !== null) return false;
 
         var beltId = World.placeBuilding({
-            type: 'belt', x: tx, y: ty, direction: dir,
+            type: beltType, x: tx, y: ty, direction: dir,
             input: {}, output: {}, progress: 0, active: true
         });
 
-        this.addToLine(tx, ty, dir);
-        Tutorial.onEvent('place', 'belt');
+        var beltSpeed = (beltType === 'fast_belt' ? CFG.FAST_BELT_SPEED : CFG.BELT_SPEED);
+        beltSpeed *= (1 + (Game.prestige ? (Game.prestige.upgrades.belt_speed || 0) * 0.1 : 0));
+        if (Tech.isCompleted('logistics_2')) beltSpeed *= 1.5;
+
+        this.addToLine(tx, ty, dir, beltSpeed);
+        Tutorial.onEvent('place', beltType);
         return true;
     },
 
-    addToLine: function(tx, ty, dir) {
+    addToLine: function(tx, ty, dir, beltSpeed) {
         var key = tx + ',' + ty;
         var d = CFG.DIRECTIONS[dir];
         var behindX = tx - d.dx, behindY = ty - d.dy;
@@ -36,7 +41,7 @@ var Belts = {
         var bLine = behindLine ? this.lines[behindLine.lineId] : null;
         var aLine = aheadLine ? this.lines[aheadLine.lineId] : null;
 
-        if (bLine && bLine.dir === dir && !bLine.removed) {
+        if (bLine && bLine.dir === dir && !bLine.removed && Math.abs(bLine.speed - beltSpeed) < 0.001) {
             if (aLine && aLine.dir === dir && !aLine.removed && bLine !== aLine) {
                 bLine.tiles.push({x:tx, y:ty});
                 this.tileToLine[key] = {lineId: bLine.id, idx: bLine.tiles.length - 1};
@@ -49,7 +54,7 @@ var Belts = {
             return;
         }
 
-        if (aLine && aLine.dir === dir && !aLine.removed) {
+        if (aLine && aLine.dir === dir && !aLine.removed && Math.abs(aLine.speed - beltSpeed) < 0.001) {
             aLine.tiles.unshift({x:tx, y:ty});
             this.rebuildTileIndex(aLine);
             if (aLine.items.length > 0) {
@@ -67,7 +72,7 @@ var Belts = {
             items: [],
             headGap: 1,
             lastPositiveGapIndex: -1,
-            speed: CFG.BELT_SPEED * (1 + (Game.prestige ? (Game.prestige.upgrades.belt_speed || 0) * 0.1 : 0)),
+            speed: beltSpeed,
             removed: false
         };
         this.lines.push(line);

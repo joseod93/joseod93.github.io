@@ -309,6 +309,65 @@ html, body {
 
 .btn-action:hover { background: rgba(230,168,50,0.3); }
 
+/* ===== TRANSFER BUTTONS ===== */
+.transfer-section {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+.transfer-section p { width: 100%; }
+.btn-transfer {
+    padding: 3px 8px;
+    background: rgba(68,204,102,0.15);
+    border: 1px solid #44cc66;
+    color: #44cc66;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+}
+.btn-transfer:hover { background: rgba(68,204,102,0.3); }
+
+.btn-extract {
+    background: rgba(221,170,85,0.15);
+    border-color: #ddaa55;
+    color: #ddaa55;
+}
+.btn-extract:hover { background: rgba(221,170,85,0.3); }
+
+#build-indicator {
+    position: fixed;
+    top: 44px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(230,168,50,0.2);
+    border: 1px solid #e6a832;
+    color: #e6a832;
+    padding: 4px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 25;
+    display: none;
+    pointer-events: none;
+}
+
+kbd {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid #555;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #e6a832;
+}
+
+button:focus-visible, .building-btn:focus-visible {
+    outline: 2px solid #e6a832;
+    outline-offset: 2px;
+}
+
 /* ===== RECIPE SELECT ===== */
 .recipe-select {
     display: flex;

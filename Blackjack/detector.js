@@ -6,8 +6,9 @@ class CardDetector {
         this.modelPath = config.modelPath || 'model/cards.onnx';
         this.classesPath = config.classesPath || 'model/classes.json';
         this.inputSize = config.inputSize || 640;
-        this.confThreshold = config.confThreshold || 0.40;
+        this.confThreshold = config.confThreshold || 0.55;
         this.iouThreshold = config.iouThreshold || 0.45;
+        this.maxDetections = config.maxDetections || 20;
         this.classNames = config.classNames || null;
 
         this.session = null;
@@ -271,7 +272,8 @@ class CardDetector {
             const className = this.classNames[maxClass] || `class_${maxClass}`;
             const rank = this._classToRank(className);
 
-            if (rank) {
+            const minDim = Math.min(origW, origH) * 0.03;
+            if (rank && bw > minDim && bh > minDim) {
                 detections.push({
                     rank, className, confidence: maxConf,
                     x, y, width: bw, height: bh,
@@ -281,7 +283,8 @@ class CardDetector {
             }
         }
 
-        return this._nms(detections);
+        const nmsResult = this._nms(detections);
+        return nmsResult.slice(0, this.maxDetections);
     }
 
     _classToRank(className) {

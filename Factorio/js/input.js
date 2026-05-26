@@ -17,6 +17,10 @@ var Input = {
     ghostTiles: [],
     isTouchDevice: false,
 
+    isBeltMode: function() {
+        return this.buildMode === 'belt' || this.buildMode === 'fast_belt';
+    },
+
     init: function(canvas) {
         var self = this;
         this.isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
@@ -49,7 +53,7 @@ var Input = {
         var tile = Camera.screenToTile(sx, sy);
         this.dragStart = tile;
 
-        if (this.buildMode === 'belt') {
+        if (this.isBeltMode()) {
             this.beltPath = [tile];
             this.ghostTiles = [tile];
         }
@@ -74,7 +78,7 @@ var Input = {
             }
         }
 
-        if (this.isDragging && this.buildMode === 'belt' && this.dragStart) {
+        if (this.isDragging && this.isBeltMode() && this.dragStart) {
             this.updateBeltPath(Camera.screenToTile(sx, sy));
         }
     },
@@ -92,7 +96,7 @@ var Input = {
             return;
         }
 
-        if (this.buildMode === 'belt' && this.isDragging && this.ghostTiles.length > 0) {
+        if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
             this.placeBeltPath();
         } else if (!this.isDragging) {
             this.handleTap(tile);
@@ -135,7 +139,7 @@ var Input = {
             var tile = Camera.screenToTile(p.x, p.y);
             this.dragStart = tile;
 
-            if (this.buildMode === 'belt') {
+            if (this.isBeltMode()) {
                 this.beltPath = [tile];
                 this.ghostTiles = [tile];
             }
@@ -210,7 +214,7 @@ var Input = {
             }
 
             if (this.isDragging) {
-                if (this.buildMode === 'belt') {
+                if (this.isBeltMode()) {
                     this.updateBeltPath(Camera.screenToTile(p2.x, p2.y));
                 } else {
                     var firstId = Object.keys(this.pointers)[0];
@@ -232,7 +236,7 @@ var Input = {
         clearTimeout(this.longPressTimer);
 
         if (this.pointerCount === 0) {
-            if (this.buildMode === 'belt' && this.isDragging && this.ghostTiles.length > 0) {
+            if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
                 this.placeBeltPath();
             } else if (!this.isDragging && Date.now() - this.tapStartTime < 300) {
                 if (this.tapStartPos) {
@@ -258,6 +262,9 @@ var Input = {
             this.buildMode = null;
             this.selectedBuilding = null;
             UI.closePanels();
+        }
+        if (e.key === '?') {
+            UI.toggleSettings();
         }
         if (e.key === ' ') {
             e.preventDefault();
@@ -289,11 +296,11 @@ var Input = {
     handleTap: function(tile) {
         document.getElementById('context-menu').style.display = 'none';
 
-        if (this.buildMode && this.buildMode !== 'belt') {
+        if (this.buildMode && !this.isBeltMode()) {
             Buildings.tryPlace(tile.x, tile.y, this.buildMode, this.buildDirection);
             this.vibrate(15);
-        } else if (this.buildMode === 'belt') {
-            Belts.tryPlaceSingle(tile.x, tile.y, this.buildDirection);
+        } else if (this.isBeltMode()) {
+            Belts.tryPlaceSingle(tile.x, tile.y, this.buildDirection, this.buildMode);
             this.vibrate(10);
         } else {
             var b = World.getBuildingAt(tile.x, tile.y);
@@ -380,7 +387,7 @@ var Input = {
         var placed = 0;
         for (var i = 0; i < this.ghostTiles.length; i++) {
             var g = this.ghostTiles[i];
-            if (Belts.tryPlaceSingle(g.x, g.y, g.dir)) placed++;
+            if (Belts.tryPlaceSingle(g.x, g.y, g.dir, this.buildMode)) placed++;
         }
         if (placed > 0) Audio.play('place');
         this.ghostTiles = [];
