@@ -438,6 +438,7 @@ var Renderer = {
         var bounds = Camera.getVisibleBounds();
         var t = CFG.TILE;
         var off = this.animOffset;
+        var PI = Math.PI;
 
         for (var i = 0; i < World.buildings.length; i++) {
             var b = World.buildings[i];
@@ -448,46 +449,139 @@ var Renderer = {
             var px = b.x * t, py = b.y * t;
             var d = CFG.DIRECTIONS[b.direction];
             var margin = 3;
-
             var isFast = b.type === 'fast_belt';
+
             ctx.fillStyle = isFast ? '#665522' : '#554418';
             ctx.fillRect(px, py, t, t);
 
-            if (d.dx !== 0) {
-                ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
-                ctx.fillRect(px, py + margin, t, t - margin * 2);
-                ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
-                ctx.fillRect(px, py + margin + 1, t, t - margin * 2 - 2);
+            var cornerIn = -1;
+            var behindX = b.x - d.dx, behindY = b.y - d.dy;
+            var behindB = World.getBuildingAt(behindX, behindY);
+            var hasStraight = behindB && !behindB.removed &&
+                (behindB.type === 'belt' || behindB.type === 'fast_belt') &&
+                behindB.direction === b.direction;
 
-                ctx.fillStyle = 'rgba(255,255,255,0.06)';
-                ctx.fillRect(px, py + margin + 1, t, 1);
-                ctx.fillStyle = 'rgba(0,0,0,0.1)';
-                ctx.fillRect(px, py + t - margin - 1, t, 1);
-            } else {
-                ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
-                ctx.fillRect(px + margin, py, t - margin * 2, t);
-                ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
-                ctx.fillRect(px + margin + 1, py, t - margin * 2 - 2, t);
-
-                ctx.fillStyle = 'rgba(255,255,255,0.06)';
-                ctx.fillRect(px + margin + 1, py, 1, t);
-                ctx.fillStyle = 'rgba(0,0,0,0.1)';
-                ctx.fillRect(px + t - margin - 1, py, 1, t);
+            if (!hasStraight) {
+                var perpDirs = d.dx !== 0 ? [0, 2] : [1, 3];
+                for (var p = 0; p < 2; p++) {
+                    var pd = perpDirs[p];
+                    var pDir = CFG.DIRECTIONS[pd];
+                    var fb = World.getBuildingAt(b.x - pDir.dx, b.y - pDir.dy);
+                    if (fb && !fb.removed &&
+                        (fb.type === 'belt' || fb.type === 'fast_belt') &&
+                        fb.direction === pd) {
+                        cornerIn = pd;
+                        break;
+                    }
+                }
             }
 
-            var arrowCount = isFast ? 5 : 3;
-            ctx.fillStyle = isFast ? 'rgba(100,80,30,0.4)' : 'rgba(80,60,20,0.35)';
-            for (var a = 0; a < arrowCount; a++) {
-                var frac = ((a / arrowCount) + off) % 1;
-                var ax = px + t * 0.5 + d.dx * (frac - 0.5) * t * 0.75;
-                var ay = py + t * 0.5 + d.dy * (frac - 0.5) * t * 0.75;
-                var as = 2.5;
+            if (cornerIn >= 0) {
+                var inD = CFG.DIRECTIONS[cornerIn];
+                var cx, cy;
+                if (inD.dx !== 0) {
+                    cx = px + (inD.dx > 0 ? 0 : t);
+                    cy = py + (d.dy > 0 ? t : 0);
+                } else {
+                    cx = px + (d.dx > 0 ? t : 0);
+                    cy = py + (inD.dy > 0 ? 0 : t);
+                }
+
+                var ex1 = inD.dx !== 0 ? (px + (inD.dx > 0 ? 0 : t)) : (px + t * 0.5);
+                var ey1 = inD.dy !== 0 ? (py + (inD.dy > 0 ? 0 : t)) : (py + t * 0.5);
+                var ex2 = d.dx !== 0 ? (px + (d.dx > 0 ? t : 0)) : (px + t * 0.5);
+                var ey2 = d.dy !== 0 ? (py + (d.dy > 0 ? t : 0)) : (py + t * 0.5);
+
+                var sa = Math.atan2(ey1 - cy, ex1 - cx);
+                var ea = Math.atan2(ey2 - cy, ex2 - cx);
+                var acw = ((b.direction - cornerIn + 4) % 4 === 3);
+
+                ctx.lineCap = 'butt';
+                ctx.lineWidth = t - margin * 2;
+                ctx.strokeStyle = isFast ? '#bb9933' : '#99882e';
                 ctx.beginPath();
-                ctx.moveTo(ax + d.dx * as * 1.2, ay + d.dy * as * 1.2);
-                ctx.lineTo(ax + d.dy * as * 0.6, ay - d.dx * as * 0.6);
-                ctx.lineTo(ax - d.dy * as * 0.6, ay + d.dx * as * 0.6);
-                ctx.closePath();
-                ctx.fill();
+                ctx.arc(cx, cy, t * 0.5, sa, ea, acw);
+                ctx.stroke();
+
+                ctx.lineWidth = t - margin * 2 - 2;
+                ctx.strokeStyle = isFast ? '#ddcc55' : '#bbaa44';
+                ctx.beginPath();
+                ctx.arc(cx, cy, t * 0.5, sa, ea, acw);
+                ctx.stroke();
+
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+                ctx.beginPath();
+                ctx.arc(cx, cy, margin + 0.5, sa, ea, acw);
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+                ctx.beginPath();
+                ctx.arc(cx, cy, t - margin - 0.5, sa, ea, acw);
+                ctx.stroke();
+
+                var arrowCount = isFast ? 5 : 3;
+                ctx.fillStyle = isFast ? 'rgba(100,80,30,0.4)' : 'rgba(80,60,20,0.35)';
+                var sweep;
+                if (acw) {
+                    sweep = sa - ea;
+                    if (sweep < 0) sweep += PI * 2;
+                } else {
+                    sweep = ea - sa;
+                    if (sweep < 0) sweep += PI * 2;
+                }
+                for (var a = 0; a < arrowCount; a++) {
+                    var frac = ((a / arrowCount) + off) % 1;
+                    var af = acw ? sa - sweep * frac : sa + sweep * frac;
+                    var ax = cx + Math.cos(af) * t * 0.5;
+                    var ay = cy + Math.sin(af) * t * 0.5;
+                    var tdx = acw ? Math.sin(af) : -Math.sin(af);
+                    var tdy = acw ? -Math.cos(af) : Math.cos(af);
+                    var as = 2.5;
+                    ctx.beginPath();
+                    ctx.moveTo(ax + tdx * as * 1.2, ay + tdy * as * 1.2);
+                    ctx.lineTo(ax + tdy * as * 0.6, ay - tdx * as * 0.6);
+                    ctx.lineTo(ax - tdy * as * 0.6, ay + tdx * as * 0.6);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            } else {
+                if (d.dx !== 0) {
+                    ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
+                    ctx.fillRect(px, py + margin, t, t - margin * 2);
+                    ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
+                    ctx.fillRect(px, py + margin + 1, t, t - margin * 2 - 2);
+
+                    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+                    ctx.fillRect(px, py + margin + 1, t, 1);
+                    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+                    ctx.fillRect(px, py + t - margin - 1, t, 1);
+                } else {
+                    ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
+                    ctx.fillRect(px + margin, py, t - margin * 2, t);
+                    ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
+                    ctx.fillRect(px + margin + 1, py, t - margin * 2 - 2, t);
+
+                    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+                    ctx.fillRect(px + margin + 1, py, 1, t);
+                    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+                    ctx.fillRect(px + t - margin - 1, py, 1, t);
+                }
+
+                var arrowCount2 = isFast ? 5 : 3;
+                ctx.fillStyle = isFast ? 'rgba(100,80,30,0.4)' : 'rgba(80,60,20,0.35)';
+                for (var a2 = 0; a2 < arrowCount2; a2++) {
+                    var frac2 = ((a2 / arrowCount2) + off) % 1;
+                    var ax2 = px + t * 0.5 + d.dx * (frac2 - 0.5) * t * 0.75;
+                    var ay2 = py + t * 0.5 + d.dy * (frac2 - 0.5) * t * 0.75;
+                    var as2 = 2.5;
+                    ctx.beginPath();
+                    ctx.moveTo(ax2 + d.dx * as2 * 1.2, ay2 + d.dy * as2 * 1.2);
+                    ctx.lineTo(ax2 + d.dy * as2 * 0.6, ay2 - d.dx * as2 * 0.6);
+                    ctx.lineTo(ax2 - d.dy * as2 * 0.6, ay2 + d.dx * as2 * 0.6);
+                    ctx.closePath();
+                    ctx.fill();
+                }
             }
         }
     },
