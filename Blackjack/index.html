@@ -17,6 +17,18 @@
 
         <!-- ============ TAB 0: BASIC ============ -->
         <div id="tabBasic" class="tab-content active">
+            <div class="config-bar">
+                <label class="config-label">
+                    <select id="bDeckCount">
+                        <option value="1">1 baraja</option>
+                        <option value="2">2 barajas</option>
+                        <option value="4">4 barajas</option>
+                        <option value="6" selected>6 barajas</option>
+                        <option value="8">8 barajas</option>
+                    </select>
+                </label>
+            </div>
+
             <section class="advice-section">
                 <div id="bAdviceBox" class="advice-box waiting">
                     <span id="bAdviceAction" class="advice-action">&mdash;</span>
@@ -25,24 +37,28 @@
             </section>
 
             <section class="basic-hands">
-                <div class="basic-hand-panel player-panel">
+                <div class="basic-hand-panel player-panel active" id="bPanelPlayer" data-target="player">
                     <h3>&#127183; TU MANO <span id="bPlayerTotal" class="hand-total"></span></h3>
                     <div class="hand-cards" id="bPlayerCards"></div>
                 </div>
-                <div class="basic-hand-panel dealer-panel">
+                <div class="basic-hand-panel dealer-panel" id="bPanelDealer" data-target="dealer">
                     <h3>&#127970; BANCA <span id="bDealerTotal" class="hand-total"></span></h3>
                     <div class="hand-cards" id="bDealerCards"></div>
+                </div>
+                <div class="basic-hand-panel others-panel" id="bPanelOthers" data-target="others">
+                    <h3>&#128101; OTROS <span id="bOthersCount" class="hand-total"></span></h3>
+                    <div class="hand-cards" id="bOthersCards"></div>
                 </div>
             </section>
 
             <section class="input-section">
-                <div class="zone-selector">
-                    <span>Asignar a:</span>
-                    <button class="zone-btn active bzone-btn" data-target="player">Tu</button>
-                    <button class="zone-btn bzone-btn" data-target="dealer">Banca</button>
-                </div>
                 <div id="bCardsGrid" class="cards-grid"></div>
             </section>
+
+            <div id="bBustRow" class="prob-row" style="display:none; margin-bottom:12px">
+                <span>Bust si pides:</span>
+                <span id="bBustProb" class="prob-value">&mdash;</span>
+            </div>
 
             <section class="actions-section">
                 <button id="bBtnNewHand" class="btn btn-primary btn-large">&#128260; Nueva Mano</button>

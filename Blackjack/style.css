@@ -890,7 +890,7 @@ body {
 
 .basic-hands {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 8px;
     margin-bottom: 12px;
 }
@@ -899,7 +899,24 @@ body {
     background: var(--surface);
     border-radius: 12px;
     padding: 14px;
-    border: 1px solid var(--surface3);
+    border: 2px solid var(--surface3);
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.basic-hand-panel.active.player-panel {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(0, 212, 170, 0.15);
+}
+
+.basic-hand-panel.active.dealer-panel {
+    border-color: var(--accent2);
+    box-shadow: 0 0 0 1px var(--accent2), 0 0 12px rgba(255, 107, 107, 0.15);
+}
+
+.basic-hand-panel.active.others-panel {
+    border-color: var(--text-dim);
+    box-shadow: 0 0 0 1px var(--text-dim), 0 0 12px rgba(136, 146, 164, 0.15);
 }
 
 .basic-hand-panel h3 {
@@ -913,7 +930,8 @@ body {
 /* ===== RESPONSIVE ===== */
 
 @media (max-width: 700px) {
-    .hands-section {
+    .hands-section,
+    .basic-hands {
         grid-template-columns: 1fr 1fr;
     }
     .others-panel {

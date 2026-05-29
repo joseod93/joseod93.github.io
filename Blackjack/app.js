@@ -20,54 +20,119 @@ const CARDS = [
 
 class BasicMode {
     constructor() {
-        this.strategy = new StrategyEngine({ ...DEFAULT_RULES });
+        this.deckCount = 6;
+        this.strategy = new StrategyEngine({ ...DEFAULT_RULES, decks: 6 });
+        this.remaining = {};
         this.playerHand = [];
         this.dealerHand = [];
+        this.othersCards = [];
         this.currentTarget = 'player';
 
+        this.initRemaining();
+        this.initElements();
+        this.initEvents();
+        this.render();
+    }
+
+    initRemaining() {
+        this.remaining = {};
+        CARDS.forEach(c => { this.remaining[c.name] = this.deckCount * 4; });
+    }
+
+    initElements() {
         this.els = {
+            deckCount: document.getElementById('bDeckCount'),
             adviceBox: document.getElementById('bAdviceBox'),
             adviceAction: document.getElementById('bAdviceAction'),
             adviceReason: document.getElementById('bAdviceReason'),
             playerCards: document.getElementById('bPlayerCards'),
             dealerCards: document.getElementById('bDealerCards'),
+            othersCards: document.getElementById('bOthersCards'),
             playerTotal: document.getElementById('bPlayerTotal'),
             dealerTotal: document.getElementById('bDealerTotal'),
+            othersCount: document.getElementById('bOthersCount'),
             cardsGrid: document.getElementById('bCardsGrid'),
             btnNewHand: document.getElementById('bBtnNewHand'),
+            bustRow: document.getElementById('bBustRow'),
+            bustProb: document.getElementById('bBustProb'),
+            panelPlayer: document.getElementById('bPanelPlayer'),
+            panelDealer: document.getElementById('bPanelDealer'),
+            panelOthers: document.getElementById('bPanelOthers'),
         };
-
-        this.initEvents();
-        this.renderGrid();
     }
 
     initEvents() {
         this.els.btnNewHand.addEventListener('click', () => {
             this.playerHand = [];
             this.dealerHand = [];
+            this.othersCards = [];
+            this.initRemaining();
             this.render();
         });
 
-        document.querySelectorAll('.bzone-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.bzone-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.currentTarget = btn.dataset.target;
+        this.els.deckCount.addEventListener('change', () => {
+            this.deckCount = parseInt(this.els.deckCount.value);
+            this.strategy.setRules({ ...DEFAULT_RULES, decks: this.deckCount });
+            this.playerHand = [];
+            this.dealerHand = [];
+            this.othersCards = [];
+            this.initRemaining();
+            this.render();
+        });
+
+        [this.els.panelPlayer, this.els.panelDealer, this.els.panelOthers].forEach(panel => {
+            panel.addEventListener('click', (e) => {
+                if (e.target.classList.contains('card-remove')) return;
+                this.currentTarget = panel.dataset.target;
+                this.updatePanelSelection();
             });
         });
     }
 
+    updatePanelSelection() {
+        document.querySelectorAll('#tabBasic .basic-hand-panel').forEach(p => p.classList.remove('active'));
+        const map = { player: this.els.panelPlayer, dealer: this.els.panelDealer, others: this.els.panelOthers };
+        map[this.currentTarget]?.classList.add('active');
+    }
+
     addCard(name) {
+        if (this.remaining[name] <= 0) return;
         if (this.currentTarget === 'dealer' && this.dealerHand.length >= 1) return;
-        if (this.currentTarget === 'player') this.playerHand.push(name);
-        else this.dealerHand.push(name);
+        this.remaining[name]--;
+        switch (this.currentTarget) {
+            case 'player': this.playerHand.push(name); break;
+            case 'dealer': this.dealerHand.push(name); break;
+            case 'others': this.othersCards.push(name); break;
+        }
         this.render();
     }
 
     removeCard(target, idx) {
-        if (target === 'player') this.playerHand.splice(idx, 1);
-        else this.dealerHand.splice(idx, 1);
+        let cardName;
+        switch (target) {
+            case 'player': cardName = this.playerHand.splice(idx, 1)[0]; break;
+            case 'dealer': cardName = this.dealerHand.splice(idx, 1)[0]; break;
+            case 'others': cardName = this.othersCards.splice(idx, 1)[0]; break;
+        }
+        if (cardName) this.remaining[cardName]++;
         this.render();
+    }
+
+    render() {
+        this.renderGrid();
+        this._renderHand(this.els.playerCards, this.playerHand, 'player');
+        this._renderHand(this.els.dealerCards, this.dealerHand, 'dealer');
+        this._renderHand(this.els.othersCards, this.othersCards, 'others');
+
+        const pv = this.strategy.getHandValue(this.playerHand);
+        const dv = this.strategy.getHandValue(this.dealerHand);
+        this.els.playerTotal.textContent = this.playerHand.length > 0 ?
+            (pv.soft ? `${pv.total}(soft)` : pv.total) : '';
+        this.els.dealerTotal.textContent = this.dealerHand.length > 0 ? dv.total : '';
+        this.els.othersCount.textContent = this.othersCards.length > 0 ? `(${this.othersCards.length})` : '';
+
+        this.renderAdvice();
+        this.renderBustProb();
     }
 
     renderGrid() {
@@ -75,23 +140,12 @@ class BasicMode {
         CARDS.forEach(card => {
             const btn = document.createElement('button');
             btn.className = 'card-btn';
-            btn.innerHTML = `<span class="card-face">${card.display}</span>`;
+            const rem = this.remaining[card.name];
+            if (rem === 0) btn.classList.add('depleted');
+            btn.innerHTML = `<span class="card-face">${card.display}</span><span class="card-remaining">${rem}</span>`;
             btn.addEventListener('click', () => this.addCard(card.name));
             this.els.cardsGrid.appendChild(btn);
         });
-    }
-
-    render() {
-        this._renderHand(this.els.playerCards, this.playerHand, 'player');
-        this._renderHand(this.els.dealerCards, this.dealerHand, 'dealer');
-
-        const pv = this.strategy.getHandValue(this.playerHand);
-        const dv = this.strategy.getHandValue(this.dealerHand);
-        this.els.playerTotal.textContent = this.playerHand.length > 0 ?
-            (pv.soft ? `${pv.total}(soft)` : pv.total) : '';
-        this.els.dealerTotal.textContent = this.dealerHand.length > 0 ? dv.total : '';
-
-        this.renderAdvice();
     }
 
     _renderHand(container, cards, target) {
@@ -107,6 +161,18 @@ class BasicMode {
             el.appendChild(rm);
             container.appendChild(el);
         });
+    }
+
+    renderBustProb() {
+        const pv = this.strategy.getHandValue(this.playerHand);
+        if (this.playerHand.length >= 2 && pv.total <= 21 && pv.total >= 12) {
+            const bustP = this.strategy.getBustProbability(pv.total, this.remaining);
+            this.els.bustRow.style.display = 'flex';
+            this.els.bustProb.textContent = (bustP * 100).toFixed(0) + '%';
+            this.els.bustProb.style.color = bustP > 0.5 ? 'var(--negative)' : 'var(--positive)';
+        } else {
+            this.els.bustRow.style.display = 'none';
+        }
     }
 
     renderAdvice() {
