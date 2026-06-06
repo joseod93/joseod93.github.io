@@ -59,9 +59,28 @@ var Buildings = {
 
         if (type === 'splitter') {
             b.splitToggle = 0;
+            b.outputPriority = 'balanced';
+        }
+
+        if (type === 'inserter') {
+            b.filterItem = null;
+        }
+
+        if (type === 'accumulator') {
+            b.charge = 0;
+        }
+
+        if (type === 'underground_belt') {
+            b.ugMode = 'in';
+            b.pairId = null;
+            b.transit = [];
+            b.cooldown = 0;
         }
 
         World.placeBuilding(b);
+        if (type === 'underground_belt') {
+            this.linkUnderground(b);
+        }
         Game.stats.buildingsPlaced++;
         Particles.spawn(tx * CFG.TILE + (w * CFG.TILE) / 2, ty * CFG.TILE + (h * CFG.TILE) / 2, 'place');
         Audio.play('place');
@@ -70,12 +89,42 @@ var Buildings = {
         return true;
     },
 
+    // Busca hacia atrás una entrada de túnel sin pareja con la misma dirección
+    linkUnderground: function(b) {
+        var d = CFG.DIRECTIONS[b.direction];
+        for (var i = 1; i <= CFG.UNDERGROUND_MAX_DIST + 1; i++) {
+            var cand = World.getBuildingAt(b.x - d.dx * i, b.y - d.dy * i);
+            if (cand && !cand.removed && cand.type === 'underground_belt' &&
+                cand.direction === b.direction && cand.ugMode === 'in' &&
+                cand.pairId === null && cand.id !== b.id) {
+                b.ugMode = 'out';
+                b.pairId = cand.id;
+                cand.pairId = b.id;
+                UI.showToast('Túnel conectado (' + i + ' casillas)');
+                return;
+            }
+        }
+        UI.showToast('Entrada de túnel: coloca la salida delante, a máx. ' + (CFG.UNDERGROUND_MAX_DIST + 1) + ' casillas');
+    },
+
     remove: function(id) {
         var b = World.buildings[id];
         if (!b || b.removed) return;
 
         if (b.type === 'belt' || b.type === 'fast_belt') {
             Belts.removeBelt(b.x, b.y);
+        }
+
+        if (b.type === 'underground_belt') {
+            if (b.transit) {
+                for (var ti = 0; ti < b.transit.length; ti++) {
+                    Inventory.add(Game.player.inventory, b.transit[ti].type, 1);
+                }
+            }
+            if (b.pairId !== null && b.pairId !== undefined) {
+                var pairB = World.buildings[b.pairId];
+                if (pairB && !pairB.removed) pairB.pairId = null;
+            }
         }
 
         if (!Game.creativeModeOn) {
@@ -155,76 +204,94 @@ var Buildings = {
         }
     },
 
-    tryAcceptItem: function(b, itemType) {
+    canAcceptItem: function(b, itemType) {
         if (b.removed) return false;
-        var def = CFG.BUILDING_DEFS[b.type];
 
         if (b.type === 'furnace') {
-            if (itemType === 'coal') {
-                if ((b.fuel.coal || 0) < 10) {
-                    Inventory.add(b.fuel, 'coal', 1);
-                    return true;
-                }
-                return false;
-            }
-            var recipe = CFG.SMELTING_RECIPES[itemType];
-            if (!recipe) return false;
-            if (Inventory.total(b.input) >= CFG.INPUT_BUFFER_MAX) return false;
-            Inventory.add(b.input, itemType, 1);
-            return true;
+            if (itemType === 'coal') return (b.fuel.coal || 0) < 10;
+            if (!CFG.SMELTING_RECIPES[itemType]) return false;
+            return Inventory.total(b.input) < CFG.INPUT_BUFFER_MAX;
         }
 
         if (b.type === 'assembler') {
             if (!b.recipeId) return false;
             var aRecipe = this.getAssemblyRecipe(b.recipeId);
             if (!aRecipe) return false;
-            var needed = false;
             for (var i = 0; i < aRecipe.inputs.length; i++) {
-                if (aRecipe.inputs[i].item === itemType) {
-                    if (Inventory.count(b.input, itemType) < aRecipe.inputs[i].qty * 3) {
-                        needed = true;
-                        break;
-                    }
-                }
-            }
-            if (!needed) return false;
-            Inventory.add(b.input, itemType, 1);
-            return true;
-        }
-
-        if (b.type === 'lab') {
-            if (itemType === 'red_science' || itemType === 'green_science' || itemType === 'blue_science') {
-                if (Inventory.count(b.input, itemType) < 5) {
-                    Inventory.add(b.input, itemType, 1);
+                if (aRecipe.inputs[i].item === itemType &&
+                    Inventory.count(b.input, itemType) < aRecipe.inputs[i].qty * 3) {
                     return true;
                 }
             }
             return false;
         }
 
+        if (b.type === 'lab') {
+            return (itemType === 'red_science' || itemType === 'green_science' || itemType === 'blue_science') &&
+                Inventory.count(b.input, itemType) < 5;
+        }
+
         if (b.type === 'steam_engine') {
-            if (itemType === 'coal' && (b.fuel.coal || 0) < 10) {
-                Inventory.add(b.fuel, 'coal', 1);
-                return true;
-            }
-            return false;
+            return itemType === 'coal' && (b.fuel.coal || 0) < 10;
         }
 
         if (b.type === 'storage') {
-            if (Inventory.total(b.stored) < b.capacity) {
-                Inventory.add(b.stored, itemType, 1);
-                return true;
-            }
-            return false;
+            return Inventory.total(b.stored) < b.capacity;
         }
 
         if (b.type === 'rocket_silo') {
-            if (itemType === 'rocket_part' && b.rocketParts < 100) {
-                b.rocketParts++;
-                if (b.rocketParts >= 100) b.rocketReady = true;
-                return true;
-            }
-            return false;
+            return itemType === 'rocket_part' && b.rocketParts < 100;
+        }
+
+        if (b.type === 'underground_belt') {
+            if (b.ugMode !== 'in' || b.pairId === null || b.cooldown > 0) return false;
+            var pair = World.buildings[b.pairId];
+            if (!pair || pair.removed) return false;
+            var dist = Math.abs(pair.x - b.x) + Math.abs(pair.y - b.y);
+            var capacity = Math.max(1, Math.floor(dist / CFG.ITEM_SPACING));
+            return b.transit.length < capacity;
+        }
+
+        return false;
+    },
+
+    tryAcceptItem: function(b, itemType) {
+        if (!this.canAcceptItem(b, itemType)) return false;
+
+        if (b.type === 'furnace') {
+            if (itemType === 'coal') Inventory.add(b.fuel, 'coal', 1);
+            else Inventory.add(b.input, itemType, 1);
+            return true;
+        }
+
+        if (b.type === 'assembler' || b.type === 'lab') {
+            Inventory.add(b.input, itemType, 1);
+            return true;
+        }
+
+        if (b.type === 'steam_engine') {
+            Inventory.add(b.fuel, 'coal', 1);
+            return true;
+        }
+
+        if (b.type === 'storage') {
+            Inventory.add(b.stored, itemType, 1);
+            return true;
+        }
+
+        if (b.type === 'rocket_silo') {
+            b.rocketParts++;
+            if (b.rocketParts >= 100) b.rocketReady = true;
+            return true;
+        }
+
+        if (b.type === 'underground_belt') {
+            var pair = World.buildings[b.pairId];
+            var dist = Math.abs(pair.x - b.x) + Math.abs(pair.y - b.y);
+            var def = CFG.BUILDING_DEFS.underground_belt;
+            b.transit.push({type: itemType, left: Math.ceil(dist / def.transitSpeed)});
+            b.cooldown = Math.ceil(CFG.ITEM_SPACING / def.transitSpeed);
+            return true;
         }
 
         return false;
@@ -265,6 +332,8 @@ var Buildings = {
                 this.updateInserter(b, def, fastInserters);
             } else if (b.type === 'splitter') {
                 this.updateSplitter(b, def);
+            } else if (b.type === 'underground_belt') {
+                this.updateUnderground(b, def);
             }
 
             this.tryPushOutput(b, def);
@@ -273,7 +342,16 @@ var Buildings = {
 
     updateMiner: function(b, def, mult) {
         var w = def.size[0], h = def.size[1];
-        if (!World.hasResource(b.x, b.y, w, h)) { b.active = false; return; }
+        if (!World.hasResource(b.x, b.y, w, h)) {
+            if (!b.depleted) {
+                b.depleted = true;
+                UI.showToast('¡Veta agotada bajo ' + def.name + '!', 'warning');
+                Audio.play('error');
+            }
+            b.active = false;
+            return;
+        }
+        b.depleted = false;
         if (Inventory.total(b.output) >= CFG.OUTPUT_BUFFER_MAX) { b.active = false; return; }
 
         if (def.powerDraw > 0 && Game.power.satisfaction < 0.1) { b.active = false; return; }
@@ -357,7 +435,10 @@ var Buildings = {
         if (Math.random() < 0.005) {
             Inventory.remove(b.fuel, 'coal', 1);
         }
-        Particles.spawn((b.x + 1) * CFG.TILE, b.y * CFG.TILE, 'smoke');
+        // Throttle: a 20 TPS sin esto serían 40 partículas/s por motor
+        if (Math.random() < 0.12) {
+            Particles.spawn((b.x + 1) * CFG.TILE, b.y * CFG.TILE, 'smoke');
+        }
     },
 
     updateLab: function(b, def, mult) {
@@ -401,54 +482,106 @@ var Buildings = {
         var fromLine = Belts.getLineAt(fromX, fromY);
         var toLine = Belts.getLineAt(toX, toY);
 
-        var item = null;
+        // Fase 1: mirar el origen sin tomar nada
+        var item = null, sourceKind = null, src = null;
 
         if (fromBuilding && fromBuilding.type !== 'belt' && fromBuilding.type !== 'fast_belt' && !fromBuilding.removed) {
-            var src = fromBuilding.type === 'storage' ? fromBuilding.stored : fromBuilding.output;
-            item = Inventory.firstItem(src);
-            if (item) {
-                Inventory.remove(src, item, 1);
+            src = fromBuilding.type === 'storage' ? fromBuilding.stored : fromBuilding.output;
+            if (b.filterItem) {
+                if ((src[b.filterItem] || 0) > 0) item = b.filterItem;
+            } else {
+                item = Inventory.firstItem(src);
             }
+            if (item) sourceKind = 'building';
         }
 
         if (!item && fromLine && fromLine.items.length > 0) {
             var headTile = fromLine.tiles[fromLine.tiles.length - 1];
             if (headTile.x === fromX && headTile.y === fromY && fromLine.headGap <= 0.1) {
-                item = fromLine.items[fromLine.items.length - 1].type;
-                fromLine.items.pop();
-                if (fromLine.items.length > 0) {
-                    fromLine.headGap = 0;
-                } else {
-                    fromLine.headGap = fromLine.tiles.length;
+                var headType = fromLine.items[fromLine.items.length - 1].type;
+                if (!b.filterItem || headType === b.filterItem) {
+                    item = headType;
+                    sourceKind = 'line';
                 }
-                Belts.recalcHeadGap(fromLine);
-                Belts.recalcLastPositive(fromLine);
             }
         }
 
         if (!item) return;
 
-        if (toBuilding && toBuilding.type !== 'belt' && toBuilding.type !== 'fast_belt' && !toBuilding.removed) {
-            if (this.tryAcceptItem(toBuilding, item)) {
-                b.active = true;
-                return;
-            }
+        // Fase 2: validar destino antes de tomar
+        var dest = null;
+        if (toBuilding && toBuilding.type !== 'belt' && toBuilding.type !== 'fast_belt' && !toBuilding.removed &&
+            this.canAcceptItem(toBuilding, item)) {
+            dest = 'building';
+        } else if (toLine && toLine.tiles[0].x === toX && toLine.tiles[0].y === toY && Belts.canInsertItem(toLine)) {
+            dest = 'line';
         }
+        if (!dest) return;
 
-        if (toLine) {
-            var tailTile = toLine.tiles[0];
-            if (tailTile.x === toX && tailTile.y === toY) {
-                if (Belts.insertItem(toLine, item)) {
+        // Fase 3: commit — insertar en destino primero, luego retirar del origen
+        var ok = dest === 'building'
+            ? this.tryAcceptItem(toBuilding, item)
+            : Belts.insertItem(toLine, item);
+        if (!ok) return;
+
+        if (sourceKind === 'building') {
+            Inventory.remove(src, item, 1);
+        } else {
+            var popped = fromLine.items.pop();
+            fromLine.headGap = fromLine.items.length > 0
+                ? fromLine.headGap + (popped.gap || 0)
+                : fromLine.tiles.length;
+            Belts.recalcLastPositive(fromLine);
+        }
+        b.active = true;
+    },
+
+    updateUnderground: function(b, def) {
+        if (b.cooldown > 0) b.cooldown--;
+
+        if (b.ugMode === 'out') {
+            // La salida solo empuja hacia delante
+            var item = Inventory.firstItem(b.output);
+            if (!item) { b.active = false; return; }
+            var d = CFG.DIRECTIONS[b.direction];
+            var nx = b.x + d.dx, ny = b.y + d.dy;
+
+            var line = Belts.getLineAt(nx, ny);
+            if (line && line.tiles[0].x === nx && line.tiles[0].y === ny) {
+                if (Belts.insertItem(line, item)) {
+                    Inventory.remove(b.output, item, 1);
                     b.active = true;
                     return;
                 }
             }
+            var nb = World.getBuildingAt(nx, ny);
+            if (nb && !nb.removed && nb.type !== 'belt' && nb.type !== 'fast_belt') {
+                if (this.tryAcceptItem(nb, item)) {
+                    Inventory.remove(b.output, item, 1);
+                    b.active = true;
+                    return;
+                }
+            }
+            return;
         }
 
-        if (fromBuilding && fromBuilding.type !== 'belt' && fromBuilding.type !== 'fast_belt') {
-            var src2 = fromBuilding.type === 'storage' ? fromBuilding.stored : fromBuilding.output;
-            Inventory.add(src2, item, 1);
+        // Entrada: avanzar items en tránsito y entregar al pair
+        if (b.pairId === null || b.pairId === undefined) { b.active = false; return; }
+        var pair = World.buildings[b.pairId];
+        if (!pair || pair.removed) { b.pairId = null; b.active = false; return; }
+
+        for (var i = 0; i < b.transit.length; i++) {
+            if (b.transit[i].left > 0) b.transit[i].left--;
         }
+
+        if (b.transit.length > 0 && b.transit[0].left <= 0) {
+            // Mini-buffer en la salida: backpressure natural si está lleno
+            if (Inventory.total(pair.output) < 4) {
+                Inventory.add(pair.output, b.transit[0].type, 1);
+                b.transit.shift();
+            }
+        }
+        b.active = b.transit.length > 0;
     },
 
     updateSplitter: function(b, def) {
@@ -469,32 +602,44 @@ var Buildings = {
         var leftD = CFG.DIRECTIONS[leftDir];
         var rightD = CFG.DIRECTIONS[rightDir];
 
+        // Solo aceptar líneas cuya cola sea el tile adyacente (si no, insertItem
+        // teletransportaría el item a la cola de una línea lejana)
+        var grabOutput = function(ox, oy) {
+            var cand = Belts.getLineAt(ox, oy);
+            if (cand && cand !== fromLine && cand.tiles[0].x === ox && cand.tiles[0].y === oy) {
+                return cand;
+            }
+            return null;
+        };
+        var straight = grabOutput(b.x + d.dx, b.y + d.dy);
+        var left = grabOutput(b.x + leftD.dx, b.y + leftD.dy);
+        var right = grabOutput(b.x + rightD.dx, b.y + rightD.dy);
+
+        // Orden de intento según prioridad configurada
+        var ordered;
+        var priority = b.outputPriority || 'balanced';
+        if (priority === 'left') ordered = [left, straight, right];
+        else if (priority === 'right') ordered = [right, straight, left];
+        else ordered = [straight, left, right];
+
         var outputs = [];
-        var straight = Belts.getLineAt(b.x + d.dx, b.y + d.dy);
-        var left = Belts.getLineAt(b.x + leftD.dx, b.y + leftD.dy);
-        var right = Belts.getLineAt(b.x + rightD.dx, b.y + rightD.dy);
-
-        if (straight) outputs.push(straight);
-        if (left) outputs.push(left);
-        if (right) outputs.push(right);
-
+        for (var oi = 0; oi < ordered.length; oi++) {
+            if (ordered[oi]) outputs.push(ordered[oi]);
+        }
         if (outputs.length === 0) { b.active = false; return; }
 
         var itemType = fromLine.items[fromLine.items.length - 1].type;
-        var startIdx = b.splitToggle % outputs.length;
+        var startIdx = priority === 'balanced' ? (b.splitToggle % outputs.length) : 0;
 
         for (var attempt = 0; attempt < outputs.length; attempt++) {
             var idx = (startIdx + attempt) % outputs.length;
             if (Belts.insertItem(outputs[idx], itemType)) {
-                fromLine.items.pop();
-                if (fromLine.items.length > 0) {
-                    fromLine.headGap = 0;
-                } else {
-                    fromLine.headGap = fromLine.tiles.length;
-                }
-                Belts.recalcHeadGap(fromLine);
+                var popped = fromLine.items.pop();
+                fromLine.headGap = fromLine.items.length > 0
+                    ? fromLine.headGap + (popped.gap || 0)
+                    : fromLine.tiles.length;
                 Belts.recalcLastPositive(fromLine);
-                b.splitToggle = idx + 1;
+                if (priority === 'balanced') b.splitToggle = idx + 1;
                 b.active = true;
                 return;
             }
@@ -503,7 +648,7 @@ var Buildings = {
     },
 
     tryPushOutput: function(b, def) {
-        if (b.type === 'belt' || b.type === 'fast_belt' || b.type === 'inserter' || b.type === 'steam_engine' || b.type === 'solar_panel' || b.type === 'splitter') return;
+        if (b.type === 'belt' || b.type === 'fast_belt' || b.type === 'inserter' || b.type === 'steam_engine' || b.type === 'solar_panel' || b.type === 'splitter' || b.type === 'accumulator' || b.type === 'underground_belt') return;
         if (Inventory.isEmpty(b.output)) return;
 
         var w = def.size[0], h = def.size[1];
@@ -525,20 +670,13 @@ var Buildings = {
 
                 var line = Belts.getLineAt(checkX, checkY);
                 if (line) {
+                    // Solo insertar si el tile adyacente es la cola de la línea
+                    // (insertar en mitad de línea teletransportaría el item a su cola)
                     var tailTile = line.tiles[0];
                     if (tailTile.x === checkX && tailTile.y === checkY) {
                         var item = Inventory.firstItem(b.output);
                         if (item && Belts.insertItem(line, item)) {
                             Inventory.remove(b.output, item, 1);
-                            return;
-                        }
-                    }
-
-                    var info = Belts.tileToLine[checkX + ',' + checkY];
-                    if (info) {
-                        var item2 = Inventory.firstItem(b.output);
-                        if (item2 && Belts.insertItem(line, item2)) {
-                            Inventory.remove(b.output, item2, 1);
                             return;
                         }
                     }

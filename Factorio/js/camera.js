@@ -26,6 +26,30 @@ var Camera = {
         this.targetY -= dy / this.zoom;
     },
 
+    // Shake de pantalla: offset temporal aplicado solo en el render del mundo,
+    // no toca x/targetX (worldToScreen queda intacto)
+    shakeTime: 0, shakeDur: 0, shakeMag: 0,
+
+    shake: function(intensity, duration) {
+        if (intensity >= this.shakeMag || this.shakeTime <= 0) {
+            this.shakeMag = intensity;
+            this.shakeDur = duration;
+            this.shakeTime = duration;
+        }
+    },
+
+    getShakeOffset: function(dt) {
+        if (this.shakeTime <= 0) return null;
+        this.shakeTime -= dt;
+        if (this.shakeTime <= 0) { this.shakeMag = 0; return null; }
+        var f = this.shakeTime / this.shakeDur;
+        var m = this.shakeMag * f * f;
+        return {
+            x: (Math.random() * 2 - 1) * m,
+            y: (Math.random() * 2 - 1) * m
+        };
+    },
+
     zoomAt: function(sx, sy, delta) {
         var oldZoom = this.targetZoom;
         this.targetZoom *= (1 - delta * CFG.ZOOM_SPEED);

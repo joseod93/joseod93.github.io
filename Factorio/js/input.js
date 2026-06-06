@@ -42,6 +42,11 @@ var Input = {
 
     onMouseDown: function(e) {
         var sx = e.offsetX, sy = e.offsetY;
+        if (e.button === 0 && this.hitTestMinimap(sx, sy)) {
+            this.minimapDrag = true;
+            this.minimapNavigate(sx, sy);
+            return;
+        }
         if (e.button === 1 || e.button === 2) {
             this.isPanning = true;
             this.panStart = {x: sx, y: sy};
@@ -64,6 +69,11 @@ var Input = {
         this.mouse.x = sx; this.mouse.y = sy;
         this.mouse.tile = Camera.screenToTile(sx, sy);
 
+        if (this.minimapDrag) {
+            this.minimapNavigate(sx, sy);
+            return;
+        }
+
         if (this.isPanning) {
             Camera.pan(sx - this.panStart.x, sy - this.panStart.y);
             this.panStart = {x: sx, y: sy};
@@ -84,6 +94,10 @@ var Input = {
     },
 
     onMouseUp: function(e) {
+        if (this.minimapDrag) {
+            this.minimapDrag = false;
+            return;
+        }
         if (this.isPanning) {
             this.isPanning = false;
             return;
@@ -130,6 +144,11 @@ var Input = {
 
         if (this.pointerCount === 1) {
             var p = this.getFirstPointer();
+            if (this.hitTestMinimap(p.x, p.y)) {
+                this.minimapDrag = true;
+                this.minimapNavigate(p.x, p.y);
+                return;
+            }
             this.tapStartTime = Date.now();
             this.tapStartPos = {x: p.x, y: p.y};
             this.isDragging = false;
@@ -202,6 +221,11 @@ var Input = {
             var p2 = this.getFirstPointer();
             if (!p2) return;
 
+            if (this.minimapDrag) {
+                this.minimapNavigate(p2.x, p2.y);
+                return;
+            }
+
             this.mouse.x = p2.x;
             this.mouse.y = p2.y;
             this.mouse.tile = Camera.screenToTile(p2.x, p2.y);
@@ -236,6 +260,12 @@ var Input = {
         clearTimeout(this.longPressTimer);
 
         if (this.pointerCount === 0) {
+            if (this.minimapDrag) {
+                this.minimapDrag = false;
+                this.isDragging = false;
+                this.tapStartPos = null;
+                return;
+            }
             if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
                 this.placeBeltPath();
             } else if (!this.isDragging && Date.now() - this.tapStartTime < 300) {
@@ -266,6 +296,9 @@ var Input = {
         if (e.key === '?') {
             UI.toggleSettings();
         }
+        if (e.key === 'q' || e.key === 'Q') {
+            this.pipette();
+        }
         if (e.key === ' ') {
             e.preventDefault();
             Game.paused = !Game.paused;
@@ -291,6 +324,45 @@ var Input = {
 
     vibrate: function(ms) {
         if (navigator.vibrate) navigator.vibrate(ms);
+    },
+
+    // Pipette (Q): selecciona el tipo del edificio bajo el cursor
+    pipette: function() {
+        var b = World.getBuildingAt(this.mouse.tile.x, this.mouse.tile.y);
+        if (b) {
+            var def = CFG.BUILDING_DEFS[b.type];
+            if (def.unlocked === false && !Tech.isUnlocked(b.type)) {
+                UI.showToast('¡Requiere investigación!');
+                Audio.play('error');
+                return;
+            }
+            this.buildMode = b.type;
+            this.buildDirection = b.direction || 0;
+            this.selectedBuilding = null;
+            UI.closePanels();
+            UI.updateToolbarSelection();
+            UI.showToast('Seleccionado: ' + def.name);
+        } else if (this.buildMode) {
+            this.buildMode = null;
+            UI.updateToolbarSelection();
+        }
+    },
+
+    hitTestMinimap: function(sx, sy) {
+        var r = Renderer.minimapRect;
+        return !!r && sx >= r.x && sx <= r.x + r.size && sy >= r.y && sy <= r.y + r.size;
+    },
+
+    minimapNavigate: function(sx, sy) {
+        var r = Renderer.minimapRect;
+        if (!r) return;
+        var t = CFG.TILE;
+        var centerTX = Math.floor((Camera.x + Camera.vw / Camera.zoom / 2) / t);
+        var centerTY = Math.floor((Camera.y + Camera.vh / Camera.zoom / 2) / t);
+        var tx = centerTX + (sx - r.x - r.size / 2) / r.scale;
+        var ty = centerTY + (sy - r.y - r.size / 2) / r.scale;
+        Camera.targetX = tx * t - (Camera.vw / Camera.zoom) / 2;
+        Camera.targetY = ty * t - (Camera.vh / Camera.zoom) / 2;
     },
 
     handleTap: function(tile) {

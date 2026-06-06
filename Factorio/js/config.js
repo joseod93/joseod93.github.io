@@ -15,6 +15,7 @@ var CFG = {
     MAX_PARTICLES: 200,
     OUTPUT_BUFFER_MAX: 15,
     INPUT_BUFFER_MAX: 10,
+    UNDERGROUND_MAX_DIST: 4,
 
     COLORS: {
         bg: '#1a1a2e',
@@ -58,7 +59,9 @@ var CFG = {
             lab:        {bg:'#774488', fg:'#9966bb', label:'LA'},
             splitter:   {bg:'#887733', fg:'#bbaa44', label:'SP'},
             inserter:   {bg:'#888844', fg:'#aaaa66', label:'IN'},
-            rocket_silo:{bg:'#556677', fg:'#99aabb', label:'RS'}
+            rocket_silo:{bg:'#556677', fg:'#99aabb', label:'RS'},
+            accumulator:{bg:'#445577', fg:'#7799cc', label:'AC'},
+            underground_belt:{bg:'#776622', fg:'#bbaa44', label:'SU'}
         }
     },
 
@@ -141,6 +144,17 @@ var CFG = {
             cost:[{item:'steel',qty:50},{item:'advanced_circuit',qty:20},{item:'green_circuit',qty:50}],
             craftSpeed:1, powerDraw:500, unlocked:false, tech:'rocketry',
             outputSlots:1, inputSlots:4
+        },
+        accumulator: {
+            name:'Acumulador', icon:'🔋', size:[2,2], category:'power',
+            cost:[{item:'iron_plate',qty:5},{item:'copper_plate',qty:5},{item:'green_circuit',qty:2}],
+            capacity:50000, chargeRate:100, dischargeRate:100,
+            unlocked:false, tech:'solar_energy'
+        },
+        underground_belt: {
+            name:'Cinta Subterránea', icon:'⤵', size:[1,1], category:'logistics',
+            cost:[{item:'iron_plate',qty:5},{item:'iron_gear',qty:2}],
+            unlocked:false, tech:'logistics', transitSpeed:0.05
         }
     },
 
@@ -166,10 +180,10 @@ var CFG = {
 
     TECH_TREE: {
         automation:           {name:'Automatización',       cost:{red_science:10},                              prereqs:[], unlocks:['ensamblador']},
-        logistics:            {name:'Logística',            cost:{red_science:20},                              prereqs:['automation'], unlocks:['Divisor','Cinta Rápida']},
+        logistics:            {name:'Logística',            cost:{red_science:20},                              prereqs:['automation'], unlocks:['Divisor','Cinta Rápida','Cinta Subterránea']},
         electric_mining:      {name:'Minería Eléctrica',    cost:{red_science:30, green_science:15},            prereqs:['automation'], unlocks:['Minero Eléctrico']},
         advanced_electronics: {name:'Electrónica Avanzada', cost:{red_science:40, green_science:40},            prereqs:['automation'], unlocks:['circuito avanzado']},
-        solar_energy:         {name:'Energía Solar',        cost:{red_science:50, green_science:30},            prereqs:['electric_mining'], unlocks:['panel solar']},
+        solar_energy:         {name:'Energía Solar',        cost:{red_science:50, green_science:30},            prereqs:['electric_mining'], unlocks:['panel solar','Acumulador']},
         rocketry:             {name:'Cohetería',            cost:{red_science:200,green_science:200,blue_science:200}, prereqs:['advanced_electronics'], unlocks:['Silo Cohete','Pieza Cohete']},
         fast_inserters:       {name:'Insertadores Rápidos', cost:{red_science:40, green_science:40},             prereqs:['logistics'], unlocks:['Insertadores x2 velocidad']},
         efficiency:           {name:'Eficiencia Energética',cost:{red_science:60, green_science:60},             prereqs:['solar_energy'], unlocks:['-25% consumo energía']},

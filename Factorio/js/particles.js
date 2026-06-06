@@ -16,11 +16,17 @@ var Particles = {
         if (type === 'smoke') count = 2;
         if (type === 'achievement') count = 20;
 
+        // Una sola proyección + descarte si está fuera de pantalla
+        // (achievement llega ya en coords de pantalla desde UI — siempre dentro)
+        var screenPos = Camera.worldToScreen(wx, wy);
+        if (type === 'achievement') screenPos = {x: wx, y: wy};
+        if (screenPos.x < -60 || screenPos.x > window.innerWidth + 60 ||
+            screenPos.y < -60 || screenPos.y > window.innerHeight + 60) return;
+
         for (var i = 0; i < count; i++) {
             if (this.pool.length === 0) return;
             var p = this.pool.pop();
 
-            var screenPos = Camera.worldToScreen(wx, wy);
             p.x = screenPos.x;
             p.y = screenPos.y;
             p.wx = wx;
@@ -54,6 +60,15 @@ var Particles = {
                 p.maxLife = p.life;
                 p.color = '#e6a832';
                 p.size = 2 + Math.random() * 2;
+                p.text = '';
+                p.alpha = 1;
+            } else if (type === 'spark') {
+                p.vx = (Math.random() - 0.5) * 60;
+                p.vy = -30 - Math.random() * 40;
+                p.life = 0.25 + Math.random() * 0.25;
+                p.maxLife = p.life;
+                p.color = Math.random() < 0.5 ? '#ffcc44' : '#ff7722';
+                p.size = 1 + Math.random() * 1.5;
                 p.text = '';
                 p.alpha = 1;
             } else if (type === 'achievement') {
@@ -94,6 +109,7 @@ var Particles = {
             } else if (p.type === 'produce') {
                 p.alpha = Math.min(1, p.life / p.maxLife * 2);
             } else {
+                if (p.type === 'spark') p.vy += 150 * dt;
                 p.alpha = p.life / p.maxLife;
             }
         }
@@ -103,11 +119,8 @@ var Particles = {
         for (var i = 0; i < this.active.length; i++) {
             var p = this.active[i];
 
-            var screenPos = Camera.worldToScreen(p.wx, p.wy);
-            var dx = p.x - Camera.worldToScreen(p.wx, p.wy).x;
-            var dy = p.y - Camera.worldToScreen(p.wx, p.wy).y;
-            var sx = screenPos.x + dx;
-            var sy = screenPos.y + dy;
+            var sx = p.x;
+            var sy = p.y;
 
             ctx.globalAlpha = p.alpha;
 

@@ -22,6 +22,7 @@ var UI = {
         }
 
         var order = ['logistics', 'production', 'power'];
+        var globalIdx = 0; // mismo índice que usa selectBuildingByIndex (atajos 1-9)
         for (var ci = 0; ci < order.length; ci++) {
             var cat = order[ci];
             var items = categories[cat];
@@ -52,28 +53,80 @@ var UI = {
                 label.textContent = item.def.name;
                 btn.appendChild(label);
 
-                if (i < 9) {
+                if (globalIdx < 9) {
                     var shortcut = document.createElement('span');
                     shortcut.className = 'btn-shortcut';
-                    shortcut.textContent = (i + 1);
+                    shortcut.textContent = (globalIdx + 1);
                     btn.appendChild(shortcut);
                 }
 
                 if (item.def.unlocked === false && !Tech.isUnlocked(item.type)) {
                     btn.classList.add('locked');
-                    btn.title = 'Requiere: ' + (item.def.tech || 'Investigación');
                 }
 
-                (function(type) {
-                    btn.addEventListener('click', function(e) {
+                (function(type, btnEl) {
+                    btnEl.addEventListener('click', function(e) {
                         e.stopPropagation();
                         UI.selectBuildMode(type);
                     });
-                })(item.type);
+                    if (!Input.isTouchDevice) {
+                        btnEl.addEventListener('mouseenter', function() {
+                            UI.showBuildTooltip(type, btnEl);
+                        });
+                        btnEl.addEventListener('mouseleave', function() {
+                            UI.hideBuildTooltip();
+                        });
+                    }
+                })(item.type, btn);
 
                 container.appendChild(btn);
+                globalIdx++;
             }
         }
+    },
+
+    showBuildTooltip: function(type, btn) {
+        var def = CFG.BUILDING_DEFS[type];
+        if (!def) return;
+        var tt = document.getElementById('toolbar-tooltip');
+        if (!tt) {
+            tt = document.createElement('div');
+            tt.id = 'toolbar-tooltip';
+            document.getElementById('ui-overlay').appendChild(tt);
+        }
+
+        var html = '<div class="tt-name">' + (def.icon || '') + ' ' + def.name + '</div>';
+        if (def.cost && def.cost.length > 0) {
+            var parts = [];
+            for (var i = 0; i < def.cost.length; i++) {
+                var c = def.cost[i];
+                var has = Inventory.count(Game.player.inventory, c.item);
+                var color = has >= c.qty ? '#44cc66' : '#dd4444';
+                parts.push('<span style="color:' + color + '">' + c.qty + 'x ' + (ITEM_NAMES[c.item] || c.item) + '</span>');
+            }
+            html += '<div class="tt-cost">' + parts.join(' · ') + '</div>';
+        } else {
+            html += '<div class="tt-cost" style="color:#44cc66">Gratis</div>';
+        }
+        var shortcutEl = btn.querySelector('.btn-shortcut');
+        if (shortcutEl) html += '<div class="tt-key">Atajo: tecla ' + shortcutEl.textContent + '</div>';
+        if (def.unlocked === false && !Tech.isUnlocked(type)) {
+            html += '<div class="tt-lock">🔒 Requiere: ' + (CFG.TECH_TREE[def.tech] ? CFG.TECH_TREE[def.tech].name : def.tech) + '</div>';
+        }
+
+        tt.innerHTML = html;
+        tt.style.display = 'block';
+        var rect = btn.getBoundingClientRect();
+        var ttRect = tt.getBoundingClientRect();
+        var left = rect.left + rect.width / 2 - ttRect.width / 2;
+        left = Math.max(8, Math.min(window.innerWidth - ttRect.width - 8, left));
+        tt.style.left = left + 'px';
+        tt.style.top = (rect.top - ttRect.height - 8) + 'px';
+    },
+
+    hideBuildTooltip: function() {
+        var tt = document.getElementById('toolbar-tooltip');
+        if (tt) tt.style.display = 'none';
     },
 
     bindButtons: function() {
@@ -416,6 +469,49 @@ var UI = {
             html += '</div>';
         }
 
+        if (b.type === 'inserter') {
+            html += '<p style="font-size:11px;color:#aaa;margin:4px 0;">Filtro (solo mueve este item):</p>';
+            html += '<div class="recipe-select">';
+            html += '<button class="recipe-btn' + (!b.filterItem ? ' selected' : '') + '" onclick="UI.setInserterFilter(' + b.id + ',null)">Sin filtro</button>';
+            for (var fItem in ITEM_NAMES) {
+                var fSel = b.filterItem === fItem ? ' selected' : '';
+                html += '<button class="recipe-btn' + fSel + '" onclick="UI.setInserterFilter(' + b.id + ',\'' + fItem + '\')">';
+                html += '<span class="recipe-dot" style="background:' + Items.color(fItem) + '"></span>';
+                html += ITEM_NAMES[fItem];
+                html += '</button>';
+            }
+            html += '</div>';
+        }
+
+        if (b.type === 'splitter') {
+            html += '<p style="font-size:11px;color:#aaa;margin:4px 0;">Prioridad de salida:</p>';
+            html += '<div class="recipe-select">';
+            var prios = [['left','⬅ Izquierda'],['balanced','⚖ Equilibrado'],['right','Derecha ➡']];
+            var curPrio = b.outputPriority || 'balanced';
+            for (var pi = 0; pi < prios.length; pi++) {
+                var pSel = curPrio === prios[pi][0] ? ' selected' : '';
+                html += '<button class="recipe-btn' + pSel + '" onclick="UI.setSplitterPriority(' + b.id + ',\'' + prios[pi][0] + '\')">' + prios[pi][1] + '</button>';
+            }
+            html += '</div>';
+        }
+
+        if (b.type === 'accumulator') {
+            var accDef = CFG.BUILDING_DEFS.accumulator;
+            var chargePct = Math.floor((b.charge / accDef.capacity) * 100);
+            html += '<p>Carga: ' + Math.floor(b.charge) + '/' + accDef.capacity + ' (' + chargePct + '%)</p>';
+        }
+
+        if (b.type === 'underground_belt') {
+            if (b.pairId !== null && b.pairId !== undefined) {
+                var transitCount = b.ugMode === 'in' ? b.transit.length :
+                    (World.buildings[b.pairId] && World.buildings[b.pairId].transit ? World.buildings[b.pairId].transit.length : 0);
+                html += '<p>' + (b.ugMode === 'in' ? 'Entrada' : 'Salida') + ' de túnel — conectado';
+                html += ' (' + transitCount + ' en tránsito)</p>';
+            } else {
+                html += '<p style="color:#dd4444">Sin conectar: coloca la otra boca en la misma dirección (máx. ' + (CFG.UNDERGROUND_MAX_DIST + 1) + ' casillas)</p>';
+            }
+        }
+
         html += '<p class="info-status">' + (b.active ? '<span class="status-on">Trabajando</span>' : '<span class="status-off">Inactivo</span>') + '</p>';
         html += '<button onclick="Buildings.remove(' + b.id + ');UI.closePanels();" class="btn-delete">Eliminar</button>';
 
@@ -429,6 +525,20 @@ var UI = {
         b.recipeId = recipeId;
         b.progress = 0;
         b.input = {};
+        this.showBuildingInfo(b);
+    },
+
+    setInserterFilter: function(buildingId, item) {
+        var b = World.buildings[buildingId];
+        if (!b || b.removed) return;
+        b.filterItem = item;
+        this.showBuildingInfo(b);
+    },
+
+    setSplitterPriority: function(buildingId, mode) {
+        var b = World.buildings[buildingId];
+        if (!b || b.removed) return;
+        b.outputPriority = mode;
         this.showBuildingInfo(b);
     },
 
@@ -476,6 +586,19 @@ var UI = {
         }
     },
 
+    startResearch: function(techId) {
+        Game.currentResearch = techId;
+        Tutorial.onEvent('research_started', techId);
+        this.closeModal();
+        this.toggleTechTree();
+    },
+
+    cancelResearch: function() {
+        Game.currentResearch = null;
+        this.closeModal();
+        this.toggleTechTree();
+    },
+
     toggleTechTree: function() {
         var modal = document.getElementById('modal');
         var content = document.getElementById('modal-content');
@@ -484,6 +607,8 @@ var UI = {
             this.closeModal();
             return;
         }
+
+        Tutorial.onEvent('open_tech');
 
         var html = '<h2>Árbol Tecnológico</h2>';
         var techs = Tech.getAllTechs();
@@ -512,9 +637,9 @@ var UI = {
             if (t.available && !t.completed) {
                 html += '<div class="tech-progress-bar"><div class="tech-progress-fill" style="width:' + (t.progress * 100) + '%"></div></div>';
                 if (isCurrent) {
-                    html += '<button class="btn-research active" onclick="Game.currentResearch=null;UI.toggleTechTree();UI.toggleTechTree();">Cancelar</button>';
+                    html += '<button class="btn-research active" onclick="UI.cancelResearch();">Cancelar</button>';
                 } else {
-                    html += '<button class="btn-research" onclick="Game.currentResearch=\'' + t.id + '\';UI.toggleTechTree();UI.toggleTechTree();">Investigar</button>';
+                    html += '<button class="btn-research" onclick="UI.startResearch(\'' + t.id + '\');">Investigar</button>';
                 }
             }
 
@@ -619,6 +744,144 @@ var UI = {
         modal.style.display = 'flex';
     },
 
+    // ===== Centro de alertas =====
+    alerts: [],
+    _alertTimer: 0,
+    _lowPowerStreak: 0,
+    _alertCycle: {},
+    _seenAlertKeys: {},
+    _alertPanelOpen: false,
+    _lastAlertSig: '',
+
+    checkAlerts: function() {
+        var found = [];
+
+        for (var i = 0; i < World.buildings.length; i++) {
+            var b = World.buildings[i];
+            if (!b || b.removed) continue;
+
+            if ((b.type === 'miner' || b.type === 'electric_miner') && b.depleted) {
+                found.push({key: 'depleted:' + b.id, kind: 'depleted', icon: '⛏', text: 'Veta agotada', buildingId: b.id});
+            } else if (b.type === 'furnace' && Inventory.isEmpty(b.fuel) && !Inventory.isEmpty(b.input)) {
+                found.push({key: 'nofuel:' + b.id, kind: 'nofuel', icon: '🔥', text: 'Fundidora sin carbón', buildingId: b.id});
+            } else if (b.type === 'steam_engine' && Inventory.isEmpty(b.fuel)) {
+                found.push({key: 'nofuel:' + b.id, kind: 'nofuel', icon: '💨', text: 'Motor de vapor sin carbón', buildingId: b.id});
+            } else if (b.type === 'rocket_silo' && b.rocketReady) {
+                found.push({key: 'silo:' + b.id, kind: 'silo', icon: '🚀', text: '¡Cohete listo para lanzar!', buildingId: b.id});
+                if (!this._seenAlertKeys['silo:' + b.id]) {
+                    this._seenAlertKeys['silo:' + b.id] = true;
+                    this.showToast('¡Cohete listo para lanzar!', 'achievement');
+                }
+            } else if (b.type === 'underground_belt' && (b.pairId === null || b.pairId === undefined)) {
+                found.push({key: 'tunnel:' + b.id, kind: 'tunnel', icon: '⤵', text: 'Cinta subterránea sin emparejar', buildingId: b.id});
+            }
+        }
+
+        // Energía insuficiente sostenida (≥10s) — evita parpadeo por acumuladores
+        if (Game.power.consumption > 0 && Game.power.satisfaction < 1) {
+            this._lowPowerStreak++;
+        } else {
+            this._lowPowerStreak = 0;
+        }
+        if (this._lowPowerStreak >= 5) {
+            found.unshift({
+                key: 'power', kind: 'power', icon: '⚡',
+                text: 'Energía insuficiente: ' + Math.floor(Game.power.production) + '/' + Math.floor(Game.power.consumption) + ' kW',
+                buildingId: null
+            });
+        }
+
+        this.alerts = found;
+        this.renderAlerts();
+    },
+
+    ensureAlertDOM: function() {
+        var badge = document.getElementById('alert-badge');
+        if (!badge) {
+            var overlay = document.getElementById('ui-overlay');
+            badge = document.createElement('button');
+            badge.id = 'alert-badge';
+            badge.addEventListener('click', function(e) {
+                e.stopPropagation();
+                UI._alertPanelOpen = !UI._alertPanelOpen;
+                UI._lastAlertSig = '';
+                UI.renderAlerts();
+            });
+            overlay.appendChild(badge);
+
+            var panel = document.createElement('div');
+            panel.id = 'alert-panel';
+            overlay.appendChild(panel);
+        }
+    },
+
+    renderAlerts: function() {
+        this.ensureAlertDOM();
+        var badge = document.getElementById('alert-badge');
+        var panel = document.getElementById('alert-panel');
+
+        if (this.alerts.length === 0) {
+            badge.style.display = 'none';
+            panel.style.display = 'none';
+            this._alertPanelOpen = false;
+            this._lastAlertSig = '';
+            return;
+        }
+
+        // Firma para no regenerar DOM en vano
+        var sig = '';
+        for (var i = 0; i < this.alerts.length; i++) sig += this.alerts[i].key + ';';
+        var onlyGood = this.alerts.length > 0 && this.alerts[0].kind === 'silo' && this.alerts.length === 1;
+
+        badge.style.display = 'block';
+        badge.textContent = (onlyGood ? '🚀 ' : '⚠️ ') + this.alerts.length;
+        badge.classList.toggle('alert-good', onlyGood);
+
+        if (!this._alertPanelOpen) {
+            panel.style.display = 'none';
+            this._lastAlertSig = '';
+            return;
+        }
+
+        panel.style.display = 'block';
+        if (sig === this._lastAlertSig) return;
+        this._lastAlertSig = sig;
+
+        panel.innerHTML = '';
+        for (var j = 0; j < this.alerts.length; j++) {
+            var al = this.alerts[j];
+            var row = document.createElement('button');
+            row.className = 'alert-row';
+            row.textContent = al.icon + ' ' + al.text + (al.buildingId !== null ? ' 📍' : '');
+            (function(alert) {
+                row.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    UI.goToAlert(alert);
+                });
+            })(al);
+            panel.appendChild(row);
+        }
+    },
+
+    goToAlert: function(alert) {
+        if (alert.buildingId === null) return;
+        var b = World.buildings[alert.buildingId];
+        if (!b || b.removed) return;
+        var def = CFG.BUILDING_DEFS[b.type];
+        this.centerCameraOnTile(b.x + def.size[0] / 2, b.y + def.size[1] / 2);
+        Input.selectedBuilding = b;
+        this.showBuildingInfo(b);
+        this._alertPanelOpen = false;
+        this.renderAlerts();
+    },
+
+    centerCameraOnTile: function(tx, ty) {
+        Camera.targetX = tx * CFG.TILE - (Camera.vw / Camera.zoom) / 2;
+        Camera.targetY = ty * CFG.TILE - (Camera.vh / Camera.zoom) / 2;
+    },
+
+    _statsOpen: false,
+
     toggleStats: function() {
         var modal = document.getElementById('modal');
         var content = document.getElementById('modal-content');
@@ -631,11 +894,19 @@ var UI = {
         html += '<p>Cohetes lanzados: ' + s.rocketsLaunched + '</p>';
         html += '<p>Ticks de juego: ' + Game.tick + ' (' + Math.floor(Game.tick / 20) + 's)</p>';
 
+        if (Game.power.production > 0 || Game.power.consumption > 0) {
+            html += '<h3>Energía (últimos 5 min)</h3>';
+            html += '<p style="font-size:11px;"><span style="color:#44cc66">■ Producción</span> &nbsp; <span style="color:#dd4444">■ Consumo</span></p>';
+            html += '<canvas id="power-history-canvas" width="320" height="80"></canvas>';
+        }
+
         html += '<h3>Items Producidos</h3>';
         for (var item in s.itemsProduced) {
             if (s.itemsProduced[item] > 0) {
-                html += '<p><span class="resource-dot" style="background:' + Items.color(item) + '"></span> ';
-                html += (ITEM_NAMES[item] || item) + ': ' + this.formatNumber(s.itemsProduced[item]) + '</p>';
+                html += '<p class="stats-row"><span class="resource-dot" style="background:' + Items.color(item) + '"></span> ';
+                html += (ITEM_NAMES[item] || item) + ': ' + this.formatNumber(s.itemsProduced[item]);
+                html += '<canvas class="sparkline" width="120" height="26" data-item="' + item + '"></canvas>';
+                html += '</p>';
             }
         }
 
@@ -649,6 +920,102 @@ var UI = {
 
         content.innerHTML = html;
         modal.style.display = 'flex';
+        this._statsOpen = true;
+        this.paintStatsCharts();
+    },
+
+    // Desenrolla el ring buffer en orden cronológico
+    getHistorySeries: function(arr) {
+        var h = Game.history;
+        if (!h || h.count === 0) return [];
+        var out = [];
+        for (var i = 0; i < h.count; i++) {
+            out.push(arr[(h.head - h.count + i + h.max) % h.max]);
+        }
+        return out;
+    },
+
+    drawSparkline: function(canvas, data, color) {
+        var ctx = canvas.getContext('2d');
+        var w = canvas.width, hh = canvas.height;
+        ctx.clearRect(0, 0, w, hh);
+        if (data.length < 2) return;
+
+        var max = 1;
+        for (var i = 0; i < data.length; i++) if (data[i] > max) max = data[i];
+
+        ctx.beginPath();
+        for (var j = 0; j < data.length; j++) {
+            var x = (j / (data.length - 1)) * (w - 2) + 1;
+            var y = hh - 2 - (data[j] / max) * (hh - 6);
+            if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        ctx.lineTo(w - 1, hh - 1);
+        ctx.lineTo(1, hh - 1);
+        ctx.closePath();
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    },
+
+    drawPowerChart: function(canvas, prodData, consData) {
+        var ctx = canvas.getContext('2d');
+        var w = canvas.width, hh = canvas.height;
+        ctx.clearRect(0, 0, w, hh);
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        ctx.fillRect(0, 0, w, hh);
+        if (prodData.length < 2) return;
+
+        var max = 1;
+        for (var i = 0; i < prodData.length; i++) {
+            if (prodData[i] > max) max = prodData[i];
+            if (consData[i] > max) max = consData[i];
+        }
+
+        var series = [[prodData, '#44cc66'], [consData, '#dd4444']];
+        for (var si = 0; si < series.length; si++) {
+            var data = series[si][0];
+            ctx.beginPath();
+            for (var j = 0; j < data.length; j++) {
+                var x = (j / (data.length - 1)) * (w - 4) + 2;
+                var y = hh - 3 - (data[j] / max) * (hh - 10);
+                if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = series[si][1];
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(Math.floor(max) + ' kW', 4, 3);
+    },
+
+    paintStatsCharts: function() {
+        var h = Game.history;
+        if (!h) return;
+        var content = document.getElementById('modal-content');
+
+        var pcv = document.getElementById('power-history-canvas');
+        if (pcv) {
+            this.drawPowerChart(pcv, this.getHistorySeries(h.powerProd), this.getHistorySeries(h.powerCons));
+        }
+
+        var sparks = content.querySelectorAll('.sparkline');
+        for (var i = 0; i < sparks.length; i++) {
+            var cv = sparks[i];
+            var item = cv.getAttribute('data-item');
+            if (h.items[item]) {
+                this.drawSparkline(cv, this.getHistorySeries(h.items[item]), Items.color(item));
+            }
+        }
     },
 
     toggleSettings: function() {
@@ -658,6 +1025,7 @@ var UI = {
 
         var html = '<h2>Ajustes</h2>';
         html += '<button class="btn-action" onclick="Audio.toggle();UI.toggleSettings();UI.toggleSettings();">Sonido: ' + (Audio.enabled ? 'ON' : 'OFF') + '</button>';
+        html += '<button class="btn-action" onclick="Audio.toggleMusic();UI.toggleSettings();UI.toggleSettings();">Música: ' + (Audio.musicEnabled ? 'ON' : 'OFF') + '</button>';
         html += '<button class="btn-action" onclick="Game.creativeModeOn=!Game.creativeModeOn;UI.toggleSettings();UI.toggleSettings();">Modo Creativo: ' + (Game.creativeModeOn ? 'ON' : 'OFF') + '</button>';
         html += '<br><br>';
         html += '<button class="btn-action" onclick="Save.save();UI.showToast(\'¡Partida guardada!\');">Guardar</button>';
@@ -682,12 +1050,14 @@ var UI = {
         html += '<div style="font-size:12px;color:#ccc;line-height:2;">';
         html += '<p><kbd>WASD</kbd> / Flechas — Mover cámara</p>';
         html += '<p><kbd>R</kbd> — Rotar dirección</p>';
+        html += '<p><kbd>Q</kbd> — Pipeta (copiar edificio bajo el cursor)</p>';
         html += '<p><kbd>Espacio</kbd> — Pausar / Reanudar</p>';
         html += '<p><kbd>Esc</kbd> — Cancelar modo construcción</p>';
         html += '<p><kbd>1-9</kbd> — Seleccionar edificio</p>';
         html += '<p><kbd>Clic derecho</kbd> — Eliminar edificio</p>';
         html += '<p><kbd>Clic medio / derecho + arrastrar</kbd> — Mover cámara</p>';
         html += '<p><kbd>Rueda ratón</kbd> — Zoom</p>';
+        html += '<p><kbd>Clic en minimapa</kbd> — Navegar</p>';
         html += '<p><kbd>?</kbd> — Mostrar esta ayuda</p>';
         html += '</div>';
 
@@ -736,12 +1106,13 @@ var UI = {
 
     closeModal: function() {
         document.getElementById('modal').style.display = 'none';
+        this._statsOpen = false;
     },
 
     showToast: function(text, type) {
         var container = document.getElementById('toast-container');
         var toast = document.createElement('div');
-        toast.className = 'toast' + (type === 'achievement' ? ' toast-achievement' : '');
+        toast.className = 'toast' + (type === 'achievement' ? ' toast-achievement' : type === 'warning' ? ' toast-warning' : '');
         toast.textContent = text;
         container.appendChild(toast);
 
@@ -815,6 +1186,17 @@ var UI = {
                 document.getElementById('info-panel').style.display === 'block') {
                 this.showBuildingInfo(Input.selectedBuilding);
             }
+
+            // Repintar solo los canvases (no rebuild del HTML — rompería scroll)
+            if (this._statsOpen && document.getElementById('modal').style.display === 'flex') {
+                this.paintStatsCharts();
+            }
+        }
+
+        this._alertTimer += dt;
+        if (this._alertTimer > 2) {
+            this._alertTimer = 0;
+            this.checkAlerts();
         }
     }
 };

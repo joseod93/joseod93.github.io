@@ -3,12 +3,20 @@ var World = {
     chunks: {},
     buildings: [],
     buildingMap: {},
+    chunkBuildings: {},
+    _seenStamp: 0,
 
     init: function(seed) {
         this.seed = seed || Math.floor(Math.random() * 999999);
         this.chunks = {};
         this.buildings = [];
         this.buildingMap = {};
+        this.chunkBuildings = {};
+        if (typeof Game !== 'undefined' && Game.powerCache) {
+            Game.powerCache.consumptionBase = 0;
+            Game.powerCache.solarOutput = 0;
+            Game.powerCache.steamIds = [];
+        }
     },
 
     mulberry32: function(a) {
@@ -151,15 +159,56 @@ var World = {
             for (var dx = 0; dx < w; dx++) {
                 var tile = this.getTile(tx + dx, ty + dy);
                 if (tile.resource && tile.resource.amount > 0) {
+                    var before = tile.resource.amount;
                     tile.resource.amount--;
-                    var c = CFG.CHUNK;
-                    var cx = Math.floor((tx+dx) / c), cy = Math.floor((ty+dy) / c);
-                    this.getChunk(cx, cy).dirty = true;
+                    // Solo invalidar el caché del chunk cuando cambia el aspecto
+                    // visual de la veta (nº de puntos: niveles de 50 en 50)
+                    var lvBefore = Math.min(4, Math.floor(before / 50));
+                    var lvAfter = tile.resource.amount <= 0 ? -1 : Math.min(4, Math.floor(tile.resource.amount / 50));
+                    if (lvBefore !== lvAfter) {
+                        var c = CFG.CHUNK;
+                        var cx = Math.floor((tx+dx) / c), cy = Math.floor((ty+dy) / c);
+                        this.getChunk(cx, cy).dirty = true;
+                    }
                     return tile.resource.type;
                 }
             }
         }
         return null;
+    },
+
+    // Itera las claves de chunk que solapa el footprint de un edificio
+    forEachChunkOf: function(b, fn) {
+        var def = CFG.BUILDING_DEFS[b.type];
+        var w = def.size[0], h = def.size[1];
+        var c = CFG.CHUNK;
+        var minCX = Math.floor(b.x / c), maxCX = Math.floor((b.x + w - 1) / c);
+        var minCY = Math.floor(b.y / c), maxCY = Math.floor((b.y + h - 1) / c);
+        for (var cy = minCY; cy <= maxCY; cy++) {
+            for (var cx = minCX; cx <= maxCX; cx++) {
+                fn(this.chunkKey(cx, cy));
+            }
+        }
+    },
+
+    // Devuelve los edificios (sin duplicados) presentes en el rango de chunks dado
+    getBuildingsInChunkRange: function(minCX, minCY, maxCX, maxCY) {
+        this._seenStamp++;
+        var stamp = this._seenStamp;
+        var out = [];
+        for (var cy = minCY; cy <= maxCY; cy++) {
+            for (var cx = minCX; cx <= maxCX; cx++) {
+                var list = this.chunkBuildings[cx + ',' + cy];
+                if (!list) continue;
+                for (var i = 0; i < list.length; i++) {
+                    var b = this.buildings[list[i]];
+                    if (!b || b.removed || b._seen === stamp) continue;
+                    b._seen = stamp;
+                    out.push(b);
+                }
+            }
+        }
+        return out;
     },
 
     placeBuilding: function(b) {
@@ -174,6 +223,12 @@ var World = {
                 this.buildingMap[this.tileKey(b.x + dx, b.y + dy)] = id;
             }
         }
+        var self = this;
+        this.forEachChunkOf(b, function(key) {
+            if (!self.chunkBuildings[key]) self.chunkBuildings[key] = [];
+            self.chunkBuildings[key].push(id);
+        });
+        if (typeof Game !== 'undefined' && Game.onBuildingPlaced) Game.onBuildingPlaced(b);
         return id;
     },
 
@@ -188,7 +243,15 @@ var World = {
                 delete this.buildingMap[this.tileKey(b.x + dx, b.y + dy)];
             }
         }
+        var self = this;
+        this.forEachChunkOf(b, function(key) {
+            var list = self.chunkBuildings[key];
+            if (!list) return;
+            var idx = list.indexOf(id);
+            if (idx !== -1) list.splice(idx, 1);
+        });
         b.removed = true;
+        if (typeof Game !== 'undefined' && Game.onBuildingRemoved) Game.onBuildingRemoved(b);
     },
 
     getBuildingAt: function(tx, ty) {

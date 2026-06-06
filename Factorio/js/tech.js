@@ -66,6 +66,8 @@ var Tech = {
             Audio.play('research');
         }
 
+        Tutorial.onEvent('research', techId);
+
         if (Game.currentResearch === techId) {
             Game.currentResearch = null;
         }

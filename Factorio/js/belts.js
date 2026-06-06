@@ -57,9 +57,8 @@ var Belts = {
         if (aLine && aLine.dir === dir && !aLine.removed && Math.abs(aLine.speed - beltSpeed) < 0.001) {
             aLine.tiles.unshift({x:tx, y:ty});
             this.rebuildTileIndex(aLine);
-            if (aLine.items.length > 0) {
-                aLine.items[0].gap += 1;
-            } else {
+            // Extender por la cola no mueve la cabeza: headGap solo crece si no hay items
+            if (aLine.items.length === 0) {
                 aLine.headGap += 1;
             }
             return;
@@ -80,13 +79,10 @@ var Belts = {
     },
 
     mergeLines: function(tail, head) {
-        for (var i = 0; i < head.tiles.length; i++) {
-            tail.tiles.push(head.tiles[i]);
-        }
-
         if (head.items.length > 0) {
             if (tail.items.length > 0) {
-                head.items[0].gap += tail.headGap;
+                // Distancia real entre el primer item de head y el último de tail
+                head.items[0].gap = this.tailSpace(head) + tail.headGap;
             }
             for (var j = 0; j < head.items.length; j++) {
                 tail.items.push(head.items[j]);
@@ -94,6 +90,10 @@ var Belts = {
             tail.headGap = head.headGap;
         } else {
             tail.headGap += head.headGap;
+        }
+
+        for (var i = 0; i < head.tiles.length; i++) {
+            tail.tiles.push(head.tiles[i]);
         }
 
         head.removed = true;
@@ -108,6 +108,51 @@ var Belts = {
         }
     },
 
+    // Posiciones absolutas medidas desde el extremo de cola de la línea
+    // (derivadas desde la cabeza: p_head = tiles.length - headGap)
+    getAbsPositions: function(line) {
+        var n = line.items.length;
+        var abs = new Array(n);
+        var p = line.tiles.length - line.headGap;
+        for (var i = n - 1; i >= 0; i--) {
+            abs[i] = {type: line.items[i].type, p: p};
+            p -= line.items[i].gap;
+        }
+        return abs;
+    },
+
+    buildSegmentFromAbs: function(template, tiles, absItems, offset) {
+        if (tiles.length === 0) {
+            for (var i = 0; i < absItems.length; i++) {
+                Inventory.add(Game.player.inventory, absItems[i].type, 1);
+            }
+            return null;
+        }
+        var items = [];
+        for (var j = 0; j < absItems.length; j++) {
+            items.push({
+                type: absItems[j].type,
+                gap: j === 0 ? 0 : absItems[j].p - absItems[j - 1].p
+            });
+        }
+        var seg = {
+            id: this.lines.length,
+            dir: template.dir,
+            tiles: tiles,
+            items: items,
+            headGap: absItems.length > 0
+                ? tiles.length - (absItems[absItems.length - 1].p - offset)
+                : tiles.length,
+            lastPositiveGapIndex: -1,
+            speed: template.speed,
+            removed: false
+        };
+        this.lines.push(seg);
+        this.recalcLastPositive(seg);
+        this.rebuildTileIndex(seg);
+        return seg;
+    },
+
     removeBelt: function(tx, ty) {
         var key = tx + ',' + ty;
         var info = this.tileToLine[key];
@@ -115,92 +160,34 @@ var Belts = {
         var line = this.lines[info.lineId];
         if (!line || line.removed) return;
 
-        if (line.tiles.length === 1) {
-            line.removed = true;
-            delete this.tileToLine[key];
-            return;
-        }
-
         var idx = -1;
         for (var i = 0; i < line.tiles.length; i++) {
             if (line.tiles[i].x === tx && line.tiles[i].y === ty) { idx = i; break; }
         }
         if (idx === -1) return;
 
-        if (idx === 0) {
-            line.tiles.shift();
-            delete this.tileToLine[key];
-            if (line.items.length > 0 && line.items[0].gap < 1) {
-                line.items.shift();
-            } else if (line.items.length > 0) {
-                line.items[0].gap -= 1;
-            } else {
-                line.headGap -= 1;
-            }
-            this.rebuildTileIndex(line);
-            this.recalcLastPositive(line);
-            return;
-        }
-
-        if (idx === line.tiles.length - 1) {
-            line.tiles.pop();
-            delete this.tileToLine[key];
-            line.headGap = Math.max(0, line.headGap - 1);
-            var itemsToRemove = [];
-            var pos = line.tiles.length + 1;
-            for (var j = line.items.length - 1; j >= 0; j--) {
-                pos -= line.items[j].gap;
-                if (pos > line.tiles.length) itemsToRemove.push(j);
-            }
-            for (var k = 0; k < itemsToRemove.length; k++) {
-                line.items.splice(itemsToRemove[k], 1);
-            }
-            this.recalcLastPositive(line);
-            return;
-        }
-
+        // Posición absoluta de un item: p = suma de gaps hasta él (ocupa el tile floor(p-1)).
+        // Invariante: headGap + sum(gaps) = tiles.length.
+        var absItems = this.getAbsPositions(line);
         line.removed = true;
         delete this.tileToLine[key];
 
-        var tailTiles = line.tiles.slice(0, idx);
-        var headTiles = line.tiles.slice(idx + 1);
-
-        var tailLine = {
-            id: this.lines.length, dir: line.dir, tiles: tailTiles,
-            items: [], headGap: tailTiles.length, lastPositiveGapIndex: -1,
-            speed: line.speed, removed: false
-        };
-        this.lines.push(tailLine);
-
-        var headLine = {
-            id: this.lines.length, dir: line.dir, tiles: headTiles,
-            items: [], headGap: headTiles.length, lastPositiveGapIndex: -1,
-            speed: line.speed, removed: false
-        };
-        this.lines.push(headLine);
-
-        var pos2 = 0;
-        for (var m = 0; m < line.items.length; m++) {
-            pos2 += line.items[m].gap;
-            if (pos2 < idx) {
-                tailLine.items.push({type: line.items[m].type, gap: line.items[m].gap});
-            } else if (pos2 > idx) {
-                headLine.items.push({type: line.items[m].type, gap: line.items[m].gap - (pos2 > idx + 1 ? 0 : idx + 1 - pos2)});
+        var tailItems = [], headItems = [];
+        for (var j = 0; j < absItems.length; j++) {
+            var it = absItems[j];
+            if (it.p <= idx) {
+                tailItems.push(it);
+            } else if (it.p >= idx + 2) {
+                headItems.push(it);
+            } else {
+                // Estaba sobre el tile eliminado: devolver al jugador
+                Inventory.add(Game.player.inventory, it.type, 1);
             }
         }
 
-        this.rebuildTileIndex(tailLine);
-        this.rebuildTileIndex(headLine);
-        this.recalcHeadGap(tailLine);
-        this.recalcHeadGap(headLine);
-        this.recalcLastPositive(tailLine);
-        this.recalcLastPositive(headLine);
-    },
-
-    recalcHeadGap: function(line) {
-        var totalGaps = 0;
-        for (var i = 0; i < line.items.length; i++) totalGaps += line.items[i].gap;
-        line.headGap = line.tiles.length - totalGaps;
+        this.buildSegmentFromAbs(line, line.tiles.slice(0, idx), tailItems, 0);
+        this.buildSegmentFromAbs(line, line.tiles.slice(idx + 1), headItems, idx + 1);
+        UI.updateResources();
     },
 
     recalcLastPositive: function(line) {
@@ -213,24 +200,33 @@ var Belts = {
         }
     },
 
-    insertItem: function(line, itemType) {
+    // Espacio libre detrás del item de cola (posiciones medidas desde la cabeza;
+    // items[0].gap se mantiene siempre a 0 y no participa en el cálculo)
+    tailSpace: function(line) {
+        if (line.items.length === 0) return line.tiles.length;
+        var s = 0;
+        for (var i = 1; i < line.items.length; i++) s += line.items[i].gap;
+        return line.tiles.length - line.headGap - s;
+    },
+
+    canInsertItem: function(line) {
         if (line.removed) return false;
-        var minGap = CFG.ITEM_SPACING;
+        return this.tailSpace(line) >= CFG.ITEM_SPACING;
+    },
+
+    insertItem: function(line, itemType) {
+        if (!this.canInsertItem(line)) return false;
 
         if (line.items.length === 0) {
-            if (line.headGap < minGap) return false;
             line.items.push({type: itemType, gap: 0});
             line.headGap = line.tiles.length;
-            this.recalcHeadGap(line);
             line.lastPositiveGapIndex = -1;
             return true;
         }
 
-        var firstGap = line.items[0].gap;
-        if (firstGap < minGap) return false;
-
+        var space = this.tailSpace(line);
         line.items.unshift({type: itemType, gap: 0});
-        line.items[1].gap = firstGap;
+        line.items[1].gap = space;
         this.recalcLastPositive(line);
         return true;
     },
@@ -281,15 +277,17 @@ var Belts = {
                 }
             }
 
+            // Compresión: el tramo trasero se acerca al de delante. gap_0 no se toca
+            // (siempre 0; el espacio de cola se deriva en tailSpace())
             var startIdx = Math.min(line.lastPositiveGapIndex, line.items.length - 1);
-            for (var j = startIdx; j >= 0; j--) {
+            for (var j = startIdx; j >= 1; j--) {
                 if (line.items[j].gap > 0) {
                     line.items[j].gap -= advance;
                     if (line.items[j].gap <= 0) {
                         line.items[j].gap = 0;
                         if (j === line.lastPositiveGapIndex) {
                             line.lastPositiveGapIndex--;
-                            while (line.lastPositiveGapIndex >= 0 && line.items[line.lastPositiveGapIndex].gap <= 0) {
+                            while (line.lastPositiveGapIndex >= 1 && line.items[line.lastPositiveGapIndex].gap <= 0) {
                                 line.lastPositiveGapIndex--;
                             }
                         }

@@ -1,9 +1,31 @@
 var Save = {
     VERSION: 1,
     autoSaveTimer: 0,
+    quotaWarned: false,
+
+    // Migraciones de versión: MIGRATIONS[n] transforma datos de versión n a n+1
+    MIGRATIONS: {},
 
     init: function() {
         this.autoSaveTimer = 0;
+    },
+
+    isQuotaError: function(e) {
+        return !!e && (e.name === 'QuotaExceededError' ||
+            e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+            e.code === 22 || e.code === 1014);
+    },
+
+    migrate: function(data) {
+        var v = data.version || 1;
+        while (v < this.VERSION) {
+            var fn = this.MIGRATIONS[v];
+            if (!fn) break;
+            data = fn(data) || data;
+            v++;
+            data.version = v;
+        }
+        return data;
     },
 
     save: function(slot) {
@@ -28,12 +50,38 @@ var Save = {
             creativeModeOn: Game.creativeModeOn
         };
 
+        var json;
+        try {
+            json = JSON.stringify(data);
+        } catch(e) {
+            return false;
+        }
+
         try {
             var prev = localStorage.getItem(key);
             if (prev) localStorage.setItem(key + '_backup', prev);
-            localStorage.setItem(key, JSON.stringify(data));
+            localStorage.setItem(key, json);
+            this.quotaWarned = false;
             return true;
         } catch(e) {
+            if (this.isQuotaError(e)) {
+                // Liberar espacio borrando el backup y reintentar
+                try {
+                    localStorage.removeItem(key + '_backup');
+                    localStorage.setItem(key, json);
+                    if (!this.quotaWarned) {
+                        UI.showToast('Almacenamiento casi lleno: backup eliminado', 'warning');
+                        this.quotaWarned = true;
+                    }
+                    return true;
+                } catch(e2) {
+                    if (!this.quotaWarned) {
+                        UI.showToast('¡Almacenamiento lleno! Exporta tu partida desde Ajustes', 'warning');
+                        this.quotaWarned = true;
+                    }
+                    return false;
+                }
+            }
             return false;
         }
     },
@@ -76,6 +124,7 @@ var Save = {
 
     applyLoad: function(data) {
         if (!data || typeof data !== 'object') return;
+        data = this.migrate(data);
         if (!data.player) data.player = {inventory:{}};
         if (!data.camera) data.camera = {x:0, y:0, zoom:1};
         if (!data.buildings) data.buildings = [];
@@ -106,6 +155,9 @@ var Save = {
         try { this.deserializeBuildings(data.buildings); } catch(e) {}
         try { this.deserializeBelts(data.belts); } catch(e) {}
 
+        Game.recalcPowerCache();
+        Game.initHistory(); // evita delta gigante falso al cargar en caliente
+
         var elapsed = Date.now() - (data.timestamp || Date.now());
         var offlineTicks = Math.min(Math.floor(elapsed / CFG.TICK_MS), 20 * 60 * 60 * 8);
         if (offlineTicks > 20) {
@@ -120,12 +172,23 @@ var Save = {
         for (var i = 0; i < World.buildings.length; i++) {
             var b = World.buildings[i];
             if (!b || b.removed) { arr.push(null); continue; }
-            arr.push({
+            var entry = {
                 t: b.type, x: b.x, y: b.y, d: b.direction,
                 i: b.input, o: b.output, f: b.fuel,
                 p: b.progress, r: b.recipeId,
                 s: b.stored, rp: b.rocketParts
-            });
+            };
+            if (b.filterItem) entry.fl = b.filterItem;
+            if (b.outputPriority && b.outputPriority !== 'balanced') entry.pr = b.outputPriority;
+            if (b.charge) entry.ch = b.charge;
+            if (b.type === 'underground_belt') {
+                entry.um = b.ugMode;
+                if (b.pairId !== null && b.pairId !== undefined) entry.pi = b.pairId;
+                if (b.transit && b.transit.length > 0) {
+                    entry.tr = b.transit.map(function(it) { return [it.type, it.left]; });
+                }
+            }
+            arr.push(entry);
         }
         return arr;
     },
@@ -152,6 +215,29 @@ var Save = {
             }
             if (d.t === 'splitter') {
                 b.splitToggle = 0;
+                b.outputPriority = d.pr || 'balanced';
+            }
+            if (d.t === 'inserter') {
+                b.filterItem = d.fl || null;
+            }
+            if (d.t === 'accumulator') {
+                b.charge = d.ch || 0;
+            }
+            if (d.t === 'miner' || d.t === 'electric_miner') {
+                // Pre-marcar para no disparar toasts de veta agotada al cargar
+                var mDef = CFG.BUILDING_DEFS[d.t];
+                b.depleted = !World.hasResource(d.x, d.y, mDef.size[0], mDef.size[1]);
+            }
+            if (d.t === 'underground_belt') {
+                b.ugMode = d.um || 'in';
+                b.pairId = (d.pi === undefined || d.pi === null) ? null : d.pi;
+                b.transit = [];
+                if (d.tr) {
+                    for (var k = 0; k < d.tr.length; k++) {
+                        b.transit.push({type: d.tr[k][0], left: d.tr[k][1]});
+                    }
+                }
+                b.cooldown = 0;
             }
 
             World.placeBuilding(b);
@@ -193,6 +279,8 @@ var Save = {
                 speed: d.sp || CFG.BELT_SPEED,
                 removed: false
             };
+            // gap del item de cola siempre 0 (saves antiguos podían traer valores stale)
+            if (line.items.length > 0) line.items[0].gap = 0;
             Belts.lines.push(line);
             Belts.rebuildTileIndex(line);
             Belts.recalcLastPositive(line);
@@ -229,7 +317,7 @@ var Save = {
             var raw = atob(b64);
             var data = JSON.parse(raw);
             this.applyLoad(data);
-            localStorage.setItem('factoryEmpire_auto', raw);
+            this.save(); // persistir ya migrado (no el raw antiguo)
             return true;
         } catch(e) {
             return false;

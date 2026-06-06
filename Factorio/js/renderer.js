@@ -3,6 +3,8 @@ var Renderer = {
     ctx: null,
     animOffset: 0,
     time: 0,
+    frameCount: 0,
+    CHUNK_SCALE: 2,
 
     init: function(canvas) {
         this.canvas = canvas;
@@ -28,21 +30,26 @@ var Renderer = {
         var w = window.innerWidth, h = window.innerHeight;
         this.animOffset = (this.animOffset + dt * 2) % 1;
         this.time += dt;
+        this.frameCount++;
+        if (this.frameCount % 300 === 0) this.evictChunkCanvases();
 
         ctx.fillStyle = '#111122';
         ctx.fillRect(0, 0, w, h);
 
+        var shake = Camera.getShakeOffset(dt);
         ctx.save();
-        ctx.translate(-Camera.x * Camera.zoom, -Camera.y * Camera.zoom);
+        ctx.translate(-Camera.x * Camera.zoom + (shake ? shake.x : 0),
+                      -Camera.y * Camera.zoom + (shake ? shake.y : 0));
         ctx.scale(Camera.zoom, Camera.zoom);
 
         this.drawTerrain();
-        this.drawResources();
+        this.drawResourceLabels();
         this.drawResourceHighlight();
         this.drawGrid();
         this.drawBelts();
         this.drawBuildings();
         this.drawBeltItems();
+        if (Game.rocketAnim) this.drawRocketAnim(ctx, dt);
         this.drawGhosts();
         this.drawSelection();
 
@@ -61,114 +68,179 @@ var Renderer = {
         ctx.fillRect(0, 0, w, h);
     },
 
-    drawTerrain: function() {
-        var ctx = this.ctx;
-        var bounds = Camera.getVisibleBounds();
-        var t = CFG.TILE;
-        var colors = CFG.COLORS.terrain;
-        var time = this.time;
+    // Hornea terreno + recursos de un chunk en un canvas offscreen (a 2x para DPR/zoom).
+    // Se invalida vía chunk.dirty (place/remove de edificios, cambios visuales de vetas).
+    renderChunkCanvas: function(chunk) {
+        var c = CFG.CHUNK, t = CFG.TILE, S = this.CHUNK_SCALE;
+        var size = c * t;
+        if (!chunk.canvas) {
+            chunk.canvas = document.createElement('canvas');
+            chunk.canvas.width = size * S;
+            chunk.canvas.height = size * S;
+        }
+        var ctx = chunk.canvas.getContext('2d');
+        ctx.setTransform(S, 0, 0, S, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, size, size);
 
-        for (var ty = bounds.minY; ty <= bounds.maxY; ty++) {
-            for (var tx = bounds.minX; tx <= bounds.maxX; tx++) {
-                var tile = World.getTile(tx, ty);
-                var px = tx * t, py = ty * t;
+        var colors = CFG.COLORS.terrain;
+        var waterTiles = [];
+
+        for (var ly = 0; ly < c; ly++) {
+            for (var lx = 0; lx < c; lx++) {
+                var tile = chunk.tiles[ly][lx];
+                var tx = chunk.cx * c + lx, ty = chunk.cy * c + ly;
+                var px = lx * t, py = ly * t;
 
                 if (tile.terrain === 'water') {
-                    var wave1 = Math.sin(tx * 0.4 + time * 1.2) * 0.08;
-                    var wave2 = Math.sin(ty * 0.3 + time * 0.8) * 0.05;
-                    var wv = wave1 + wave2;
-                    var wr = 25 + Math.floor(wv * 20);
-                    var wg = 55 + Math.floor(wv * 50);
-                    var wb = 150 + Math.floor(wv * 40);
-                    ctx.fillStyle = 'rgb(' + wr + ',' + wg + ',' + wb + ')';
+                    ctx.fillStyle = '#19378f';
                     ctx.fillRect(px, py, t, t);
-
-                    if (Camera.zoom > 0.5) {
-                        ctx.fillStyle = 'rgba(100,180,255,' + (0.06 + wave1 * 0.3) + ')';
-                        var wlx = px + ((tx * 7 + Math.floor(time * 8)) % t);
-                        ctx.fillRect(wlx, py + t * 0.3, t * 0.4, 1);
-                        ctx.fillRect(wlx - 4, py + t * 0.65, t * 0.3, 1);
-                    }
+                    waterTiles.push({tx: tx, ty: ty});
                 } else if (tile.terrain === 'sand') {
                     ctx.fillStyle = colors.sand;
                     ctx.fillRect(px, py, t, t);
-                    if (Camera.zoom > 0.6) {
-                        ctx.fillStyle = 'rgba(180,160,130,0.15)';
-                        var sx1 = World.hash2d(tx * 3, ty * 5);
-                        ctx.fillRect(px + sx1 * 20, py + sx1 * 12, 3, 1);
-                    }
+                    ctx.fillStyle = 'rgba(180,160,130,0.15)';
+                    var sx1 = World.hash2d(tx * 3, ty * 5);
+                    ctx.fillRect(px + sx1 * 20, py + sx1 * 12, 3, 1);
                 } else if (tile.terrain === 'earth') {
                     ctx.fillStyle = colors.earth[tile.variant];
                     ctx.fillRect(px, py, t, t);
-                    if (Camera.zoom > 0.6) {
-                        ctx.fillStyle = 'rgba(100,80,60,0.2)';
-                        var ex1 = World.hash2d(tx * 5, ty * 7);
-                        ctx.fillRect(px + ex1 * 18, py + 8, 4, 2);
-                    }
+                    ctx.fillStyle = 'rgba(100,80,60,0.2)';
+                    var ex1 = World.hash2d(tx * 5, ty * 7);
+                    ctx.fillRect(px + ex1 * 18, py + 8, 4, 2);
                 } else {
                     ctx.fillStyle = colors.grass[tile.variant];
                     ctx.fillRect(px, py, t, t);
-                    if (Camera.zoom > 0.6) {
-                        var gh = World.hash2d(tx, ty);
-                        var gh2 = World.hash2d(tx + 100, ty + 100);
-                        ctx.fillStyle = 'rgba(80,140,60,0.25)';
-                        ctx.fillRect(px + gh * 20, py + gh2 * 20, 2, 3);
-                        ctx.fillRect(px + gh2 * 24 + 4, py + gh * 18 + 6, 2, 2);
+                    var gh = World.hash2d(tx, ty);
+                    var gh2 = World.hash2d(tx + 100, ty + 100);
+                    ctx.fillStyle = 'rgba(80,140,60,0.25)';
+                    ctx.fillRect(px + gh * 20, py + gh2 * 20, 2, 3);
+                    ctx.fillRect(px + gh2 * 24 + 4, py + gh * 18 + 6, 2, 2);
+                }
+
+                if (tile.resource && tile.resource.amount > 0) {
+                    var rc = CFG.COLORS.resources[tile.resource.type];
+                    if (rc) {
+                        var m = 2;
+                        ctx.fillStyle = rc.bg;
+                        this.roundRect(ctx, px + m, py + m, t - m*2, t - m*2, 4);
+                        ctx.fill();
+
+                        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                        ctx.fillRect(px + m, py + t/2, t - m*2, t/2 - m);
+
+                        // Nivel visual cuantizado (debe coincidir con World.mineResource)
+                        var level = Math.min(4, Math.floor(tile.resource.amount / 50));
+                        var dots = 1 + level;
+                        var ds = 2 + (level / 4) * 2.5;
+                        ctx.fillStyle = rc.fg;
+                        for (var di = 0; di < dots; di++) {
+                            var seed = World.hash2d(tx * 7 + di, ty * 13 + di);
+                            var ox = (seed - 0.5) * (t - 16);
+                            var oy = (World.hash2d(tx * 11 + di, ty * 3 + di) - 0.5) * (t - 16);
+                            ctx.beginPath();
+                            ctx.arc(px + t/2 + ox, py + t/2 + oy, ds, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+
+                        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+                        ctx.fillRect(px + m + 1, py + m + 1, t - m*2 - 2, 2);
                     }
+                }
+            }
+        }
+
+        chunk.waterTiles = waterTiles;
+        chunk.dirty = false;
+    },
+
+    drawTerrain: function() {
+        var ctx = this.ctx;
+        var t = CFG.TILE, c = CFG.CHUNK;
+        var chunkPx = c * t;
+        var vc = Camera.getVisibleChunks();
+
+        // Al reducir (zoom < 1) suavizar el escalado del caché para evitar shimmering
+        var smooth = Camera.zoom < 1;
+        if (smooth) ctx.imageSmoothingEnabled = true;
+
+        for (var cy = vc.minCY; cy <= vc.maxCY; cy++) {
+            for (var cx = vc.minCX; cx <= vc.maxCX; cx++) {
+                var chunk = World.getChunk(cx, cy);
+                if (chunk.dirty || !chunk.canvas) this.renderChunkCanvas(chunk);
+                ctx.drawImage(chunk.canvas, cx * chunkPx, cy * chunkPx, chunkPx, chunkPx);
+                chunk.lastUsed = this.frameCount;
+            }
+        }
+
+        if (smooth) ctx.imageSmoothingEnabled = false;
+
+        if (Camera.zoom > 0.5) this.drawWaterOverlay(vc);
+    },
+
+    drawWaterOverlay: function(vc) {
+        var ctx = this.ctx;
+        var t = CFG.TILE;
+        var time = this.time;
+
+        for (var cy = vc.minCY; cy <= vc.maxCY; cy++) {
+            for (var cx = vc.minCX; cx <= vc.maxCX; cx++) {
+                var chunk = World.chunks[cx + ',' + cy];
+                if (!chunk || !chunk.waterTiles || chunk.waterTiles.length === 0) continue;
+
+                for (var i = 0; i < chunk.waterTiles.length; i++) {
+                    var wt = chunk.waterTiles[i];
+                    var px = wt.tx * t, py = wt.ty * t;
+                    var wave1 = Math.sin(wt.tx * 0.4 + time * 1.2) * 0.08;
+                    var wave2 = Math.sin(wt.ty * 0.3 + time * 0.8) * 0.05;
+
+                    ctx.fillStyle = 'rgba(120,180,255,' + Math.max(0, 0.08 + (wave1 + wave2) * 0.5).toFixed(3) + ')';
+                    ctx.fillRect(px, py, t, t);
+
+                    ctx.fillStyle = 'rgba(100,180,255,' + Math.max(0, 0.06 + wave1 * 0.3).toFixed(3) + ')';
+                    var wlx = px + ((wt.tx * 7 + Math.floor(time * 8)) % t);
+                    ctx.fillRect(wlx, py + t * 0.3, t * 0.4, 1);
+                    ctx.fillRect(wlx - 4, py + t * 0.65, t * 0.3, 1);
                 }
             }
         }
     },
 
-    drawResources: function() {
+    // Labels de recursos fuera del caché (el texto horneado se pixelaría con zoom)
+    drawResourceLabels: function() {
+        if (Camera.zoom <= 0.7) return;
         var ctx = this.ctx;
         var bounds = Camera.getVisibleBounds();
         var t = CFG.TILE;
-        var time = this.time;
+
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
 
         for (var ty = bounds.minY; ty <= bounds.maxY; ty++) {
             for (var tx = bounds.minX; tx <= bounds.maxX; tx++) {
                 var tile = World.getTile(tx, ty);
                 if (!tile.resource || tile.resource.amount <= 0) continue;
-
                 var rc = CFG.COLORS.resources[tile.resource.type];
                 if (!rc) continue;
 
                 var px = tx * t, py = ty * t;
-                var m = 2;
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.fillText(rc.label, px + t/2 + 1, py + t - 1);
+                ctx.fillStyle = '#fff';
+                ctx.fillText(rc.label, px + t/2, py + t - 2);
+            }
+        }
+    },
 
-                ctx.fillStyle = rc.bg;
-                this.roundRect(ctx, px + m, py + m, t - m*2, t - m*2, 4);
-                ctx.fill();
-
-                ctx.fillStyle = 'rgba(0,0,0,0.15)';
-                ctx.fillRect(px + m, py + t/2, t - m*2, t/2 - m);
-
-                var richness = Math.min(1, tile.resource.amount / 200);
-                var dots = 1 + Math.floor(richness * 4);
-                ctx.fillStyle = rc.fg;
-                for (var di = 0; di < dots; di++) {
-                    var seed = World.hash2d(tx * 7 + di, ty * 13 + di);
-                    var ox = (seed - 0.5) * (t - 16);
-                    var oy = (World.hash2d(tx * 11 + di, ty * 3 + di) - 0.5) * (t - 16);
-                    var ds = 2 + richness * 2.5;
-                    ctx.beginPath();
-                    ctx.arc(px + t/2 + ox, py + t/2 + oy, ds, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-
-                ctx.fillStyle = 'rgba(255,255,255,0.12)';
-                ctx.fillRect(px + m + 1, py + m + 1, t - m*2 - 2, 2);
-
-                if (Camera.zoom > 0.7) {
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-                    ctx.font = 'bold 9px monospace';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'bottom';
-                    ctx.fillText(rc.label, px + t/2 + 1, py + t - 1);
-                    ctx.fillStyle = '#fff';
-                    ctx.fillText(rc.label, px + t/2, py + t - 2);
-                }
+    // Libera canvases de chunks no vistos recientemente (memoria)
+    evictChunkCanvases: function() {
+        for (var k in World.chunks) {
+            var chunk = World.chunks[k];
+            if (chunk.canvas && this.frameCount - (chunk.lastUsed || 0) > 600) {
+                chunk.canvas = null;
+                chunk.waterTiles = null;
+                chunk.dirty = true;
             }
         }
     },
@@ -238,11 +310,12 @@ var Renderer = {
         var ctx = this.ctx;
         var bounds = Camera.getVisibleBounds();
         var t = CFG.TILE;
+        var vc = Camera.getVisibleChunks();
+        var list = World.getBuildingsInChunkRange(vc.minCX, vc.minCY, vc.maxCX, vc.maxCY);
 
-        for (var i = 0; i < World.buildings.length; i++) {
-            var b = World.buildings[i];
-            if (!b || b.removed) continue;
-            if (b.type === 'belt') continue;
+        for (var i = 0; i < list.length; i++) {
+            var b = list[i];
+            if (b.type === 'belt' || b.type === 'fast_belt') continue;
 
             var def = CFG.BUILDING_DEFS[b.type];
             var w = def.size[0], h = def.size[1];
@@ -310,11 +383,13 @@ var Renderer = {
             }
 
             if (def.icon && Camera.zoom > 0.4) {
+                var iconChar = def.icon;
+                if (b.type === 'underground_belt' && b.ugMode === 'out') iconChar = '⤴';
                 var iconSize = Math.min(22, t * 0.5 * Math.min(w, h));
                 ctx.font = iconSize + 'px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(def.icon, px + pw/2, py + ph/2);
+                ctx.fillText(iconChar, px + pw/2, py + ph/2);
             } else if (bc.label && Camera.zoom > 0.5) {
                 ctx.fillStyle = 'rgba(0,0,0,0.4)';
                 ctx.font = 'bold ' + Math.min(14, t * 0.4 * Math.min(w, h)) + 'px monospace';
@@ -341,6 +416,24 @@ var Renderer = {
 
             if (b.type === 'inserter') {
                 this.drawInserter(ctx, b, t);
+            }
+
+            if (b.type === 'underground_belt') {
+                this.drawUnderground(ctx, b, t);
+            }
+
+            if (b.depleted) {
+                var dBlink = 0.5 + Math.sin(this.time * 5) * 0.5;
+                ctx.globalAlpha = Math.max(0.25, dBlink);
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('⚠', px + pw/2, py + 9);
+                ctx.globalAlpha = 1;
+            }
+
+            if (b.active && Camera.zoom > 0.6) {
+                this.drawWorkingAnimation(ctx, b, px, py, pw, ph);
             }
 
             if (b.direction !== undefined && b.type !== 'inserter') {
@@ -394,6 +487,144 @@ var Renderer = {
         }
     },
 
+    drawRocketAnim: function(ctx, dt) {
+        var a = Game.rocketAnim;
+        a.t += dt;
+        if (a.t >= a.dur) { Game.rocketAnim = null; return; }
+
+        var rise = 140 * a.t * a.t;
+        var rx = a.x, ry = a.y - rise;
+        var alpha = a.t > 2.2 ? Math.max(0, 1 - (a.t - 2.2) / 0.8) : 1;
+
+        ctx.globalAlpha = alpha;
+
+        // Llama parpadeante
+        var flameLen = 12 + Math.sin(this.time * 40) * 5;
+        ctx.fillStyle = (Math.floor(this.time * 30) % 2) ? '#ffaa33' : '#ff6622';
+        ctx.beginPath();
+        ctx.moveTo(rx - 5, ry + 18);
+        ctx.lineTo(rx + 5, ry + 18);
+        ctx.lineTo(rx, ry + 18 + flameLen);
+        ctx.closePath();
+        ctx.fill();
+
+        // Fuselaje
+        ctx.fillStyle = '#dde2ea';
+        this.roundRect(ctx, rx - 7, ry - 18, 14, 36, 5);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.fillRect(rx + 2, ry - 14, 4, 28);
+
+        // Cono
+        ctx.fillStyle = '#ee7733';
+        ctx.beginPath();
+        ctx.moveTo(rx - 7, ry - 16);
+        ctx.lineTo(rx + 7, ry - 16);
+        ctx.lineTo(rx, ry - 30);
+        ctx.closePath();
+        ctx.fill();
+
+        // Aletas
+        ctx.fillStyle = '#bb5522';
+        ctx.beginPath();
+        ctx.moveTo(rx - 7, ry + 18);
+        ctx.lineTo(rx - 13, ry + 22);
+        ctx.lineTo(rx - 7, ry + 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(rx + 7, ry + 18);
+        ctx.lineTo(rx + 13, ry + 22);
+        ctx.lineTo(rx + 7, ry + 8);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.globalAlpha = 1;
+
+        // Humo y chispas durante el ascenso inicial
+        if (a.t < 2) {
+            if (Math.random() < 0.5) {
+                Particles.spawn(rx + (Math.random() - 0.5) * 20, ry + 24, 'smoke');
+            }
+            if (Math.random() < 0.3) {
+                Particles.spawn(rx, ry + 24, 'spark');
+            }
+        }
+    },
+
+    // Animaciones de edificios trabajando. Sin shadowBlur ni gradientes por frame.
+    // Fase por b.id para desincronizar edificios del mismo tipo.
+    drawWorkingAnimation: function(ctx, b, px, py, pw, ph) {
+        var time = this.time;
+
+        if (b.type === 'miner' || b.type === 'electric_miner') {
+            // Broca giratoria con vibración
+            var mcx = px + pw/2;
+            var mcy = py + ph/2 + 6 + Math.sin(time * 30) * 0.5;
+            ctx.fillStyle = '#333';
+            ctx.beginPath();
+            ctx.arc(mcx, mcy, 6, 0, Math.PI * 2);
+            ctx.fill();
+            var ang = time * 6 + b.id;
+            ctx.strokeStyle = '#ccc';
+            ctx.lineWidth = 2;
+            for (var k = 0; k < 3; k++) {
+                var a = ang + k * 2.094;
+                ctx.beginPath();
+                ctx.moveTo(mcx, mcy);
+                ctx.lineTo(mcx + Math.cos(a) * 6, mcy + Math.sin(a) * 6);
+                ctx.stroke();
+            }
+        } else if (b.type === 'furnace') {
+            // Resplandor pulsante + boca brillante + chispas ocasionales
+            var glow = 0.12 + Math.sin(time * 5 + b.id) * 0.08;
+            ctx.fillStyle = 'rgba(255,110,30,' + glow.toFixed(3) + ')';
+            this.roundRect(ctx, px + 3, py + 3, pw - 6, ph - 6, 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,200,80,' + (glow * 2).toFixed(3) + ')';
+            ctx.fillRect(px + pw * 0.3, py + ph - 8, pw * 0.4, 4);
+            if (Math.random() < 0.025) {
+                Particles.spawn(px + pw/2, py + ph - 6, 'spark');
+            }
+        } else if (b.type === 'assembler') {
+            // Engranaje girando en esquina superior derecha
+            ctx.save();
+            ctx.translate(px + pw - 12, py + 12);
+            ctx.rotate(time * 2 + b.id);
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 5, 0, Math.PI * 2);
+            ctx.stroke();
+            for (var k2 = 0; k2 < 6; k2++) {
+                var a2 = k2 * 1.047;
+                ctx.beginPath();
+                ctx.moveTo(Math.cos(a2) * 5, Math.sin(a2) * 5);
+                ctx.lineTo(Math.cos(a2) * 8, Math.sin(a2) * 8);
+                ctx.stroke();
+            }
+            ctx.restore();
+        } else if (b.type === 'lab') {
+            // Burbujas ascendentes sin estado
+            for (var k3 = 0; k3 < 3; k3++) {
+                var frac = (time * 0.5 + k3 * 0.33 + (b.id % 7) * 0.1) % 1;
+                var bx = px + pw * (0.3 + k3 * 0.2);
+                var by = py + ph - 8 - frac * (ph - 16);
+                ctx.fillStyle = 'rgba(170,120,255,' + ((1 - frac) * 0.6).toFixed(3) + ')';
+                ctx.beginPath();
+                ctx.arc(bx, by, 1.5 + frac * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        } else if (b.type === 'steam_engine') {
+            // Pistón oscilante
+            var stroke2 = Math.sin(time * 8 + b.id) * 4;
+            ctx.fillStyle = '#99aabb';
+            ctx.fillRect(px + pw/2 - 4, py + ph * 0.55 + stroke2, 8, 12);
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.fillRect(px + pw/2 - 6, py + ph * 0.55 - 6, 12, 3);
+        }
+    },
+
     drawInserter: function(ctx, b, t) {
         var d = CFG.DIRECTIONS[b.direction];
         var cx = b.x * t + t/2;
@@ -431,6 +662,46 @@ var Renderer = {
         ctx.fill();
 
         ctx.lineCap = 'butt';
+
+        // Punto de color si tiene filtro configurado
+        if (b.filterItem) {
+            var fc = Items.color(b.filterItem);
+            ctx.fillStyle = '#222';
+            ctx.beginPath();
+            ctx.arc(cx, cy + t * 0.3, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = fc;
+            ctx.beginPath();
+            ctx.arc(cx, cy + t * 0.3, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    },
+
+    drawUnderground: function(ctx, b, t) {
+        var d = CFG.DIRECTIONS[b.direction];
+        var px = b.x * t, py = b.y * t;
+        var cx = px + t/2, cy = py + t/2;
+
+        // Boca del túnel: lado frontal para entrada, trasero para salida
+        var sign = b.ugMode === 'in' ? 1 : -1;
+        var mx = cx + d.dx * sign * t * 0.28;
+        var my = cy + d.dy * sign * t * 0.28;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.beginPath();
+        ctx.arc(mx, my, t * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Aviso si no está emparejado
+        if (b.pairId === null || b.pairId === undefined) {
+            var blink = 0.5 + Math.sin(this.time * 5) * 0.4;
+            ctx.globalAlpha = Math.max(0.2, blink);
+            ctx.fillStyle = '#ff5050';
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('!', px + t - 6, py + 7);
+            ctx.globalAlpha = 1;
+        }
     },
 
     drawBelts: function() {
@@ -439,10 +710,12 @@ var Renderer = {
         var t = CFG.TILE;
         var off = this.animOffset;
         var PI = Math.PI;
+        var vc = Camera.getVisibleChunks();
+        var list = World.getBuildingsInChunkRange(vc.minCX, vc.minCY, vc.maxCX, vc.maxCY);
 
-        for (var i = 0; i < World.buildings.length; i++) {
-            var b = World.buildings[i];
-            if (!b || b.removed || (b.type !== 'belt' && b.type !== 'fast_belt')) continue;
+        for (var i = 0; i < list.length; i++) {
+            var b = list[i];
+            if (b.type !== 'belt' && b.type !== 'fast_belt') continue;
             if (b.x < bounds.minX - 1 || b.x > bounds.maxX + 1) continue;
             if (b.y < bounds.minY - 1 || b.y > bounds.maxY + 1) continue;
 
@@ -556,6 +829,21 @@ var Renderer = {
                     ctx.fillRect(px, py + margin + 1, t, 1);
                     ctx.fillStyle = 'rgba(0,0,0,0.1)';
                     ctx.fillRect(px, py + t - margin - 1, t, 1);
+
+                    var topN = World.getBuildingAt(b.x, b.y - 1);
+                    if (topN && (topN.type === 'belt' || topN.type === 'fast_belt') && topN.direction === 2) {
+                        ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
+                        ctx.fillRect(px + margin, py, t - margin * 2, margin + 1);
+                        ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
+                        ctx.fillRect(px + margin + 1, py, t - margin * 2 - 2, margin + 2);
+                    }
+                    var botN = World.getBuildingAt(b.x, b.y + 1);
+                    if (botN && (botN.type === 'belt' || botN.type === 'fast_belt') && botN.direction === 0) {
+                        ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
+                        ctx.fillRect(px + margin, py + t - margin - 1, t - margin * 2, margin + 1);
+                        ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
+                        ctx.fillRect(px + margin + 1, py + t - margin - 2, t - margin * 2 - 2, margin + 2);
+                    }
                 } else {
                     ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
                     ctx.fillRect(px + margin, py, t - margin * 2, t);
@@ -566,6 +854,21 @@ var Renderer = {
                     ctx.fillRect(px + margin + 1, py, 1, t);
                     ctx.fillStyle = 'rgba(0,0,0,0.1)';
                     ctx.fillRect(px + t - margin - 1, py, 1, t);
+
+                    var leftN = World.getBuildingAt(b.x - 1, b.y);
+                    if (leftN && (leftN.type === 'belt' || leftN.type === 'fast_belt') && leftN.direction === 1) {
+                        ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
+                        ctx.fillRect(px, py + margin, margin + 1, t - margin * 2);
+                        ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
+                        ctx.fillRect(px, py + margin + 1, margin + 2, t - margin * 2 - 2);
+                    }
+                    var rightN = World.getBuildingAt(b.x + 1, b.y);
+                    if (rightN && (rightN.type === 'belt' || rightN.type === 'fast_belt') && rightN.direction === 3) {
+                        ctx.fillStyle = isFast ? '#bb9933' : '#99882e';
+                        ctx.fillRect(px + t - margin - 1, py + margin, margin + 1, t - margin * 2);
+                        ctx.fillStyle = isFast ? '#ddcc55' : '#bbaa44';
+                        ctx.fillRect(px + t - margin - 2, py + margin + 1, margin + 2, t - margin * 2 - 2);
+                    }
                 }
 
                 var arrowCount2 = isFast ? 5 : 3;
@@ -781,6 +1084,7 @@ var Renderer = {
         var mmX = 8, mmY = h - mmSize - 70;
         var mmScale = 0.5;
         var t = CFG.TILE;
+        this.minimapRect = {x: mmX, y: mmY, size: mmSize, scale: mmScale};
 
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.fillRect(mmX, mmY, mmSize, mmSize);
@@ -791,9 +1095,13 @@ var Renderer = {
         var centerTX = Math.floor((Camera.x + Camera.vw / Camera.zoom / 2) / t);
         var centerTY = Math.floor((Camera.y + Camera.vh / Camera.zoom / 2) / t);
 
-        for (var i = 0; i < World.buildings.length; i++) {
-            var b = World.buildings[i];
-            if (!b || b.removed) continue;
+        var cc = CFG.CHUNK;
+        var centerCX = Math.floor(centerTX / cc), centerCY = Math.floor(centerTY / cc);
+        var cr = Math.ceil((mmSize / 2) / mmScale / cc) + 1;
+        var list = World.getBuildingsInChunkRange(centerCX - cr, centerCY - cr, centerCX + cr, centerCY + cr);
+
+        for (var i = 0; i < list.length; i++) {
+            var b = list[i];
             var rx = (b.x - centerTX) * mmScale + mmSize / 2;
             var ry = (b.y - centerTY) * mmScale + mmSize / 2;
             if (rx < 0 || rx > mmSize || ry < 0 || ry > mmSize) continue;

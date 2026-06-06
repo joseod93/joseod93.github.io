@@ -31,35 +31,47 @@ var Tutorial = {
             highlight: 'toolbar-belt'
         },
         {
-            text: '🔥 La fundidora necesita CARBÓN como combustible. Usa un insertador o aliméntala a mano (toca la fundidora).',
+            text: '🔥 La fundidora necesita CARBÓN como combustible. Aliméntala a mano (tócala) o con un insertador.',
             action: 'next'
         },
         {
-            text: '🤏 El INSERTADOR mueve items entre edificios y cintas. Colócalo mirando hacia donde quieras que lleve items.',
+            text: '🤏 Coloca un INSERTADOR: mueve items entre edificios y cintas. La flecha indica hacia dónde lleva los items.',
+            action: 'place_inserter',
+            highlight: 'toolbar-inserter'
+        },
+        {
+            text: '📦 El ALMACÉN guarda items. Útil como buffer entre máquinas para evitar atascos.',
             action: 'next'
         },
         {
-            text: '📦 El ALMACÉN guarda items. Útil como buffer entre máquinas.',
+            text: '⚡ Los ensambladores y laboratorios necesitan ELECTRICIDAD. Construye un MOTOR DE VAPOR (necesita ladrillos: funde piedra en la fundidora).',
+            action: 'place_steam', soft: true,
+            highlight: 'toolbar-steam_engine'
+        },
+        {
+            text: '🔥 Alimenta el motor con carbón (tócalo y añádelo) hasta que la barra de energía de arriba marque producción.',
+            action: 'power_on', soft: true
+        },
+        {
+            text: '⚡ Si la producción baja del consumo, los edificios eléctricos se ralentizan. El ACUMULADOR (se desbloquea con Energía Solar) almacena el excedente para los picos.',
             action: 'next'
         },
         {
-            text: '⚡ Los ensambladores y laboratorios necesitan ELECTRICIDAD. Construye un Motor de Vapor y aliméntalo con carbón.',
-            action: 'next'
+            text: '🔬 Construye un LABORATORIO: investiga tecnologías consumiendo packs de ciencia (se fabrican en ensambladores).',
+            action: 'place_lab', soft: true,
+            highlight: 'toolbar-lab'
         },
         {
-            text: '⚡ Fíjate en la barra de energía arriba. Si la producción baja del consumo, los edificios eléctricos irán más lentos o se detendrán.',
-            action: 'next'
+            text: '🔬 Abre el ÁRBOL TECNOLÓGICO con el botón de arriba.',
+            action: 'open_tech', soft: true,
+            highlight: 'btn-tech'
         },
         {
-            text: '📦 El ALMACÉN sirve como buffer. Colócalo entre máquinas para evitar atascos cuando las cintas están llenas.',
-            action: 'next'
+            text: '🧪 Elige AUTOMATIZACIÓN y pulsa Investigar. Tus laboratorios trabajarán cuando tengan ciencia roja.',
+            action: 'research_started', soft: true
         },
         {
-            text: '🔬 Construye un LABORATORIO y dale packs de ciencia para investigar tecnologías nuevas. Abre el Árbol Tecnológico (🔬).',
-            action: 'next'
-        },
-        {
-            text: '🔀 Investiga Logística para desbloquear el DIVISOR (reparte items entre cintas) y la CINTA RÁPIDA.',
+            text: '🔀 Investiga Logística para desbloquear el DIVISOR (con prioridad de salida configurable), la CINTA RÁPIDA y la CINTA SUBTERRÁNEA (coloca entrada y salida en la misma dirección).',
             action: 'next'
         },
         {
@@ -67,7 +79,7 @@ var Tutorial = {
             action: 'next'
         },
         {
-            text: '📖 Consulta el GLOSARIO (📖) para ver todas las recetas y cómo obtener cada material. ¡Buena suerte!',
+            text: '📖 Consulta el GLOSARIO (📖) para ver todas las recetas. Tecla Q copia el edificio bajo el cursor. ¡Buena suerte!',
             action: 'complete'
         }
     ],
@@ -92,13 +104,14 @@ var Tutorial = {
         }
         var s = this.steps[this.step];
         this.waitingAction = (s.action !== 'next' && s.action !== 'complete');
-        UI.showTutorial(s.text, s.highlight, s.action === 'next' || s.action === 'complete');
+        // Pasos 'soft': escuchan el evento PERO también muestran el botón Siguiente
+        UI.showTutorial(s.text, s.highlight, s.action === 'next' || s.action === 'complete' || !!s.soft);
     },
 
     nextStep: function() {
         if (!this.active) return;
         var s = this.steps[this.step];
-        if (s && (s.action === 'next' || s.action === 'complete')) {
+        if (s && (s.action === 'next' || s.action === 'complete' || s.soft)) {
             if (s.action === 'complete') {
                 this.complete();
                 return;
@@ -108,6 +121,15 @@ var Tutorial = {
         }
     },
 
+    // Acciones que avanzan al recibir un evento 'place' del tipo indicado
+    PLACE_ACTIONS: {
+        place_miner: 'miner',
+        place_furnace: 'furnace',
+        place_inserter: 'inserter',
+        place_steam: 'steam_engine',
+        place_lab: 'lab'
+    },
+
     onEvent: function(event, data) {
         if (!this.active) return;
         var s = this.steps[this.step];
@@ -115,18 +137,21 @@ var Tutorial = {
 
         var advance = false;
 
-        if (s.action === 'mine' && event === 'mine') {
+        if (event === 'place' && this.PLACE_ACTIONS[s.action] === data) {
             advance = true;
-        }
-        if (s.action === 'place_miner' && event === 'place' && data === 'miner') {
+        } else if (s.action === 'mine' && event === 'mine') {
             advance = true;
-        }
-        if (s.action === 'place_furnace' && event === 'place' && data === 'furnace') {
-            advance = true;
-        }
-        if (s.action === 'place_belt_3' && event === 'place' && data === 'belt') {
+        } else if (s.action === 'place_belt_3' && event === 'place' && data === 'belt') {
             this.beltCount++;
             if (this.beltCount >= 3) advance = true;
+        } else if (s.action === 'power_on' && event === 'power') {
+            advance = true;
+        } else if (s.action === 'open_tech' && event === 'open_tech') {
+            advance = true;
+        } else if (s.action === 'research_started' && event === 'research_started') {
+            advance = true;
+        } else if (s.action === 'research_done' && event === 'research') {
+            advance = true;
         }
 
         if (advance) {
