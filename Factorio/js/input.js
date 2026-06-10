@@ -16,6 +16,9 @@ var Input = {
     beltPath: [],
     ghostTiles: [],
     isTouchDevice: false,
+    configClipboard: null,
+    demolishMode: false,
+    demolishEnd: null,
 
     isBeltMode: function() {
         return this.buildMode === 'belt' || this.buildMode === 'fast_belt';
@@ -91,6 +94,10 @@ var Input = {
         if (this.isDragging && this.isBeltMode() && this.dragStart) {
             this.updateBeltPath(Camera.screenToTile(sx, sy));
         }
+
+        if (this.isDragging && this.demolishMode && this.dragStart) {
+            this.demolishEnd = Camera.screenToTile(sx, sy);
+        }
     },
 
     onMouseUp: function(e) {
@@ -110,7 +117,9 @@ var Input = {
             return;
         }
 
-        if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
+        if (this.demolishMode && this.isDragging && this.dragStart && this.demolishEnd) {
+            Buildings.removeArea(this.dragStart.x, this.dragStart.y, this.demolishEnd.x, this.demolishEnd.y);
+        } else if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
             this.placeBeltPath();
         } else if (!this.isDragging) {
             this.handleTap(tile);
@@ -119,6 +128,7 @@ var Input = {
         this.isDragging = false;
         this.dragStart = null;
         this.tapStartPos = null;
+        this.demolishEnd = null;
         this.beltPath = [];
         this.ghostTiles = [];
     },
@@ -240,6 +250,9 @@ var Input = {
             if (this.isDragging) {
                 if (this.isBeltMode()) {
                     this.updateBeltPath(Camera.screenToTile(p2.x, p2.y));
+                } else if (this.demolishMode) {
+                    // 1 dedo dibuja el rectángulo; 2 dedos siguen paneando
+                    this.demolishEnd = Camera.screenToTile(p2.x, p2.y);
                 } else {
                     var firstId = Object.keys(this.pointers)[0];
                     var oldP = oldPositions[firstId];
@@ -266,7 +279,9 @@ var Input = {
                 this.tapStartPos = null;
                 return;
             }
-            if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
+            if (this.demolishMode && this.isDragging && this.dragStart && this.demolishEnd) {
+                Buildings.removeArea(this.dragStart.x, this.dragStart.y, this.demolishEnd.x, this.demolishEnd.y);
+            } else if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
                 this.placeBeltPath();
             } else if (!this.isDragging && Date.now() - this.tapStartTime < 300) {
                 if (this.tapStartPos) {
@@ -278,6 +293,7 @@ var Input = {
             this.isPanning = false;
             this.dragStart = null;
             this.tapStartPos = null;
+            this.demolishEnd = null;
             this.beltPath = [];
             this.ghostTiles = [];
         }
@@ -285,19 +301,40 @@ var Input = {
 
     onKeyDown: function(e) {
         this.keys[e.key.toLowerCase()] = true;
+
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+            e.preventDefault();
+            Buildings.undo();
+            return;
+        }
+        // No secuestrar atajos del navegador (Ctrl+C, Ctrl+R...)
+        if (e.ctrlKey || e.metaKey) return;
+
         if (e.key === 'r' || e.key === 'R') {
             this.buildDirection = (this.buildDirection + 1) % 4;
         }
         if (e.key === 'Escape') {
             this.buildMode = null;
             this.selectedBuilding = null;
+            this.demolishMode = false;
+            this.demolishEnd = null;
             UI.closePanels();
+            UI.updateToolbarSelection();
         }
         if (e.key === '?') {
             UI.toggleSettings();
         }
         if (e.key === 'q' || e.key === 'Q') {
             this.pipette();
+        }
+        if (e.key === 'x' || e.key === 'X') {
+            this.toggleDemolishMode();
+        }
+        if (e.key === 'c' || e.key === 'C') {
+            this.copyConfig();
+        }
+        if (e.key === 'v' || e.key === 'V') {
+            this.pasteConfig();
         }
         if (e.key === ' ') {
             e.preventDefault();
@@ -308,6 +345,80 @@ var Input = {
         if (num >= 1 && num <= 9) {
             UI.selectBuildingByIndex(num - 1);
         }
+    },
+
+    toggleDemolishMode: function() {
+        this.demolishMode = !this.demolishMode;
+        this.demolishEnd = null;
+        if (this.demolishMode) {
+            this.buildMode = null;
+            this.selectedBuilding = null;
+            UI.closePanels();
+        }
+        UI.updateToolbarSelection();
+    },
+
+    // ===== Copy/paste de configuración =====
+
+    copyConfigFrom: function(b) {
+        if (!b || b.removed) {
+            UI.showToast('Nada que copiar: apunta a un edificio');
+            return;
+        }
+        var snap = Buildings.getConfigSnapshot(b);
+        if (!snap) {
+            UI.showToast('Este edificio no tiene ajustes copiables');
+            return;
+        }
+        this.configClipboard = {type: b.type, props: snap};
+        var def = CFG.BUILDING_DEFS[b.type];
+        var detail = '';
+        if (b.type === 'inserter') {
+            detail = snap.filterItem ? (ITEM_NAMES[snap.filterItem] || snap.filterItem) : 'sin filtro';
+        } else if (b.type === 'assembler') {
+            var rec = Buildings.getAssemblyRecipe(snap.recipeId);
+            detail = rec ? (ITEM_NAMES[rec.output] || rec.output) : snap.recipeId;
+        } else if (b.type === 'splitter') {
+            detail = snap.outputPriority === 'left' ? 'izquierda' :
+                snap.outputPriority === 'right' ? 'derecha' : 'equilibrado';
+        }
+        UI.showToast('Ajustes copiados: ' + def.name + ' (' + detail + ')');
+    },
+
+    pasteConfigTo: function(b) {
+        if (!this.configClipboard) {
+            UI.showToast('Nada copiado: pulsa C sobre un edificio configurado');
+            return;
+        }
+        if (!b || b.removed) return;
+        if (b.type !== this.configClipboard.type) {
+            var srcDef = CFG.BUILDING_DEFS[this.configClipboard.type];
+            UI.showToast('Tipos distintos: copiado de ' + (srcDef ? srcDef.name : this.configClipboard.type), 'warning');
+            return;
+        }
+        Buildings.applyConfigSnapshot(b, this.configClipboard.props);
+        var def = CFG.BUILDING_DEFS[b.type];
+        Particles.spawn(b.x * CFG.TILE + (def.size[0] * CFG.TILE) / 2,
+            b.y * CFG.TILE + (def.size[1] * CFG.TILE) / 2, 'place');
+        Audio.play('place');
+        if (this.selectedBuilding && this.selectedBuilding.id === b.id &&
+            document.getElementById('info-panel').style.display === 'block') {
+            UI.showBuildingInfo(b);
+        }
+    },
+
+    copyConfig: function() {
+        this.copyConfigFrom(World.getBuildingAt(this.mouse.tile.x, this.mouse.tile.y));
+    },
+
+    pasteConfig: function() {
+        var b = World.getBuildingAt(this.mouse.tile.x, this.mouse.tile.y);
+        if (!b) {
+            if (this.configClipboard) UI.showToast('Apunta a un edificio para pegar');
+            else UI.showToast('Nada copiado: pulsa C sobre un edificio configurado');
+            return;
+        }
+        this.pasteConfigTo(b);
     },
 
     onKeyUp: function(e) {
@@ -339,6 +450,7 @@ var Input = {
             this.buildMode = b.type;
             this.buildDirection = b.direction || 0;
             this.selectedBuilding = null;
+            this.demolishMode = false;
             UI.closePanels();
             UI.updateToolbarSelection();
             UI.showToast('Seleccionado: ' + def.name);
@@ -367,6 +479,16 @@ var Input = {
 
     handleTap: function(tile) {
         document.getElementById('context-menu').style.display = 'none';
+
+        if (this.demolishMode) {
+            var db = World.getBuildingAt(tile.x, tile.y);
+            if (db) {
+                Buildings.remove(db.id);
+                Audio.play('remove');
+                this.vibrate(20);
+            }
+            return;
+        }
 
         if (this.buildMode && !this.isBeltMode()) {
             Buildings.tryPlace(tile.x, tile.y, this.buildMode, this.buildDirection);
@@ -411,6 +533,7 @@ var Input = {
     },
 
     handleLongPress: function(tile) {
+        if (this.demolishMode) return;
         this.vibrate(30);
         var b = World.getBuildingAt(tile.x, tile.y);
         if (b) {

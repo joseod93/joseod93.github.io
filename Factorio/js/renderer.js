@@ -3,6 +3,7 @@ var Renderer = {
     ctx: null,
     animOffset: 0,
     time: 0,
+    frameNow: 0,
     frameCount: 0,
     CHUNK_SCALE: 2,
 
@@ -30,6 +31,7 @@ var Renderer = {
         var w = window.innerWidth, h = window.innerHeight;
         this.animOffset = (this.animOffset + dt * 2) % 1;
         this.time += dt;
+        this.frameNow = performance.now();
         this.frameCount++;
         if (this.frameCount % 300 === 0) this.evictChunkCanvases();
 
@@ -50,7 +52,9 @@ var Renderer = {
         this.drawBuildings();
         this.drawBeltItems();
         if (Game.rocketAnim) this.drawRocketAnim(ctx, dt);
+        this.drawRangeOverlay();
         this.drawGhosts();
+        this.drawDemolitionPreview();
         this.drawSelection();
 
         ctx.restore();
@@ -329,7 +333,7 @@ var Renderer = {
             var px = b.x * t, py = b.y * t;
             var pw = w * t, ph = h * t;
 
-            var placeAge = performance.now() - (b.placedAt || 0);
+            var placeAge = this.frameNow - (b.placedAt || 0);
             var hasPlaceAnim = placeAge < 200;
             if (hasPlaceAnim) {
                 var sc = 0.8 + 0.2 * (placeAge / 200);
@@ -420,6 +424,18 @@ var Renderer = {
 
             if (b.type === 'underground_belt') {
                 this.drawUnderground(ctx, b, t);
+            }
+
+            if (b.modules && b.modules.length > 0 && Camera.zoom > 0.5) {
+                for (var mdi = 0; mdi < b.modules.length; mdi++) {
+                    ctx.fillStyle = Items.color(b.modules[mdi]);
+                    ctx.beginPath();
+                    ctx.arc(px + pw - 7 - mdi * 8, py + 7, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
             }
 
             if (b.depleted) {
@@ -891,19 +907,30 @@ var Renderer = {
 
     drawBeltItems: function() {
         var ctx = this.ctx;
+        var bounds = Camera.getVisibleBounds();
+        var t = CFG.TILE;
+        var minPX = bounds.minX * t - t, maxPX = (bounds.maxX + 1) * t + t;
+        var minPY = bounds.minY * t - t, maxPY = (bounds.maxY + 1) * t + t;
 
         for (var i = 0; i < Belts.lines.length; i++) {
             var line = Belts.lines[i];
             if (line.removed || line.items.length === 0) continue;
+            if (line.tiles.length === 0) continue;
+
+            // Cull por línea antes de calcular posiciones. Las líneas son siempre
+            // colineales por construcción (addToLine/mergeLines solo unen misma dir),
+            // así que el bbox exacto son sus dos endpoints. Si algún día hubiera
+            // líneas con giros, calcular min/max sobre todos los tiles.
+            var t0 = line.tiles[0], t1 = line.tiles[line.tiles.length - 1];
+            var lminX = Math.min(t0.x, t1.x) * t - t, lmaxX = (Math.max(t0.x, t1.x) + 1) * t + t;
+            var lminY = Math.min(t0.y, t1.y) * t - t, lmaxY = (Math.max(t0.y, t1.y) + 1) * t + t;
+            if (lmaxX < minPX || lminX > maxPX || lmaxY < minPY || lminY > maxPY) continue;
 
             var positions = Belts.getItemPositions(line);
             for (var j = 0; j < positions.length; j++) {
                 var p = positions[j];
-
-                var bounds = Camera.getVisibleBounds();
-                var t = CFG.TILE;
-                if (p.x < bounds.minX * t - t || p.x > (bounds.maxX + 1) * t + t) continue;
-                if (p.y < bounds.minY * t - t || p.y > (bounds.maxY + 1) * t + t) continue;
+                if (p.x < minPX || p.x > maxPX) continue;
+                if (p.y < minPY || p.y > maxPY) continue;
 
                 var ic = Items.color(p.type);
 
@@ -990,6 +1017,10 @@ var Renderer = {
             ctx.fill();
 
             ctx.globalAlpha = 1;
+
+            if (Input.buildMode === 'underground_belt') {
+                this.drawUndergroundPreview(tile);
+            }
         }
 
         if (Input.isBeltMode()) {
@@ -1036,6 +1067,212 @@ var Renderer = {
                 ctx.closePath();
                 ctx.fill();
                 ctx.globalAlpha = 1;
+            }
+        }
+    },
+
+    // Preview de túnel: conexión con la entrada candidata, o franja de alcance
+    drawUndergroundPreview: function(tile) {
+        var ctx = this.ctx;
+        var t = CFG.TILE;
+        var dir = Input.buildDirection;
+        var d = CFG.DIRECTIONS[dir];
+        var found = Buildings.findUndergroundPair(tile.x, tile.y, dir);
+
+        if (found) {
+            var pulse = 0.5 + Math.sin(this.time * 4) * 0.3;
+            var fx = (found.b.x + 0.5) * t, fy = (found.b.y + 0.5) * t;
+            var gx = (tile.x + 0.5) * t, gy = (tile.y + 0.5) * t;
+
+            ctx.strokeStyle = 'rgba(230,200,60,0.8)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(fx, fy);
+            ctx.lineTo(gx, gy);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.globalAlpha = pulse;
+            ctx.strokeStyle = '#00dc50';
+            ctx.lineWidth = 2;
+            this.roundRect(ctx, found.b.x * t + 1, found.b.y * t + 1, t - 2, t - 2, 3);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+
+            ctx.font = 'bold 10px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillText('Conecta (' + found.dist + ')', gx + 1, tile.y * t - 3);
+            ctx.fillStyle = '#fff';
+            ctx.fillText('Conecta (' + found.dist + ')', gx, tile.y * t - 4);
+        } else {
+            // Franja de alcance hacia delante: donde podrá ir la futura salida
+            for (var i = 1; i <= CFG.UNDERGROUND_MAX_DIST + 1; i++) {
+                var nx = tile.x + d.dx * i, ny = tile.y + d.dy * i;
+                var nTile = World.getTile(nx, ny);
+                var free = nTile.terrain !== 'water' && nTile.buildingId === null;
+                ctx.strokeStyle = free ? 'rgba(230,200,60,0.35)' : 'rgba(150,150,150,0.25)';
+                ctx.lineWidth = (i === CFG.UNDERGROUND_MAX_DIST + 1) ? 2.5 : 1;
+                this.roundRect(ctx, nx * t + 2, ny * t + 2, t - 4, t - 4, 3);
+                ctx.stroke();
+            }
+        }
+    },
+
+    // Overlay de alcance: inserter (origen/destino) y minero (footprint sobre veta)
+    drawRangeOverlay: function() {
+        var b = null;
+        if (Input.selectedBuilding && !Input.selectedBuilding.removed) {
+            b = Input.selectedBuilding;
+        } else if (Input.buildMode === 'inserter' || Input.buildMode === 'miner' || Input.buildMode === 'electric_miner') {
+            b = {type: Input.buildMode, x: Input.mouse.tile.x, y: Input.mouse.tile.y, direction: Input.buildDirection};
+        }
+        if (!b) return;
+        if (b.type === 'inserter') this.drawInserterRange(b);
+        else if (b.type === 'miner' || b.type === 'electric_miner') this.drawMinerRange(b);
+    },
+
+    drawInserterRange: function(b) {
+        var ctx = this.ctx;
+        var t = CFG.TILE;
+        var d = CFG.DIRECTIONS[b.direction || 0];
+        var pulse = 0.5 + Math.sin(this.time * 4) * 0.25;
+
+        var fromX = b.x - d.dx, fromY = b.y - d.dy;
+        var toX = b.x + d.dx, toY = b.y + d.dy;
+
+        ctx.globalAlpha = 0.22 + pulse * 0.1;
+        ctx.fillStyle = '#e6a832';
+        ctx.fillRect(fromX * t, fromY * t, t, t);
+        ctx.fillStyle = '#44cc66';
+        ctx.fillRect(toX * t, toY * t, t, t);
+
+        ctx.globalAlpha = pulse;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#e6a832';
+        this.roundRect(ctx, fromX * t + 1, fromY * t + 1, t - 2, t - 2, 3);
+        ctx.stroke();
+        ctx.strokeStyle = '#44cc66';
+        this.roundRect(ctx, toX * t + 1, toY * t + 1, t - 2, t - 2, 3);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        if (Camera.zoom >= 0.8) {
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillText('TOMA', fromX * t + t/2 + 1, fromY * t + t/2 + 1);
+            ctx.fillText('DEJA', toX * t + t/2 + 1, toY * t + t/2 + 1);
+            ctx.fillStyle = '#fff';
+            ctx.fillText('TOMA', fromX * t + t/2, fromY * t + t/2);
+            ctx.fillText('DEJA', toX * t + t/2, toY * t + t/2);
+        }
+    },
+
+    drawMinerRange: function(b) {
+        var ctx = this.ctx;
+        var t = CFG.TILE;
+        var def = CFG.BUILDING_DEFS[b.type];
+        var w = def.size[0], h = def.size[1];
+        var pulse = 0.4 + Math.sin(this.time * 4) * 0.2;
+        var total = 0;
+
+        for (var dy = 0; dy < h; dy++) {
+            for (var dx = 0; dx < w; dx++) {
+                var tx = b.x + dx, ty = b.y + dy;
+                var tl = World.getTile(tx, ty);
+                var has = tl.resource && tl.resource.amount > 0;
+                if (has) total += tl.resource.amount;
+                ctx.globalAlpha = has ? pulse * 0.5 : 0.15;
+                ctx.fillStyle = has ? '#00dc50' : '#dc0028';
+                ctx.fillRect(tx * t, ty * t, t, t);
+                if (!has) {
+                    ctx.globalAlpha = 0.4;
+                    ctx.strokeStyle = '#dc0028';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(tx * t + 6, ty * t + 6);
+                    ctx.lineTo(tx * t + t - 6, ty * t + t - 6);
+                    ctx.moveTo(tx * t + t - 6, ty * t + 6);
+                    ctx.lineTo(tx * t + 6, ty * t + t - 6);
+                    ctx.stroke();
+                }
+            }
+        }
+        ctx.globalAlpha = 1;
+
+        // Label DEBAJO del footprint (el nombre del recurso de drawGhosts va dentro)
+        var label = total > 0 ? 'Veta: ' + UI.formatNumber(total) : 'Sin veta';
+        var lx = b.x * t + (w * t) / 2, ly = (b.y + h) * t + 12;
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillText(label, lx + 1, ly + 1);
+        ctx.fillStyle = total > 0 ? '#aaffaa' : '#ff7070';
+        ctx.fillText(label, lx, ly);
+    },
+
+    _demoKey: '',
+    _demoIds: null,
+
+    drawDemolitionPreview: function() {
+        if (!Input.demolishMode) return;
+        var ctx = this.ctx;
+        var t = CFG.TILE;
+
+        if (Input.isDragging && Input.dragStart && Input.demolishEnd) {
+            var minX = Math.min(Input.dragStart.x, Input.demolishEnd.x);
+            var maxX = Math.max(Input.dragStart.x, Input.demolishEnd.x);
+            var minY = Math.min(Input.dragStart.y, Input.demolishEnd.y);
+            var maxY = Math.max(Input.dragStart.y, Input.demolishEnd.y);
+
+            // Memoización: solo re-escanear el rect cuando cambia
+            var key = minX + ',' + minY + ',' + maxX + ',' + maxY;
+            if (key !== this._demoKey) {
+                this._demoKey = key;
+                this._demoIds = Buildings.getIdsInRect(minX, minY, maxX, maxY);
+            }
+            var ids = this._demoIds || [];
+
+            ctx.fillStyle = 'rgba(220,0,40,0.10)';
+            ctx.fillRect(minX * t, minY * t, (maxX - minX + 1) * t, (maxY - minY + 1) * t);
+            ctx.strokeStyle = 'rgba(220,0,40,0.8)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 4]);
+            ctx.strokeRect(minX * t, minY * t, (maxX - minX + 1) * t, (maxY - minY + 1) * t);
+            ctx.setLineDash([]);
+
+            for (var i = 0; i < ids.length; i++) {
+                var b = World.buildings[ids[i]];
+                if (!b || b.removed) continue;
+                var def = CFG.BUILDING_DEFS[b.type];
+                ctx.fillStyle = 'rgba(220,0,40,0.35)';
+                ctx.fillRect(b.x * t, b.y * t, def.size[0] * t, def.size[1] * t);
+            }
+
+            var label = ids.length + ' edificio' + (ids.length === 1 ? '' : 's');
+            ctx.font = 'bold 11px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = 'rgba(0,0,0,0.6)';
+            ctx.fillText(label, minX * t + 3, minY * t - 3);
+            ctx.fillStyle = '#ff9090';
+            ctx.fillText(label, minX * t + 2, minY * t - 4);
+        } else {
+            this._demoKey = '';
+            var hb = World.getBuildingAt(Input.mouse.tile.x, Input.mouse.tile.y);
+            if (hb) {
+                var hdef = CFG.BUILDING_DEFS[hb.type];
+                ctx.fillStyle = 'rgba(220,0,40,0.35)';
+                ctx.fillRect(hb.x * t, hb.y * t, hdef.size[0] * t, hdef.size[1] * t);
+                ctx.strokeStyle = 'rgba(220,0,40,0.8)';
+                ctx.lineWidth = 2;
+                this.roundRect(ctx, hb.x * t + 1, hb.y * t + 1, hdef.size[0] * t - 2, hdef.size[1] * t - 2, 3);
+                ctx.stroke();
             }
         }
     },

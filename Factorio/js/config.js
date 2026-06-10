@@ -44,7 +44,8 @@ var CFG = {
             iron_plate:'#99aabb', copper_plate:'#ddaa55', steel:'#ccccdd', stone_brick:'#aa9988',
             iron_gear:'#8899aa', copper_wire:'#ee8844', green_circuit:'#44aa66',
             advanced_circuit:'#cc4444', red_science:'#dd3333', green_science:'#33bb33',
-            blue_science:'#3366dd', rocket_part:'#ddddff'
+            blue_science:'#3366dd', rocket_part:'#ddddff',
+            speed_module:'#4488ee', efficiency_module:'#55cc44'
         },
         buildings: {
             miner:      {bg:'#336699', fg:'#4488cc', label:'MI'},
@@ -82,7 +83,7 @@ var CFG = {
         electric_miner: {
             name:'Minero Eléctrico', icon:'⚡', size:[2,2], category:'production',
             cost:[{item:'iron_plate',qty:5},{item:'iron_gear',qty:3},{item:'green_circuit',qty:2}],
-            miningSpeed:0.03, powerDraw:60, fuelBurner:false,
+            miningSpeed:0.03, powerDraw:60, fuelBurner:false, moduleSlots:2,
             outputSlots:1, inputSlots:0, unlocked:false, tech:'electric_mining'
         },
         belt: {
@@ -105,7 +106,7 @@ var CFG = {
         assembler: {
             name:'Ensamblador', icon:'🔧', size:[3,3], category:'production',
             cost:[{item:'iron_plate',qty:5},{item:'iron_gear',qty:3},{item:'green_circuit',qty:2}],
-            craftSpeed:1, powerDraw:50, fuelBurner:false,
+            craftSpeed:1, powerDraw:50, fuelBurner:false, moduleSlots:2,
             outputSlots:1, inputSlots:4, unlocked:false, tech:'automation'
         },
         storage: {
@@ -126,7 +127,7 @@ var CFG = {
         lab: {
             name:'Laboratorio', icon:'🔬', size:[2,2], category:'production',
             cost:[{item:'iron_plate',qty:4},{item:'copper_plate',qty:4},{item:'green_circuit',qty:2}],
-            researchSpeed:1, powerDraw:30, unlocked:true,
+            researchSpeed:1, powerDraw:30, unlocked:true, moduleSlots:2,
             inputSlots:3
         },
         inserter: {
@@ -158,6 +159,14 @@ var CFG = {
         }
     },
 
+    // Módulos insertables en edificios eléctricos con moduleSlots.
+    // speed/energy son deltas por unidad; la energía total tiene suelo.
+    MODULES: {
+        speed_module:      {speed:0.30, energy:0.50},
+        efficiency_module: {speed:0,    energy:-0.30}
+    },
+    MODULE_MIN_ENERGY: 0.2,
+
     SMELTING_RECIPES: {
         iron_ore:   {output:'iron_plate',   qty:1, time:60},
         copper_ore: {output:'copper_plate',  qty:1, time:60},
@@ -174,6 +183,8 @@ var CFG = {
         {id:'green_science',   inputs:[{item:'iron_plate',qty:1},{item:'green_circuit',qty:1}],        output:'green_science',   qty:1, time:120},
         {id:'blue_science',    inputs:[{item:'advanced_circuit',qty:1},{item:'steel',qty:1}],          output:'blue_science',    qty:1, time:180, tech:'advanced_electronics'},
         {id:'rocket_part',     inputs:[{item:'steel',qty:5},{item:'advanced_circuit',qty:2},{item:'green_circuit',qty:5}], output:'rocket_part', qty:1, time:200, tech:'rocketry'},
+        {id:'speed_module',    inputs:[{item:'advanced_circuit',qty:2},{item:'green_circuit',qty:2}],   output:'speed_module',    qty:1, time:200, tech:'modules'},
+        {id:'efficiency_module',inputs:[{item:'advanced_circuit',qty:1},{item:'green_circuit',qty:2},{item:'copper_wire',qty:2}], output:'efficiency_module', qty:1, time:150, tech:'modules'},
         {id:'belt',            inputs:[{item:'iron_plate',qty:1}],                                    output:'belt_item',       qty:1, time:15},
         {id:'inserter_craft',  inputs:[{item:'iron_plate',qty:1},{item:'iron_gear',qty:1}],           output:'inserter_item',   qty:1, time:20}
     ],
@@ -183,6 +194,7 @@ var CFG = {
         logistics:            {name:'Logística',            cost:{red_science:20},                              prereqs:['automation'], unlocks:['Divisor','Cinta Rápida','Cinta Subterránea']},
         electric_mining:      {name:'Minería Eléctrica',    cost:{red_science:30, green_science:15},            prereqs:['automation'], unlocks:['Minero Eléctrico']},
         advanced_electronics: {name:'Electrónica Avanzada', cost:{red_science:40, green_science:40},            prereqs:['automation'], unlocks:['circuito avanzado']},
+        modules:              {name:'Módulos',              cost:{red_science:60, green_science:60, blue_science:20}, prereqs:['advanced_electronics'], unlocks:['Módulo Velocidad','Módulo Eficiencia']},
         solar_energy:         {name:'Energía Solar',        cost:{red_science:50, green_science:30},            prereqs:['electric_mining'], unlocks:['panel solar','Acumulador']},
         rocketry:             {name:'Cohetería',            cost:{red_science:200,green_science:200,blue_science:200}, prereqs:['advanced_electronics'], unlocks:['Silo Cohete','Pieza Cohete']},
         fast_inserters:       {name:'Insertadores Rápidos', cost:{red_science:40, green_science:40},             prereqs:['logistics'], unlocks:['Insertadores x2 velocidad']},
@@ -216,5 +228,6 @@ var ITEM_NAMES = {
     iron_plate:'Placa Hierro', copper_plate:'Placa Cobre', steel:'Acero', stone_brick:'Ladrillo',
     iron_gear:'Engranaje', copper_wire:'Cable Cobre', green_circuit:'Circuito Verde',
     advanced_circuit:'Circuito Avanzado', red_science:'Ciencia Roja', green_science:'Ciencia Verde',
-    blue_science:'Ciencia Azul', rocket_part:'Pieza Cohete'
+    blue_science:'Ciencia Azul', rocket_part:'Pieza Cohete',
+    speed_module:'Módulo Velocidad', efficiency_module:'Módulo Eficiencia'
 };

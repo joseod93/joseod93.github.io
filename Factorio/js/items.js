@@ -15,7 +15,9 @@ var Items = {
         red_science:      {name:'Ciencia Roja',      stack:200, category:'science'},
         green_science:    {name:'Ciencia Verde',     stack:200, category:'science'},
         blue_science:     {name:'Ciencia Azul',      stack:200, category:'science'},
-        rocket_part:      {name:'Pieza Cohete',      stack:10,  category:'endgame'}
+        rocket_part:      {name:'Pieza Cohete',      stack:10,  category:'endgame'},
+        speed_module:     {name:'Módulo Velocidad',  stack:50,  category:'module'},
+        efficiency_module:{name:'Módulo Eficiencia', stack:50,  category:'module'}
     },
 
     color: function(id) {

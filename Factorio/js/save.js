@@ -59,7 +59,11 @@ var Save = {
 
         try {
             var prev = localStorage.getItem(key);
-            if (prev) localStorage.setItem(key + '_backup', prev);
+            // No pisar un backup bueno con un main corrupto (check estructural
+            // barato; un JSON.parse completo cada 60s también sería aceptable)
+            if (prev && prev.charAt(0) === '{' && prev.indexOf('"version"') !== -1) {
+                localStorage.setItem(key + '_backup', prev);
+            }
             localStorage.setItem(key, json);
             this.quotaWarned = false;
             return true;
@@ -95,6 +99,7 @@ var Save = {
             this.applyLoad(data);
             return true;
         } catch(e) {
+            console.error('Error cargando partida:', e);
             return false;
         }
     },
@@ -102,6 +107,11 @@ var Save = {
     hasSave: function(slot) {
         var key = slot ? 'factoryEmpire_' + slot : 'factoryEmpire_auto';
         return !!localStorage.getItem(key);
+    },
+
+    hasBackup: function(slot) {
+        var key = slot ? 'factoryEmpire_' + slot : 'factoryEmpire_auto';
+        return !!localStorage.getItem(key + '_backup');
     },
 
     deleteSave: function(slot) {
@@ -116,8 +126,12 @@ var Save = {
             if (!raw) return false;
             var data = JSON.parse(raw);
             this.applyLoad(data);
+            // Promover el backup a main: si no, el próximo autosave copiaría
+            // el main corrupto encima del backup recién usado
+            try { localStorage.setItem(key, raw); } catch(e2) {}
             return true;
         } catch(e) {
+            console.error('Error cargando backup:', e);
             return false;
         }
     },
@@ -152,8 +166,23 @@ var Save = {
         Tech.completed = data.research ? data.research.completed : {};
         Tech.progress = data.research ? data.research.progress : {};
 
-        try { this.deserializeBuildings(data.buildings); } catch(e) {}
-        try { this.deserializeBelts(data.belts); } catch(e) {}
+        // La selección y los snapshots de undo apuntan al mundo anterior
+        Input.selectedBuilding = null;
+        Buildings.clearUndo();
+        UI.closePanels();
+
+        try { this.deserializeBuildings(data.buildings); } catch(e) {
+            console.error('Error deserializando edificios:', e);
+            UI.showToast('Aviso: datos de edificios dañados — partida parcial', 'warning');
+        }
+        try { this.deserializeBelts(data.belts); } catch(e) {
+            console.error('Error deserializando cintas:', e);
+            UI.showToast('Aviso: datos de cintas dañados — partida parcial', 'warning');
+        }
+
+        this.validateLoaded();
+        World.compactBuildings();
+        Belts.compactLines();
 
         Game.recalcPowerCache();
         Game.initHistory(); // evita delta gigante falso al cargar en caliente
@@ -167,25 +196,40 @@ var Save = {
         UI.updateResources();
     },
 
+    // Compacto: emite solo edificios vivos, con pi (pairId) remapeado al índice
+    // del array serializado. Dos pasadas porque pairId puede apuntar hacia
+    // delante. Los nulls posicionales de saves viejos se siguen aceptando al
+    // cargar; ya no se emiten.
     serializeBuildings: function() {
-        var arr = [];
+        var remap = {};
+        var next = 0;
         for (var i = 0; i < World.buildings.length; i++) {
             var b = World.buildings[i];
-            if (!b || b.removed) { arr.push(null); continue; }
+            if (b && !b.removed) { remap[i] = next; next++; }
+        }
+
+        var arr = [];
+        for (var j = 0; j < World.buildings.length; j++) {
+            var b2 = World.buildings[j];
+            if (!b2 || b2.removed) continue;
             var entry = {
-                t: b.type, x: b.x, y: b.y, d: b.direction,
-                i: b.input, o: b.output, f: b.fuel,
-                p: b.progress, r: b.recipeId,
-                s: b.stored, rp: b.rocketParts
+                t: b2.type, x: b2.x, y: b2.y, d: b2.direction,
+                i: b2.input, o: b2.output, f: b2.fuel,
+                p: b2.progress, r: b2.recipeId,
+                s: b2.stored, rp: b2.rocketParts
             };
-            if (b.filterItem) entry.fl = b.filterItem;
-            if (b.outputPriority && b.outputPriority !== 'balanced') entry.pr = b.outputPriority;
-            if (b.charge) entry.ch = b.charge;
-            if (b.type === 'underground_belt') {
-                entry.um = b.ugMode;
-                if (b.pairId !== null && b.pairId !== undefined) entry.pi = b.pairId;
-                if (b.transit && b.transit.length > 0) {
-                    entry.tr = b.transit.map(function(it) { return [it.type, it.left]; });
+            if (b2.filterItem) entry.fl = b2.filterItem;
+            if (b2.outputPriority && b2.outputPriority !== 'balanced') entry.pr = b2.outputPriority;
+            if (b2.charge) entry.ch = b2.charge;
+            if (b2.modules && b2.modules.length > 0) entry.md = b2.modules;
+            if (b2.type === 'underground_belt') {
+                entry.um = b2.ugMode;
+                if (b2.pairId !== null && b2.pairId !== undefined &&
+                    remap[b2.pairId] !== undefined) {
+                    entry.pi = remap[b2.pairId];
+                }
+                if (b2.transit && b2.transit.length > 0) {
+                    entry.tr = b2.transit.map(function(it) { return [it.type, it.left]; });
                 }
             }
             arr.push(entry);
@@ -195,52 +239,81 @@ var Save = {
 
     deserializeBuildings: function(arr) {
         if (!arr) return;
+        var skipped = 0;
         for (var i = 0; i < arr.length; i++) {
             var d = arr[i];
             if (!d) { World.buildings.push(null); continue; }
 
-            var b = {
-                type: d.t, x: d.x, y: d.y, direction: d.d || 0,
-                input: d.i || {}, output: d.o || {}, fuel: d.f || {},
-                progress: d.p || 0, active: false, removed: false,
-                recipe: null, recipeId: d.r || null,
-                stored: d.s || {}, rocketParts: d.rp || 0
-            };
+            var lenBefore = World.buildings.length;
+            try {
+                if (!CFG.BUILDING_DEFS[d.t]) throw new Error('tipo desconocido: ' + d.t);
 
-            if (d.t === 'storage') {
-                b.capacity = (CFG.BUILDING_DEFS.storage && CFG.BUILDING_DEFS.storage.capacity) || 200;
-            }
-            if (d.t === 'rocket_silo') {
-                b.rocketReady = b.rocketParts >= 100;
-            }
-            if (d.t === 'splitter') {
-                b.splitToggle = 0;
-                b.outputPriority = d.pr || 'balanced';
-            }
-            if (d.t === 'inserter') {
-                b.filterItem = d.fl || null;
-            }
-            if (d.t === 'accumulator') {
-                b.charge = d.ch || 0;
-            }
-            if (d.t === 'miner' || d.t === 'electric_miner') {
-                // Pre-marcar para no disparar toasts de veta agotada al cargar
-                var mDef = CFG.BUILDING_DEFS[d.t];
-                b.depleted = !World.hasResource(d.x, d.y, mDef.size[0], mDef.size[1]);
-            }
-            if (d.t === 'underground_belt') {
-                b.ugMode = d.um || 'in';
-                b.pairId = (d.pi === undefined || d.pi === null) ? null : d.pi;
-                b.transit = [];
-                if (d.tr) {
-                    for (var k = 0; k < d.tr.length; k++) {
-                        b.transit.push({type: d.tr[k][0], left: d.tr[k][1]});
-                    }
+                var b = {
+                    type: d.t, x: d.x, y: d.y, direction: d.d || 0,
+                    input: d.i || {}, output: d.o || {}, fuel: d.f || {},
+                    progress: d.p || 0, active: false, removed: false,
+                    recipe: null, recipeId: d.r || null,
+                    stored: d.s || {}, rocketParts: d.rp || 0
+                };
+
+                if (d.t === 'storage') {
+                    b.capacity = (CFG.BUILDING_DEFS.storage && CFG.BUILDING_DEFS.storage.capacity) || 200;
                 }
-                b.cooldown = 0;
-            }
+                if (d.t === 'rocket_silo') {
+                    b.rocketReady = b.rocketParts >= 100;
+                }
+                if (d.t === 'splitter') {
+                    b.splitToggle = 0;
+                    b.outputPriority = d.pr || 'balanced';
+                }
+                if (d.t === 'inserter') {
+                    b.filterItem = d.fl || null;
+                }
+                if (d.t === 'accumulator') {
+                    b.charge = d.ch || 0;
+                }
+                if (d.t === 'miner' || d.t === 'electric_miner') {
+                    // Pre-marcar para no disparar toasts de veta agotada al cargar
+                    var mDef = CFG.BUILDING_DEFS[d.t];
+                    b.depleted = !World.hasResource(d.x, d.y, mDef.size[0], mDef.size[1]);
+                }
+                if (d.t === 'underground_belt') {
+                    b.ugMode = d.um || 'in';
+                    b.pairId = (d.pi === undefined || d.pi === null) ? null : d.pi;
+                    b.transit = [];
+                    if (d.tr) {
+                        for (var k = 0; k < d.tr.length; k++) {
+                            b.transit.push({type: d.tr[k][0], left: d.tr[k][1]});
+                        }
+                    }
+                    b.cooldown = 0;
+                }
 
-            World.placeBuilding(b);
+                // Módulos ANTES de placeBuilding: el hook de power lee b.modEnergy.
+                // Filtro y clamp protegen contra saves manipulados o defs cambiadas.
+                var bDef = CFG.BUILDING_DEFS[d.t];
+                if (bDef.moduleSlots) {
+                    b.modules = [];
+                    if (d.md) {
+                        for (var mk = 0; mk < d.md.length && b.modules.length < bDef.moduleSlots; mk++) {
+                            if (CFG.MODULES[d.md[mk]]) b.modules.push(d.md[mk]);
+                        }
+                    }
+                    Buildings.recalcModuleStats(b);
+                }
+
+                World.placeBuilding(b);
+            } catch(e) {
+                console.error('Edificio dañado en save (entrada ' + i + '):', e);
+                // null posicional: conserva los índices (pi) del resto de
+                // entradas. validateLoaded limpia restos de un place parcial.
+                World.buildings.length = lenBefore;
+                World.buildings.push(null);
+                skipped++;
+            }
+        }
+        if (skipped > 0) {
+            UI.showToast('Se omitieron ' + skipped + ' edificios dañados', 'warning');
         }
     },
 
@@ -248,7 +321,7 @@ var Save = {
         var arr = [];
         for (var i = 0; i < Belts.lines.length; i++) {
             var line = Belts.lines[i];
-            if (line.removed) { arr.push(null); continue; }
+            if (line.removed) continue;
             var items = [];
             for (var j = 0; j < line.items.length; j++) {
                 items.push([line.items[j].type, line.items[j].gap]);
@@ -268,7 +341,9 @@ var Save = {
         if (!arr) return;
         for (var i = 0; i < arr.length; i++) {
             var d = arr[i];
-            if (!d) { Belts.lines.push({removed: true, id: i, tiles:[], items:[], dir:0, headGap:0, lastPositiveGapIndex:-1, speed:0}); continue; }
+            // Nada del save referencia índices de línea: los nulls de saves
+            // viejos se saltan sin placeholder
+            if (!d) continue;
             var line = {
                 id: Belts.lines.length,
                 dir: d.d,
@@ -287,6 +362,79 @@ var Save = {
         }
     },
 
+    // Repara referencias rotas tras deserializar (saves corruptos o manipulados)
+    validateLoaded: function() {
+        var fixes = 0;
+        var n = World.buildings.length;
+
+        for (var i = 0; i < n; i++) {
+            var b = World.buildings[i];
+            if (!b || b.removed) continue;
+
+            if (b.id !== i) { b.id = i; fixes++; }
+
+            if (b.type === 'underground_belt') {
+                if (!b.transit || Object.prototype.toString.call(b.transit) !== '[object Array]') {
+                    b.transit = [];
+                    fixes++;
+                }
+                if (b.ugMode !== 'in' && b.ugMode !== 'out') {
+                    b.ugMode = 'in';
+                    b.pairId = null;
+                    fixes++;
+                }
+                if (b.pairId !== null && b.pairId !== undefined) {
+                    var p = b.pairId;
+                    var pair = (typeof p === 'number' && p >= 0 && p < n) ? World.buildings[p] : null;
+                    var valid = pair && !pair.removed && pair.type === 'underground_belt' &&
+                        pair.id !== b.id && pair.ugMode !== b.ugMode;
+                    if (!valid) { b.pairId = null; fixes++; }
+                }
+            }
+
+            if (b.type === 'assembler' && b.recipeId && !Buildings.getAssemblyRecipe(b.recipeId)) {
+                b.recipeId = null;
+                fixes++;
+            }
+        }
+
+        // Reciprocidad de pares: solo se rompe el lado no correspondido
+        // (no tocar al otro, que puede formar par válido con un tercero)
+        for (var j = 0; j < n; j++) {
+            var ub = World.buildings[j];
+            if (!ub || ub.removed || ub.type !== 'underground_belt') continue;
+            if (ub.pairId === null || ub.pairId === undefined) continue;
+            var mate = World.buildings[ub.pairId];
+            if (!mate || mate.pairId !== ub.id) {
+                ub.pairId = null;
+                fixes++;
+            }
+        }
+
+        // Índices espaciales: ids muertos o fuera de rango
+        for (var key in World.buildingMap) {
+            var id = World.buildingMap[key];
+            var mb = (typeof id === 'number') ? World.buildings[id] : null;
+            if (!mb || mb.removed) {
+                delete World.buildingMap[key];
+                fixes++;
+            }
+        }
+        for (var ck in World.chunkBuildings) {
+            var list = World.chunkBuildings[ck];
+            for (var li = list.length - 1; li >= 0; li--) {
+                var cb = World.buildings[list[li]];
+                if (!cb || cb.removed) { list.splice(li, 1); fixes++; }
+            }
+        }
+
+        if (fixes > 0) {
+            console.warn('validateLoaded: ' + fixes + ' referencias corregidas');
+            UI.showToast('Partida reparada: ' + fixes + ' referencias corregidas', 'warning');
+        }
+        return fixes;
+    },
+
     simulateOffline: function(ticks) {
         var produced = {};
         for (var t = 0; t < ticks; t++) {
@@ -301,6 +449,13 @@ var Save = {
         this.autoSaveTimer += dt * 1000;
         if (this.autoSaveTimer >= CFG.AUTOSAVE_INTERVAL) {
             this.autoSaveTimer = 0;
+            // Punto seguro para compactar: 1 vez/min máx., con histéresis
+            if (World.deadCount >= 500 && World.deadCount * 2 > World.buildings.length) {
+                World.compactBuildings();
+            }
+            if (Belts.deadCount >= 500) {
+                Belts.compactLines();
+            }
             this.save();
         }
     },

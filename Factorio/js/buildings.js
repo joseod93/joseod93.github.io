@@ -1,6 +1,10 @@
 var Buildings = {
     init: function() {},
 
+    undoStack: [],
+    UNDO_MAX: 20,
+    _undoBatch: null,
+
     tryPlace: function(tx, ty, type, dir) {
         var def = CFG.BUILDING_DEFS[type];
         if (!def) return false;
@@ -39,6 +43,23 @@ var Buildings = {
             }
         }
 
+        var b = this.createBuildingObject(type, tx, ty, dir);
+
+        World.placeBuilding(b);
+        if (type === 'underground_belt') {
+            this.linkUnderground(b);
+        }
+        Game.stats.buildingsPlaced++;
+        Particles.spawn(tx * CFG.TILE + (w * CFG.TILE) / 2, ty * CFG.TILE + (h * CFG.TILE) / 2, 'place');
+        Audio.play('place');
+        Tutorial.onEvent('place', type);
+        UI.updateResources();
+        return true;
+    },
+
+    // Crea el objeto edificio con sus campos por tipo (la usan tryPlace y el undo)
+    createBuildingObject: function(type, tx, ty, dir) {
+        var def = CFG.BUILDING_DEFS[type];
         var b = {
             type: type, x: tx, y: ty, direction: dir || 0,
             input: {}, output: {}, fuel: {},
@@ -77,39 +98,114 @@ var Buildings = {
             b.cooldown = 0;
         }
 
-        World.placeBuilding(b);
-        if (type === 'underground_belt') {
-            this.linkUnderground(b);
+        // Antes de placeBuilding: el hook de power lee b.modEnergy
+        if (def.moduleSlots) {
+            b.modules = [];
+            b.modSpeed = 1;
+            b.modEnergy = 1;
         }
-        Game.stats.buildingsPlaced++;
-        Particles.spawn(tx * CFG.TILE + (w * CFG.TILE) / 2, ty * CFG.TILE + (h * CFG.TILE) / 2, 'place');
-        Audio.play('place');
-        Tutorial.onEvent('place', type);
-        UI.updateResources();
-        return true;
+
+        return b;
     },
 
-    // Busca hacia atrás una entrada de túnel sin pareja con la misma dirección
-    linkUnderground: function(b) {
-        var d = CFG.DIRECTIONS[b.direction];
-        for (var i = 1; i <= CFG.UNDERGROUND_MAX_DIST + 1; i++) {
-            var cand = World.getBuildingAt(b.x - d.dx * i, b.y - d.dy * i);
-            if (cand && !cand.removed && cand.type === 'underground_belt' &&
-                cand.direction === b.direction && cand.ugMode === 'in' &&
-                cand.pairId === null && cand.id !== b.id) {
-                b.ugMode = 'out';
-                b.pairId = cand.id;
-                cand.pairId = b.id;
-                UI.showToast('Túnel conectado (' + i + ' casillas)');
-                return;
+    // ===== Módulos =====
+
+    // Recalcula los multiplicadores cacheados del edificio (no por tick)
+    recalcModuleStats: function(b) {
+        var speed = 1, energy = 1;
+        if (b.modules) {
+            for (var i = 0; i < b.modules.length; i++) {
+                var m = CFG.MODULES[b.modules[i]];
+                if (!m) continue;
+                speed += m.speed;
+                energy += m.energy;
             }
         }
-        UI.showToast('Entrada de túnel: coloca la salida delante, a máx. ' + (CFG.UNDERGROUND_MAX_DIST + 1) + ' casillas');
+        if (energy < CFG.MODULE_MIN_ENERGY) energy = CFG.MODULE_MIN_ENERGY;
+        b.modSpeed = speed;
+        b.modEnergy = energy;
+    },
+
+    insertModule: function(buildingId, itemType) {
+        var b = World.buildings[buildingId];
+        if (!b || b.removed) return;
+        var def = CFG.BUILDING_DEFS[b.type];
+        if (!def || !def.moduleSlots || !CFG.MODULES[itemType]) return;
+        if (!b.modules) b.modules = [];
+        if (b.modules.length >= def.moduleSlots) {
+            UI.showToast('No hay slots libres');
+            return;
+        }
+        if (!Inventory.has(Game.player.inventory, itemType, 1)) return;
+
+        Inventory.remove(Game.player.inventory, itemType, 1);
+        // Delta incremental de power: restar con el mult viejo, sumar con el nuevo
+        Game.powerCache.consumptionBase -= (def.powerDraw || 0) * (b.modEnergy || 1);
+        b.modules.push(itemType);
+        this.recalcModuleStats(b);
+        Game.powerCache.consumptionBase += (def.powerDraw || 0) * b.modEnergy;
+
+        Audio.play('place');
+        UI.updateResources();
+        if (Input.selectedBuilding && Input.selectedBuilding.id === buildingId) {
+            UI.showBuildingInfo(b);
+        }
+    },
+
+    removeModule: function(buildingId, slotIdx) {
+        var b = World.buildings[buildingId];
+        if (!b || b.removed || !b.modules) return;
+        if (slotIdx < 0 || slotIdx >= b.modules.length) return;
+        var def = CFG.BUILDING_DEFS[b.type];
+
+        var itemType = b.modules[slotIdx];
+        Game.powerCache.consumptionBase -= (def.powerDraw || 0) * (b.modEnergy || 1);
+        b.modules.splice(slotIdx, 1);
+        this.recalcModuleStats(b);
+        Game.powerCache.consumptionBase += (def.powerDraw || 0) * b.modEnergy;
+        Inventory.add(Game.player.inventory, itemType, 1);
+
+        Audio.play('place');
+        UI.updateResources();
+        if (Input.selectedBuilding && Input.selectedBuilding.id === buildingId) {
+            UI.showBuildingInfo(b);
+        }
+    },
+
+    // Busca hacia atrás una entrada de túnel sin pareja con la misma dirección.
+    // Devuelve {b, dist} o null. La usa también la preview del ghost (dry-run).
+    findUndergroundPair: function(tx, ty, direction) {
+        var d = CFG.DIRECTIONS[direction];
+        for (var i = 1; i <= CFG.UNDERGROUND_MAX_DIST + 1; i++) {
+            var cand = World.getBuildingAt(tx - d.dx * i, ty - d.dy * i);
+            if (cand && !cand.removed && cand.type === 'underground_belt' &&
+                cand.direction === direction && cand.ugMode === 'in' &&
+                cand.pairId === null) {
+                return {b: cand, dist: i};
+            }
+        }
+        return null;
+    },
+
+    linkUnderground: function(b, quiet) {
+        var found = this.findUndergroundPair(b.x, b.y, b.direction);
+        if (found && found.b.id !== b.id) {
+            b.ugMode = 'out';
+            b.pairId = found.b.id;
+            found.b.pairId = b.id;
+            if (!quiet) UI.showToast('Túnel conectado (' + found.dist + ' casillas)');
+            return;
+        }
+        if (!quiet) UI.showToast('Entrada de túnel: coloca la salida delante, a máx. ' + (CFG.UNDERGROUND_MAX_DIST + 1) + ' casillas');
     },
 
     remove: function(id) {
         var b = World.buildings[id];
         if (!b || b.removed) return;
+
+        // Único choke point de demolición: clic derecho, panel info, menú
+        // contextual y removeArea pasan todos por aquí
+        this.pushUndo(this.makeSnapshot(b));
 
         if (b.type === 'belt' || b.type === 'fast_belt') {
             Belts.removeBelt(b.x, b.y);
@@ -150,8 +246,206 @@ var Buildings = {
                 if (b.stored[item4] > 0) Inventory.add(Game.player.inventory, item4, b.stored[item4]);
             }
         }
+        if (b.rocketParts > 0) {
+            Inventory.add(Game.player.inventory, 'rocket_part', b.rocketParts);
+        }
+        // Devolver módulos SIN mutar b.modules/b.modEnergy: el hook
+        // onBuildingRemoved debe restar exactamente lo registrado en el cache
+        if (b.modules) {
+            for (var mi = 0; mi < b.modules.length; mi++) {
+                Inventory.add(Game.player.inventory, b.modules[mi], 1);
+            }
+        }
 
         World.removeBuilding(id);
+        UI.updateResources();
+    },
+
+    // ===== Copy/paste de configuración (C/V, menú contextual, panel info) =====
+
+    // Config copiable por tipo; null = este edificio no tiene ajustes
+    getConfigSnapshot: function(b) {
+        if (b.type === 'inserter') return {filterItem: b.filterItem || null};
+        if (b.type === 'assembler') return b.recipeId ? {recipeId: b.recipeId} : null;
+        if (b.type === 'splitter') return {outputPriority: b.outputPriority || 'balanced'};
+        return null;
+    },
+
+    applyConfigSnapshot: function(b, props) {
+        if (!props) return;
+        if (b.type === 'inserter' && props.filterItem !== undefined) {
+            b.filterItem = props.filterItem;
+        }
+        if (b.type === 'assembler' && props.recipeId !== undefined) {
+            if (b.recipeId !== props.recipeId) {
+                // Misma semántica que UI.setRecipe: cambiar receta vacía el input
+                b.recipeId = props.recipeId;
+                b.progress = 0;
+                b.input = {};
+            }
+        }
+        if (b.type === 'splitter' && props.outputPriority !== undefined) {
+            b.outputPriority = props.outputPriority;
+        }
+    },
+
+    // ===== Deconstrucción en área =====
+
+    // Ids únicos de edificios cuyo footprint toca el rectángulo (en tiles)
+    getIdsInRect: function(minX, minY, maxX, maxY) {
+        // El drag está limitado a pantalla; el clamp es solo defensa
+        if (maxX - minX > 200) maxX = minX + 200;
+        if (maxY - minY > 200) maxY = minY + 200;
+        var seen = {};
+        var ids = [];
+        for (var ty = minY; ty <= maxY; ty++) {
+            for (var tx = minX; tx <= maxX; tx++) {
+                var id = World.buildingMap[World.tileKey(tx, ty)];
+                if (id === undefined || id === null || seen[id]) continue;
+                var b = World.buildings[id];
+                if (!b || b.removed) continue;
+                seen[id] = true;
+                ids.push(id);
+            }
+        }
+        return ids;
+    },
+
+    removeArea: function(x0, y0, x1, y1) {
+        var minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
+        var minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
+        var ids = this.getIdsInRect(minX, minY, maxX, maxY);
+        if (ids.length === 0) {
+            UI.showToast('Nada que demoler');
+            return 0;
+        }
+        this.beginUndoBatch();
+        for (var i = 0; i < ids.length; i++) {
+            this.remove(ids[i]);
+        }
+        this.commitUndoBatch();
+        Audio.play('remove');
+        Camera.shake(2, 0.25);
+        UI.showToast('Demolidos: ' + ids.length + ' edificios');
+        return ids.length;
+    },
+
+    // ===== Undo de demolición =====
+    // Semántica: restaurar re-cobra el coste (el refund de la demolición quedó
+    // en el inventario: neto cero). El contenido NO se restaura (también fue al
+    // inventario). Stack de 20 lotes, solo sesión (no se persiste).
+
+    // Data plana sin ids: los ids no sobreviven compactación ni load
+    makeSnapshot: function(b) {
+        var snap = {
+            type: b.type, x: b.x, y: b.y,
+            direction: b.direction || 0,
+            props: this.getConfigSnapshot(b)
+        };
+        if (b.type === 'underground_belt') snap.ugMode = b.ugMode;
+        return snap;
+    },
+
+    pushUndo: function(snap) {
+        if (this._undoBatch) {
+            this._undoBatch.push(snap);
+            return;
+        }
+        this.undoStack.push([snap]);
+        if (this.undoStack.length > this.UNDO_MAX) this.undoStack.shift();
+    },
+
+    beginUndoBatch: function() {
+        this._undoBatch = [];
+    },
+
+    commitUndoBatch: function() {
+        if (this._undoBatch && this._undoBatch.length > 0) {
+            this.undoStack.push(this._undoBatch);
+            if (this.undoStack.length > this.UNDO_MAX) this.undoStack.shift();
+        }
+        this._undoBatch = null;
+    },
+
+    clearUndo: function() {
+        this.undoStack = [];
+        this._undoBatch = null;
+    },
+
+    restoreFromSnapshot: function(snap) {
+        var def = CFG.BUILDING_DEFS[snap.type];
+        if (!def) return false;
+
+        if (snap.type === 'belt' || snap.type === 'fast_belt') {
+            return Belts.tryPlaceSingle(snap.x, snap.y, snap.direction, snap.type);
+        }
+
+        var w = def.size[0], h = def.size[1];
+        if (!World.canPlace(snap.x, snap.y, w, h)) return false;
+        if ((snap.type === 'miner' || snap.type === 'electric_miner') &&
+            !World.hasResource(snap.x, snap.y, w, h)) return false;
+
+        if (!Game.creativeModeOn && def.cost && def.cost.length > 0) {
+            if (!Inventory.hasAll(Game.player.inventory, def.cost)) return false;
+            Inventory.removeAll(Game.player.inventory, def.cost);
+        }
+
+        var b = this.createBuildingObject(snap.type, snap.x, snap.y, snap.direction);
+        if (snap.props) this.applyConfigSnapshot(b, snap.props);
+        World.placeBuilding(b);
+
+        if (snap.type === 'underground_belt') {
+            if (snap.ugMode === 'out') {
+                this.linkUnderground(b, true);
+            } else {
+                // linkUnderground solo escanea hacia atrás; una boca 'in'
+                // restaurada busca su salida superviviente hacia DELANTE
+                var d = CFG.DIRECTIONS[b.direction];
+                for (var i = 1; i <= CFG.UNDERGROUND_MAX_DIST + 1; i++) {
+                    var cand = World.getBuildingAt(b.x + d.dx * i, b.y + d.dy * i);
+                    if (cand && !cand.removed && cand.type === 'underground_belt' &&
+                        cand.direction === b.direction && cand.ugMode === 'out' &&
+                        (cand.pairId === null || cand.pairId === undefined)) {
+                        b.pairId = cand.id;
+                        cand.pairId = b.id;
+                        break;
+                    }
+                }
+            }
+        }
+        // Sin stats.buildingsPlaced ni Tutorial.onEvent: es restauración, no
+        // construcción (evita inflar milestones con ciclos demoler+deshacer)
+        return true;
+    },
+
+    undo: function() {
+        if (this.undoStack.length === 0) {
+            UI.showToast('Nada que deshacer');
+            return;
+        }
+        var batch = this.undoStack.pop();
+        var restored = 0, failed = 0;
+
+        // Dos pasadas: las salidas de túnel al final, para que sus entradas
+        // ya existan al re-emparejar
+        for (var pass = 0; pass < 2; pass++) {
+            for (var i = 0; i < batch.length; i++) {
+                var snap = batch[i];
+                var isOut = snap.type === 'underground_belt' && snap.ugMode === 'out';
+                if ((pass === 0 && isOut) || (pass === 1 && !isOut)) continue;
+                if (this.restoreFromSnapshot(snap)) restored++;
+                else failed++;
+            }
+        }
+
+        if (restored > 0) {
+            Audio.play('place');
+            var msg = 'Deshecho: ' + restored + ' edificio' + (restored === 1 ? '' : 's') + ' restaurado' + (restored === 1 ? '' : 's');
+            if (failed > 0) msg += ', ' + failed + ' no (casilla ocupada o faltan recursos)';
+            UI.showToast(msg, failed > 0 ? 'warning' : undefined);
+        } else {
+            UI.showToast('No se pudo deshacer: casilla ocupada o faltan recursos', 'warning');
+        }
         UI.updateResources();
     },
 
@@ -305,11 +599,12 @@ var Buildings = {
     },
 
     update: function() {
-        var speedMult = 1 + (Game.prestige ? (Game.prestige.upgrades.craft_speed || 0) * 0.1 : 0);
-        var miningMult = 1 + (Game.prestige ? (Game.prestige.upgrades.mining_speed || 0) * 0.1 : 0);
+        var ctx = this._ctx || (this._ctx = {});
+        ctx.speedMult = 1 + (Game.prestige ? (Game.prestige.upgrades.craft_speed || 0) * 0.1 : 0);
+        ctx.miningMult = 1 + (Game.prestige ? (Game.prestige.upgrades.mining_speed || 0) * 0.1 : 0);
 
-        if (Tech.isCompleted('mass_production')) speedMult *= 1.5;
-        var fastInserters = Tech.isCompleted('fast_inserters');
+        if (Tech.isCompleted('mass_production')) ctx.speedMult *= 1.5;
+        ctx.fastInserters = Tech.isCompleted('fast_inserters');
 
         for (var i = 0; i < World.buildings.length; i++) {
             var b = World.buildings[i];
@@ -318,23 +613,8 @@ var Buildings = {
             var def = CFG.BUILDING_DEFS[b.type];
             if (!def) continue;
 
-            if (b.type === 'miner' || b.type === 'electric_miner') {
-                this.updateMiner(b, def, miningMult);
-            } else if (b.type === 'furnace') {
-                this.updateFurnace(b, def, speedMult);
-            } else if (b.type === 'assembler') {
-                this.updateAssembler(b, def, speedMult);
-            } else if (b.type === 'steam_engine') {
-                this.updateGenerator(b, def);
-            } else if (b.type === 'lab') {
-                this.updateLab(b, def, speedMult);
-            } else if (b.type === 'inserter') {
-                this.updateInserter(b, def, fastInserters);
-            } else if (b.type === 'splitter') {
-                this.updateSplitter(b, def);
-            } else if (b.type === 'underground_belt') {
-                this.updateUnderground(b, def);
-            }
+            var fn = this.UPDATERS[b.type];
+            if (fn) fn(b, def, ctx);
 
             this.tryPushOutput(b, def);
         }
@@ -358,7 +638,7 @@ var Buildings = {
 
         b.active = true;
         var pMult = def.powerDraw > 0 ? Game.power.satisfaction : 1;
-        b.progress += def.miningSpeed * mult * pMult;
+        b.progress += def.miningSpeed * mult * pMult * (b.modSpeed || 1);
         if (b.progress >= 1) {
             b.progress = 0;
             var resType = World.mineResource(b.x, b.y, w, h);
@@ -415,7 +695,7 @@ var Buildings = {
 
         b.active = true;
         var pMult = def.powerDraw > 0 ? Game.power.satisfaction : 1;
-        b.progress += (def.craftSpeed * mult * pMult) / recipe.time;
+        b.progress += (def.craftSpeed * mult * pMult * (b.modSpeed || 1)) / recipe.time;
 
         if (b.progress >= 1) {
             b.progress = 0;
@@ -456,7 +736,7 @@ var Buildings = {
 
         b.active = true;
         var pMult = def.powerDraw > 0 ? Game.power.satisfaction : 1;
-        b.progress += (def.researchSpeed * mult * pMult) / 200;
+        b.progress += (def.researchSpeed * mult * pMult * (b.modSpeed || 1)) / 200;
 
         if (b.progress >= 1) {
             b.progress = 0;
@@ -684,4 +964,18 @@ var Buildings = {
             }
         }
     }
+};
+
+// Dispatch por tipo. Asignada tras el literal (Buildings.init() nunca se invoca).
+// Tipos sin handler (storage, solar_panel, accumulator, rocket_silo) solo reciben tryPushOutput.
+Buildings.UPDATERS = {
+    miner:            function(b, def, ctx) { Buildings.updateMiner(b, def, ctx.miningMult); },
+    electric_miner:   function(b, def, ctx) { Buildings.updateMiner(b, def, ctx.miningMult); },
+    furnace:          function(b, def, ctx) { Buildings.updateFurnace(b, def, ctx.speedMult); },
+    assembler:        function(b, def, ctx) { Buildings.updateAssembler(b, def, ctx.speedMult); },
+    steam_engine:     function(b, def, ctx) { Buildings.updateGenerator(b, def); },
+    lab:              function(b, def, ctx) { Buildings.updateLab(b, def, ctx.speedMult); },
+    inserter:         function(b, def, ctx) { Buildings.updateInserter(b, def, ctx.fastInserters); },
+    splitter:         function(b, def, ctx) { Buildings.updateSplitter(b, def); },
+    underground_belt: function(b, def, ctx) { Buildings.updateUnderground(b, def); }
 };

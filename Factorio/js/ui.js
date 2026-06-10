@@ -83,6 +83,28 @@ var UI = {
                 globalIdx++;
             }
         }
+
+        // Botón de modo demolición. Clase propia (NO building-btn):
+        // updateToolbarSelection y los atajos 1-9 iteran .building-btn
+        // asumiendo data-type con def. Creado aquí para sobrevivir al
+        // rebuild del toolbar en resetForPrestige.
+        var demoBtn = document.createElement('button');
+        demoBtn.className = 'demolish-btn';
+        demoBtn.id = 'btn-demolish';
+        demoBtn.title = 'Demoler en área (X)';
+        var demoIcon = document.createElement('span');
+        demoIcon.className = 'btn-icon';
+        demoIcon.textContent = '🗑️';
+        demoBtn.appendChild(demoIcon);
+        var demoLabel = document.createElement('span');
+        demoLabel.className = 'btn-label';
+        demoLabel.textContent = 'Demoler';
+        demoBtn.appendChild(demoLabel);
+        demoBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            Input.toggleDemolishMode();
+        });
+        container.appendChild(demoBtn);
     },
 
     showBuildTooltip: function(type, btn) {
@@ -188,6 +210,14 @@ var UI = {
             this.textContent = Game.paused ? '▶' : '⏸';
         });
 
+        var undoBtn = document.getElementById('btn-undo');
+        if (undoBtn) {
+            undoBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                Buildings.undo();
+            });
+        }
+
         document.getElementById('btn-fullscreen').addEventListener('click', function(e) {
             e.stopPropagation();
             if (!document.fullscreenElement) {
@@ -216,6 +246,7 @@ var UI = {
             Input.buildMode = type;
         }
         Input.selectedBuilding = null;
+        Input.demolishMode = false;
         this.closePanels();
         this.updateToolbarSelection();
     },
@@ -266,18 +297,27 @@ var UI = {
             dirEl.textContent = arrows[Input.buildDirection];
         }
 
+        var demoBtn = document.getElementById('btn-demolish');
+        if (demoBtn) demoBtn.classList.toggle('selected', Input.demolishMode);
+
         var indicator = document.getElementById('build-indicator');
         if (!indicator) {
             indicator = document.createElement('div');
             indicator.id = 'build-indicator';
             document.getElementById('ui-overlay').appendChild(indicator);
         }
-        if (Input.buildMode) {
+        if (Input.demolishMode) {
+            indicator.textContent = 'MODO DEMOLICIÓN: arrastra para demoler un área (X o Esc para salir)';
+            indicator.style.display = 'block';
+            indicator.classList.add('demolish');
+        } else if (Input.buildMode) {
             var bDef = CFG.BUILDING_DEFS[Input.buildMode];
             indicator.textContent = 'CONSTRUYENDO: ' + (bDef ? bDef.name : Input.buildMode);
             indicator.style.display = 'block';
+            indicator.classList.remove('demolish');
         } else {
             indicator.style.display = 'none';
+            indicator.classList.remove('demolish');
         }
     },
 
@@ -512,6 +552,52 @@ var UI = {
             }
         }
 
+        if (def.moduleSlots && (Tech.isCompleted('modules') || (b.modules && b.modules.length > 0))) {
+            var nMods = b.modules ? b.modules.length : 0;
+            html += '<p style="font-size:11px;color:#aaa;margin:4px 0;">Módulos (' + nMods + '/' + def.moduleSlots + ') — clic para devolver:</p>';
+            html += '<div class="recipe-select">';
+            for (var mi = 0; mi < def.moduleSlots; mi++) {
+                var mItem = (b.modules && b.modules[mi]) ? b.modules[mi] : null;
+                if (mItem) {
+                    html += '<button class="recipe-btn selected" onclick="Buildings.removeModule(' + b.id + ',' + mi + ')">';
+                    html += '<span class="recipe-dot" style="background:' + Items.color(mItem) + '"></span>';
+                    html += (ITEM_NAMES[mItem] || mItem) + ' ✕</button>';
+                } else {
+                    html += '<span class="recipe-btn" style="opacity:0.4;cursor:default;">vacío</span>';
+                }
+            }
+            html += '</div>';
+            if (nMods < def.moduleSlots) {
+                var modBtns = '';
+                for (var modType in CFG.MODULES) {
+                    var mQty = Inventory.count(Game.player.inventory, modType);
+                    if (mQty > 0) {
+                        modBtns += '<button class="btn-transfer" onclick="Buildings.insertModule(' + b.id + ',\'' + modType + '\')">+1 ' + (ITEM_NAMES[modType] || modType) + ' (' + mQty + ')</button>';
+                    }
+                }
+                if (modBtns) html += '<div class="transfer-section">' + modBtns + '</div>';
+            }
+            if (nMods > 0) {
+                var spdPct = Math.round(((b.modSpeed || 1) - 1) * 100);
+                var enPct = Math.round(((b.modEnergy || 1) - 1) * 100);
+                var fxParts = [];
+                if (spdPct !== 0) fxParts.push('+' + spdPct + '% velocidad');
+                if (enPct !== 0) fxParts.push((enPct > 0 ? '+' : '') + enPct + '% energía');
+                if (fxParts.length > 0) {
+                    html += '<p style="font-size:11px;color:' + (enPct > 0 ? '#e6a832' : '#44cc66') + '">Efecto: ' + fxParts.join(', ') + '</p>';
+                }
+            }
+        }
+
+        if (Buildings.getConfigSnapshot(b)) {
+            html += '<div class="transfer-section">';
+            html += '<button class="btn-transfer" onclick="Input.copyConfigFrom(World.buildings[' + b.id + '])">📋 Copiar ajustes</button>';
+            if (Input.configClipboard && Input.configClipboard.type === b.type) {
+                html += '<button class="btn-transfer" onclick="Input.pasteConfigTo(World.buildings[' + b.id + '])">📥 Pegar ajustes</button>';
+            }
+            html += '</div>';
+        }
+
         html += '<p class="info-status">' + (b.active ? '<span class="status-on">Trabajando</span>' : '<span class="status-off">Inactivo</span>') + '</p>';
         html += '<button onclick="Buildings.remove(' + b.id + ');UI.closePanels();" class="btn-delete">Eliminar</button>';
 
@@ -554,9 +640,15 @@ var UI = {
         menu.innerHTML = '';
         var actions = [
             {label: 'Info', icon: 'ℹ️', action: function() { Input.selectedBuilding = b; UI.showBuildingInfo(b); }},
-            {label: 'Rotar', icon: '🔄', action: function() { b.direction = (b.direction + 1) % 4; }},
-            {label: 'Eliminar', icon: '🗑️', action: function() { Buildings.remove(b.id); }}
+            {label: 'Rotar', icon: '🔄', action: function() { b.direction = (b.direction + 1) % 4; }}
         ];
+        if (Buildings.getConfigSnapshot(b)) {
+            actions.push({label: 'Copiar ajustes', icon: '📋', action: function() { Input.copyConfigFrom(b); }});
+        }
+        if (Input.configClipboard && Input.configClipboard.type === b.type) {
+            actions.push({label: 'Pegar ajustes', icon: '📥', action: function() { Input.pasteConfigTo(b); }});
+        }
+        actions.push({label: 'Eliminar', icon: '🗑️', action: function() { Buildings.remove(b.id); }});
 
         for (var i = 0; i < actions.length; i++) {
             var btn = document.createElement('button');
@@ -1044,13 +1136,16 @@ var UI = {
         html += '</div>';
         html += '<button class="btn-action" onclick="document.getElementById(\'import-area\').style.display=\'block\';this.style.display=\'none\';">Importar</button>';
         html += '<br><br>';
-        html += '<button class="btn-action" onclick="if(Save.loadBackup()){UI.showToast(\'¡Backup restaurado!\');UI.closeModal();}else{UI.showToast(\'No hay backup\');}">Restaurar Backup</button>';
+        html += '<button class="btn-action" onclick="if(!Save.hasBackup()){UI.showToast(\'No hay backup\');}else if(Save.loadBackup()){UI.showToast(\'¡Backup restaurado!\');UI.closeModal();}else{UI.showToast(\'El backup está dañado\',\'warning\');}">Restaurar Backup</button>';
 
         html += '<h3>Controles</h3>';
         html += '<div style="font-size:12px;color:#ccc;line-height:2;">';
         html += '<p><kbd>WASD</kbd> / Flechas — Mover cámara</p>';
         html += '<p><kbd>R</kbd> — Rotar dirección</p>';
         html += '<p><kbd>Q</kbd> — Pipeta (copiar edificio bajo el cursor)</p>';
+        html += '<p><kbd>C</kbd> / <kbd>V</kbd> — Copiar / pegar ajustes (filtro, receta, prioridad)</p>';
+        html += '<p><kbd>X</kbd> — Modo demolición (arrastra para demoler un área)</p>';
+        html += '<p><kbd>Ctrl+Z</kbd> — Deshacer demolición</p>';
         html += '<p><kbd>Espacio</kbd> — Pausar / Reanudar</p>';
         html += '<p><kbd>Esc</kbd> — Cancelar modo construcción</p>';
         html += '<p><kbd>1-9</kbd> — Seleccionar edificio</p>';
@@ -1181,6 +1276,9 @@ var UI = {
             this.toastTimer = 0;
             this.updateResources();
             this.updateToolbarSelection();
+
+            var undoBtn = document.getElementById('btn-undo');
+            if (undoBtn) undoBtn.style.display = Buildings.undoStack.length > 0 ? '' : 'none';
 
             if (Input.selectedBuilding && !Input.selectedBuilding.removed &&
                 document.getElementById('info-panel').style.display === 'block') {

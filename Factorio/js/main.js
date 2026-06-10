@@ -29,7 +29,7 @@ var Game = {
     onBuildingPlaced: function(b) {
         var def = CFG.BUILDING_DEFS[b.type];
         if (!def) return;
-        if (def.powerDraw) this.powerCache.consumptionBase += def.powerDraw;
+        if (def.powerDraw) this.powerCache.consumptionBase += def.powerDraw * (b.modEnergy || 1);
         if (b.type === 'solar_panel') {
             this.powerCache.solarOutput += def.powerOutput;
             b.active = true;
@@ -41,7 +41,7 @@ var Game = {
     onBuildingRemoved: function(b) {
         var def = CFG.BUILDING_DEFS[b.type];
         if (!def) return;
-        if (def.powerDraw) this.powerCache.consumptionBase -= def.powerDraw;
+        if (def.powerDraw) this.powerCache.consumptionBase -= def.powerDraw * (b.modEnergy || 1);
         if (b.type === 'solar_panel') this.powerCache.solarOutput -= def.powerOutput;
         if (b.type === 'steam_engine') {
             var idx = this.powerCache.steamIds.indexOf(b.id);
@@ -118,6 +118,11 @@ var Game = {
         Belts.init();
 
         var loaded = Save.hasSave() && Save.load();
+        if (!loaded && Save.hasSave() && Save.hasBackup()) {
+            // El save principal existe pero está dañado: restaurar backup
+            loaded = Save.loadBackup();
+            if (loaded) UI.showToast('Partida dañada: backup restaurado', 'warning');
+        }
 
         if (!loaded) {
             World.init();
@@ -350,6 +355,9 @@ var Game = {
 
         Input.buildMode = null;
         Input.selectedBuilding = null;
+        Input.demolishMode = false;
+        Input.configClipboard = null; // recetas copiadas pueden quedar bloqueadas tras reset
+        Buildings.clearUndo(); // los snapshots apuntan al mundo anterior
 
         UI.buildToolbar();
         UI.closePanels();

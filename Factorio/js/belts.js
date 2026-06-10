@@ -1,10 +1,29 @@
 var Belts = {
     lines: [],
     tileToLine: {},
+    deadCount: 0,
 
     init: function() {
         this.lines = [];
         this.tileToLine = {};
+        this.deadCount = 0;
+    },
+
+    // Purga líneas muertas (removeBelt/mergeLines solo marcan removed).
+    // Nada persiste índices de línea: basta reasignar ids y reindexar tiles.
+    compactLines: function() {
+        var alive = [];
+        for (var i = 0; i < this.lines.length; i++) {
+            if (!this.lines[i].removed) alive.push(this.lines[i]);
+        }
+        if (alive.length === this.lines.length) { this.deadCount = 0; return; }
+        this.lines = alive;
+        this.tileToLine = {};
+        for (var j = 0; j < alive.length; j++) {
+            alive[j].id = j;
+            this.rebuildTileIndex(alive[j]);
+        }
+        this.deadCount = 0;
     },
 
     tryPlaceSingle: function(tx, ty, dir, beltType) {
@@ -12,6 +31,15 @@ var Belts = {
         var tile = World.getTile(tx, ty);
         if (tile.terrain === 'water') return false;
         if (tile.buildingId !== null) return false;
+
+        // Sin toast de faltantes: en drag-build seria spam por cada tile
+        if (!Game.creativeModeOn) {
+            var def = CFG.BUILDING_DEFS[beltType];
+            if (def && def.cost && def.cost.length > 0) {
+                if (!Inventory.hasAll(Game.player.inventory, def.cost)) return false;
+                Inventory.removeAll(Game.player.inventory, def.cost);
+            }
+        }
 
         var beltId = World.placeBuilding({
             type: beltType, x: tx, y: ty, direction: dir,
@@ -97,6 +125,7 @@ var Belts = {
         }
 
         head.removed = true;
+        this.deadCount++;
         this.rebuildTileIndex(tail);
         this.recalcLastPositive(tail);
     },
@@ -170,6 +199,7 @@ var Belts = {
         // Invariante: headGap + sum(gaps) = tiles.length.
         var absItems = this.getAbsPositions(line);
         line.removed = true;
+        this.deadCount++;
         delete this.tileToLine[key];
 
         var tailItems = [], headItems = [];

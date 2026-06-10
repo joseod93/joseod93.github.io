@@ -4,6 +4,7 @@ var World = {
     buildings: [],
     buildingMap: {},
     chunkBuildings: {},
+    deadCount: 0,
     _seenStamp: 0,
 
     init: function(seed) {
@@ -12,10 +13,12 @@ var World = {
         this.buildings = [];
         this.buildingMap = {};
         this.chunkBuildings = {};
+        this.deadCount = 0;
         if (typeof Game !== 'undefined' && Game.powerCache) {
             Game.powerCache.consumptionBase = 0;
             Game.powerCache.solarOutput = 0;
             Game.powerCache.steamIds = [];
+            Game.powerCache.accIds = [];
         }
     },
 
@@ -251,7 +254,66 @@ var World = {
             if (idx !== -1) list.splice(idx, 1);
         });
         b.removed = true;
+        this.deadCount++;
         if (typeof Game !== 'undefined' && Game.onBuildingRemoved) Game.onBuildingRemoved(b);
+    },
+
+    // Elimina slots muertos de buildings[] remapeando ids. Los building ids son
+    // INESTABLES tras esta llamada: nunca retener ids entre frames fuera de
+    // buildingMap/chunkBuildings/powerCache/pairId — retener referencias a objeto.
+    compactBuildings: function() {
+        var map = {};
+        var newArr = [];
+        for (var i = 0; i < this.buildings.length; i++) {
+            var b = this.buildings[i];
+            if (!b || b.removed) continue;
+            map[i] = newArr.length;
+            newArr.push(b);
+        }
+        if (newArr.length === this.buildings.length) { this.deadCount = 0; return; }
+
+        this.buildings = newArr;
+        for (var j = 0; j < newArr.length; j++) {
+            var nb = newArr[j];
+            nb.id = j;
+            if (nb.type === 'underground_belt' && nb.pairId !== null && nb.pairId !== undefined) {
+                nb.pairId = (map[nb.pairId] !== undefined) ? map[nb.pairId] : null;
+            }
+        }
+
+        // Reconstruir índices espaciales re-estampando footprints. Escritura
+        // directa en tile.buildingId sin marcar chunk.dirty: el canvas horneado
+        // del chunk solo contiene terreno/recursos.
+        this.buildingMap = {};
+        this.chunkBuildings = {};
+        var self = this;
+        for (var k = 0; k < newArr.length; k++) {
+            var bb = newArr[k];
+            var def = CFG.BUILDING_DEFS[bb.type];
+            var w = def.size[0], h = def.size[1];
+            for (var dy = 0; dy < h; dy++) {
+                for (var dx = 0; dx < w; dx++) {
+                    this.getTile(bb.x + dx, bb.y + dy).buildingId = bb.id;
+                    this.buildingMap[this.tileKey(bb.x + dx, bb.y + dy)] = bb.id;
+                }
+            }
+            var idK = bb.id;
+            this.forEachChunkOf(bb, function(key) {
+                if (!self.chunkBuildings[key]) self.chunkBuildings[key] = [];
+                self.chunkBuildings[key].push(idK);
+            });
+        }
+        this.deadCount = 0;
+
+        if (typeof Game !== 'undefined' && Game.recalcPowerCache) Game.recalcPowerCache();
+        // Cierra la ventana de ids stale en alertas y HTML del panel info
+        if (typeof UI !== 'undefined' && UI.checkAlerts) {
+            UI.checkAlerts();
+            if (Input.selectedBuilding && !Input.selectedBuilding.removed &&
+                document.getElementById('info-panel').style.display === 'block') {
+                UI.showBuildingInfo(Input.selectedBuilding);
+            }
+        }
     },
 
     getBuildingAt: function(tx, ty) {
