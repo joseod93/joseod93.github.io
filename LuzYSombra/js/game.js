@@ -1,13 +1,28 @@
 
-import { $, now, fmtMs } from './utils.js';
-import { S, loadState, saveState, resetState } from './state.js';
-import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics, initTabs, addXP, xpFlash, screenFlash, fireConfetti, updateStreakDisplay, updateWeatherVisuals, showPassiveGain, showEventBanner } from './ui.js';
+import { $, now, fmtMs, formatNumber, vibrate, setVibrate, vibrateEnabled } from './utils.js';
+import { S, loadState, saveState, resetState, blank } from './state.js';
+import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics, initTabs, addXP, xpFlash, screenFlash, fireConfetti, updateStreakDisplay, updateWeatherVisuals, showPassiveGain, showEventBanner, getActiveTab } from './ui.js';
 import { tryUnlocks, checkAchievements } from './actions.js';
 import { renderMap } from './map.js';
 import { renderSettlement, refreshOpenLocation } from './settlement.js';
-import { showEncounterPrompt, startEnemyEncounter } from './combat.js';
-import { BOSSES, ENEMIES } from './constants.js';
+import { showEncounterPrompt, startEnemyEncounter, isCombatOpen } from './combat.js';
+import { BOSSES, ENEMIES, LEGACY_UPGRADES, BUILDING_UPGRADES } from './constants.js';
 import integrator from './integrator.js';
+
+// Efectos acumulados del árbol de Legado (Reliquias) — permanentes entre prestigios
+function legacyEffects() {
+    const e = {};
+    for (const [k, up] of Object.entries(LEGACY_UPGRADES)) {
+        const lvl = S.legacyUpgrades?.[k] || 0;
+        if (lvl > 0) Object.assign(e, up.effect(lvl));
+    }
+    return e;
+}
+// Multiplicador de nivel de edificio: +25% por nivel sobre el 1
+function buildMul(k) {
+    const lvl = (S.buildings && S.buildings[k]) || (S.unlocked[k] ? 1 : 0);
+    return 1 + 0.25 * (Math.max(1, lvl) - 1);
+}
 
 const startOverlay = $('#startOverlay');
 const startBtn = $('#startBtn');
@@ -22,9 +37,12 @@ function addRes(key, n) {
 }
 
 export function spawnBoss() {
-    const pool = BOSSES;
+    // Elegir un boss acorde al nivel del jugador (no un lvl16 en el día 2)
+    const maxLvl = S.player.level + 2;
+    let pool = BOSSES.filter(b => (b.level || 1) <= maxLvl);
+    if (!pool.length) pool = [...BOSSES].sort((a, b) => (a.level || 1) - (b.level || 1)).slice(0, 3);
     const pick = pool[Math.floor(Math.random() * pool.length)];
-    S.threat = { key: pick.key, name: pick.name, icon: pick.icon, hp: pick.hp, max: pick.hp, endsAt: now() + pick.duration, region: pick.region };
+    S.threat = { key: pick.key, name: pick.name, icon: pick.icon, hp: pick.hp, max: pick.hp, atk: pick.atk, level: pick.level, endsAt: now() + pick.duration, region: pick.region };
     log(`${pick.name} emerge cerca de ${pick.region}.`, 'bad');
     showEventBanner(`⚔️ ${pick.name} emerge cerca de ${pick.region}`, 'danger');
     integrator.onBossSpawned(S, pick.name, pick.region);
@@ -36,7 +54,9 @@ export function spawnBoss() {
 }
 
 function gameTick() {
+    if (!S.started) return;
     const nowTs = now();
+    const gains = [];   // ganancias pasivas a mostrar DESPUÉS de renderResources
 
     S.time.minutes += 1;
     if (S.time.minutes >= (24 * 60)) {
@@ -90,22 +110,23 @@ function gameTick() {
         }
     }
 
-    const prestigeMult = 1 + ((S.prestige || 0) * 0.5);
-    const levelBonus = 1 + (S.player.level - 1) * 0.02;
+    const legacy = legacyEffects();
+    const prestigeMult = (1 + ((S.prestige || 0) * 0.25)) * (1 + (legacy.renownMult || 0));
+    const levelBonus = (1 + (S.player.level - 1) * 0.02) * (1 + (legacy.prodMult || 0));
     const doubleProd = (S._doubleProd && nowTs < S._doubleProd) ? 2 : 1;
 
-    if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus) * levelBonus) { addRes('agua', 1 * doubleProd); showPassiveGain('agua', 1 * doubleProd); }
-    if (S.unlocked.molino && Math.random() < (0.05 + heatBonus) * levelBonus && S.resources.trigo > 0) {
+    if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus) * levelBonus * buildMul('acequia')) { addRes('agua', 1 * doubleProd); gains.push(['agua', 1 * doubleProd]); }
+    if (S.unlocked.molino && Math.random() < (0.05 + heatBonus) * levelBonus * buildMul('molino') && S.resources.trigo > 0) {
         S.resources.trigo--;
         const gained = (1 * prestigeMult);
         S.stats.renown += gained;
         integrator.onRenownGained(S, gained, log);
     }
-    if (S.unlocked.forge && Math.random() < 0.02 * levelBonus) { addRes('hierro', 1 * doubleProd); showPassiveGain('hierro', 1 * doubleProd); }
+    if (S.unlocked.forge && Math.random() < 0.02 * levelBonus * buildMul('forge')) { addRes('hierro', 1 * doubleProd); gains.push(['hierro', 1 * doubleProd]); }
 
     if (S.people.villagers > 0) {
         const leaderBonus = 1 + ((S.skills?.leadership || 0) * 0.15);
-        let needed = S.people.villagers * 0.1;
+        let needed = S.people.villagers * 0.06;
         if (S.resources.trigo >= needed) {
             S.resources.trigo -= needed;
         } else {
@@ -129,21 +150,22 @@ function gameTick() {
         }
 
         if (S.people.jobs) {
-            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus * leaderBonus) { addRes('lenia', 1 * doubleProd); showPassiveGain('lenia', 1 * doubleProd); }
+            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus * leaderBonus) { addRes('lenia', 1 * doubleProd); gains.push(['lenia', 1 * doubleProd]); }
             if (S.people.jobs.farmer > 0) {
                 let farmChance = 0.08 + (heatBonus * 2);
                 if (S.weather === 'rain') farmChance += 0.05;
-                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus * leaderBonus) { addRes('trigo', 1 * doubleProd); showPassiveGain('trigo', 1 * doubleProd); }
+                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus * leaderBonus) { addRes('trigo', 1 * doubleProd); gains.push(['trigo', 1 * doubleProd]); }
             }
             if (S.people.jobs.miner > 0) {
-                const mineChance = 0.05 * S.people.jobs.miner * levelBonus;
+                const mineChance = 0.05 * S.people.jobs.miner * levelBonus * leaderBonus;
                 if (Math.random() < mineChance) {
                     const roll = Math.random();
-                    if (roll < 0.4) { addRes('piedra', 1); showPassiveGain('piedra', 1); }
-                    else if (roll < 0.6) { addRes('hierro', 1); showPassiveGain('hierro', 1); }
+                    if (roll < 0.4) { addRes('piedra', 1); gains.push(['piedra', 1]); }
+                    else if (roll < 0.6) { addRes('hierro', 1); gains.push(['hierro', 1]); }
                     else {
-                        S.stats.renown += 1;
-                        integrator.onRenownGained(S, 1, log);
+                        const rn = 1 * (1 + (legacy.renownMult || 0));   // Fama Imperecedera
+                        S.stats.renown += rn;
+                        integrator.onRenownGained(S, rn, log);
                     }
                 }
             }
@@ -155,7 +177,7 @@ function gameTick() {
         S.threat = null;
     }
 
-    if (!S.threat && S.time.day >= 2 && Math.random() < 0.006) spawnBoss();
+    if (!S.threat && !isCombatOpen() && S.time.day >= 2 && Math.random() < 0.006) spawnBoss();
 
     if (!S.trader && !S.threat && S.time.day >= 3 && Math.random() < (0.002 + (S.stats.renown * 0.0001))) {
         const wants = Math.random() < 0.5 ? 'lenia' : 'trigo';
@@ -177,13 +199,17 @@ function gameTick() {
         renderSettlement(); refreshOpenLocation(); window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
     }
 
+    tryUnlocks();   // la producción pasiva también puede cruzar umbrales de desbloqueo
     updateTags();
     renderResources();
+    // Pintar flotantes "+N" después de reconstruir las fichas (si no, se borran al instante)
+    gains.forEach(([k, n]) => showPassiveGain(k, n));
     checkAchievements();
-    renderMap();
+    if (getActiveTab() === 'tabMapa') renderMap();
     renderSettlement();
     refreshOpenLocation();
     renderNotes();
+    updateSectionVisibility();
     updateCooldownVisuals();
     integrator.onGameTick(S, log);
     S.lastTick = now();
@@ -233,6 +259,38 @@ function getStreakRewards(streak) {
 }
 
 // ===== WELCOME BACK SCREEN =====
+// Calcula la producción offline con las MISMAS tasas del gameTick (eficiencia reducida + tope 8h)
+function computeIdleGains(elapsed) {
+    const legacy = legacyEffects();
+    const CAP = (8 + (legacy.idleHours || 0)) * 3600;   // tope idle (ampliable con Legado)
+    const sec = Math.min(Math.floor(elapsed / 1000), CAP);
+    const capped = Math.floor(elapsed / 1000) > CAP;
+    const eff = 0.25;                     // eficiencia offline (con "Reclamar DOBLE" = 0.5 previsto)
+    const levelBonus = (1 + (S.player.level - 1) * 0.02) * (1 + (legacy.prodMult || 0));
+    const leaderBonus = 1 + ((S.skills?.leadership || 0) * 0.15);
+    const prestigeMult = (1 + ((S.prestige || 0) * 0.25)) * (1 + (legacy.renownMult || 0));
+    const jobs = S.people.jobs || {};
+
+    const res = {};
+    const add = (k, v) => { v = Math.floor(v); if (v > 0) res[k] = (res[k] || 0) + v; };
+
+    add('lenia', sec * 0.1 * (jobs.lumber || 0) * levelBonus * leaderBonus * eff);
+    add('trigo', sec * 0.08 * (jobs.farmer || 0) * levelBonus * leaderBonus * eff);
+    const miner = sec * 0.05 * (jobs.miner || 0) * levelBonus * leaderBonus * eff;
+    add('piedra', miner * 0.4);
+    add('hierro', miner * 0.2);
+    if (S.unlocked.acequia) add('agua', sec * 0.05 * levelBonus * buildMul('acequia') * eff);
+    if (S.unlocked.forge) add('hierro', sec * 0.02 * levelBonus * buildMul('forge') * eff);
+
+    let renown = S.unlocked.molino ? Math.floor(sec * 0.05 * prestigeMult * buildMul('molino') * eff) : 0;
+    let xp = Math.floor((sec / 30) * (1 + S.player.level * 0.1) * eff);
+
+    // Goteo mínimo aunque no tengas producción, para que volver siempre dé algo
+    if (Object.keys(res).length === 0 && renown === 0) add('lenia', Math.max(1, Math.floor(sec / 120)));
+
+    return { res, renown, xp, sec, capped };
+}
+
 function showWelcomeBack(elapsed) {
     const overlay = $('#welcomeBackOverlay');
     const timeText = $('#welcomeTime');
@@ -241,57 +299,83 @@ function showWelcomeBack(elapsed) {
     const closeBtn = $('#welcomeCloseBtn');
     if (!overlay) return;
 
-    timeText.textContent = `Has estado fuera ${fmtMs(elapsed)}.`;
+    // Avanzar el reloj del juego (con corrección de desbordamiento de días)
+    S.time.minutes += Math.floor(Math.min(elapsed, 8 * 3600 * 1000) / 1000);
+    if (S.time.minutes >= 1440) { S.time.day += Math.floor(S.time.minutes / 1440); S.time.minutes %= 1440; }
 
-    const idleMins = Math.floor(elapsed / 1000);
-    const idleRewards = [];
-    const passiveWood = Math.floor(idleMins / 60);
-    const passiveWater = S.unlocked.acequia ? Math.floor(idleMins / 90) : 0;
-    const passiveWheat = (S.people.jobs?.farmer || 0) > 0 ? Math.floor(idleMins / 80) : 0;
-    const xpGained = Math.min(Math.floor(idleMins / 30) * 2, 50);
+    const idle = computeIdleGains(elapsed);
+    timeText.textContent = `Has estado fuera ${fmtMs(elapsed)}.` + (idle.capped ? ' (tope de 8h)' : '');
 
-    if (passiveWood > 0) { S.resources.lenia += passiveWood; idleRewards.push({ icon: '🪵', label: `+${passiveWood} Leña` }); }
-    if (passiveWater > 0) { S.resources.agua += passiveWater; idleRewards.push({ icon: '💧', label: `+${passiveWater} Agua` }); }
-    if (passiveWheat > 0) { S.resources.trigo += passiveWheat; idleRewards.push({ icon: '🌾', label: `+${passiveWheat} Trigo` }); }
-    if (xpGained > 0) { addXP(xpGained); idleRewards.push({ icon: '⭐', label: `+${xpGained} XP` }); }
-
-    S.time.minutes += idleMins;
-
-    const streakRewards = getStreakRewards(S.streak.current);
+    // Recompensa de racha diaria (una vez al día)
+    const streakRes = {}, streakItems = [];
     if (!S.streak.claimedToday) {
-        streakRewards.forEach(r => {
-            if (r.key === 'renown') S.stats.renown += r.amount;
-            else S.resources[r.key] = (S.resources[r.key] || 0) + r.amount;
-            idleRewards.push({ icon: r.icon, label: `+${r.amount} ${r.label}` });
+        getStreakRewards(S.streak.current).forEach(r => {
+            streakRes[r.key] = (streakRes[r.key] || 0) + r.amount;
+            streakItems.push(r);
         });
-        S.streak.claimedToday = true;
     }
 
-    if (idleRewards.length === 0) {
-        idleRewards.push({ icon: '👋', label: '¡Bienvenido!' });
-    }
+    // Construir lista visual combinada
+    const items = [];
+    const RES_ICON = { lenia: '🪵', agua: '💧', trigo: '🌾', piedra: '🪨', hierro: '⛓️', aceitunas: '🫒', hierbas: '🌿', sal: '🧂', medicina: '💊', renown: '⭐' };
+    const RES_LBL = { lenia: 'Leña', agua: 'Agua', trigo: 'Trigo', piedra: 'Piedra', hierro: 'Hierro', aceitunas: 'Aceitunas', hierbas: 'Hierbas', sal: 'Sal', medicina: 'Medicina', renown: 'Renombre' };
+    for (const [k, v] of Object.entries(idle.res)) items.push({ icon: RES_ICON[k] || '📦', label: `+${v} ${RES_LBL[k] || k}` });
+    if (idle.renown > 0) items.push({ icon: '⭐', label: `+${idle.renown} Renombre` });
+    if (idle.xp > 0) items.push({ icon: '✨', label: `+${idle.xp} XP` });
+    if (items.length === 0) items.push({ icon: '👋', label: '¡Bienvenido de vuelta!' });
 
-    rewardsEl.innerHTML = idleRewards.map((r, i) => `
-        <div class="welcome-reward-item count-anim" style="animation-delay:${i * 0.1}s">
+    const subtitle = items.length && idle.sec > 0
+        ? `<div style="grid-column:1/-1;font-size:0.78rem;color:var(--muted);margin:-4px 0 4px">Mientras dormías tu aldea siguió trabajando…</div>` : '';
+
+    rewardsEl.innerHTML = subtitle + items.map((r, i) => `
+        <div class="welcome-reward-item count-anim" style="animation-delay:${i * 0.08}s">
             <div class="reward-icon">${r.icon}</div>
             <div class="reward-text">${r.label}</div>
         </div>
     `).join('');
 
+    const nextRewards = getStreakRewards(S.streak.current + 1).slice(0, 3).map(r => `${r.icon}`).join(' ');
     streakEl.innerHTML = `
-        <div class="streak-num streak-active">${S.streak.current}</div>
-        <div class="streak-label">días seguidos jugando</div>
+        <div class="streak-num streak-active">${S.streak.current} 🔥</div>
+        <div class="streak-label">días seguidos</div>
         ${S.streak.current >= S.streak.best && S.streak.current > 1 ? '<div style="color:var(--accent);font-size:0.75rem;margin-top:4px">¡Récord personal!</div>' : ''}
+        <div style="font-size:0.74rem;color:var(--muted);margin-top:6px">Mañana (racha ${S.streak.current + 1}): ${nextRewards}<br>¡Vuelve o perderás tu racha!</div>
     `;
 
-    overlay.classList.remove('hidden');
+    // Botones: Reclamar y Reclamar x2
+    let x2Btn = $('#welcomeClaim2Btn');
+    if (!x2Btn) {
+        x2Btn = document.createElement('button');
+        x2Btn.id = 'welcomeClaim2Btn';
+        x2Btn.className = 'action glow-btn';
+        x2Btn.style.marginBottom = '8px';
+        closeBtn.parentNode.insertBefore(x2Btn, closeBtn);
+    }
+    x2Btn.textContent = '✨ Reclamar DOBLE';
+    closeBtn.textContent = 'Reclamar';
+    closeBtn.classList.remove('glow-btn');
 
-    closeBtn.onclick = () => {
+    const applyAndClose = (mult) => {
+        for (const [k, v] of Object.entries(idle.res)) S.resources[k] = (S.resources[k] || 0) + v * mult;
+        if (idle.renown > 0) S.stats.renown += idle.renown * mult;
+        if (idle.xp > 0) addXP(idle.xp * mult);
+        // Racha (sin multiplicar) una sola vez
+        if (!S.streak.claimedToday) {
+            for (const [k, v] of Object.entries(streakRes)) {
+                if (k === 'renown') S.stats.renown += v; else S.resources[k] = (S.resources[k] || 0) + v;
+            }
+            S.streak.claimedToday = true;
+        }
+        if (mult > 1) { fireConfetti(); screenFlash('gold'); }
+        log('Recompensas de bienvenida aplicadas.', 'good');
         overlay.classList.add('hidden');
-        log(`Recompensas de bienvenida aplicadas.`, 'good');
-        renderResources();
-        saveState();
+        renderResources(); updateTags(); saveState();
     };
+
+    closeBtn.onclick = () => applyAndClose(1);
+    x2Btn.onclick = () => applyAndClose(2);
+
+    overlay.classList.remove('hidden');
 }
 
 function resumeIdleProgress() {
@@ -320,6 +404,7 @@ function startGame() {
 
     checkStreak();
     integrator.initializeSystems(S);
+    updateSectionVisibility();
     import('./tutorial.js').then(m => {
         if (!m.default.completed) m.default.start();
     });
@@ -331,22 +416,41 @@ function applyTheme(theme) {
     S.theme = theme;
 }
 
-// ===== SKILLS UI =====
+// ===== SKILLS UI (con senda Luz/Sombra + reespecializar) =====
+const RESPEC_COST = 10;
 function renderSkills() {
     const body = $('#skillsBody');
     const badge = $('#skillPointsBadge');
     if (!body) return;
     if (badge) badge.textContent = `${S.skillPoints || 0} pts`;
 
-    let html = '<div class="skills-grid">';
-    const categories = { gather: 'Recolección', combat: 'Combate', production: 'Producción' };
-
-    // Lazy-load SKILLS from constants
     import('./constants.js').then(({ SKILLS }) => {
+        // Sin senda elegida: mostrar selector exclusivo
+        if (!S.alignment) {
+            body.innerHTML = `
+              <p class="align-intro">Elige tu senda. Define qué rama podrás aprender (puedes reespecializar luego).</p>
+              <div class="align-choices">
+                <button class="align-btn luz" data-align="luz"><span class="align-icon">☀️</span><b>Luz</b><small>Recolección, producción y aldeanos</small></button>
+                <button class="align-btn sombra" data-align="sombra"><span class="align-icon">🌙</span><b>Sombra</b><small>Combate, crítico y botín</small></button>
+              </div>`;
+            body.querySelectorAll('.align-btn').forEach(btn => btn.onclick = () => {
+                S.alignment = btn.dataset.align;
+                log(`Has elegido la senda de ${S.alignment === 'luz' ? 'la Luz ☀️' : 'la Sombra 🌙'}.`, 'good');
+                toast(S.alignment === 'luz' ? '☀️ Senda de la Luz' : '🌙 Senda de la Sombra');
+                AudioSystem.playTone('levelup'); screenFlash('gold');
+                saveState(); renderSkills();
+            });
+            return;
+        }
+
+        const categories = { gather: 'Recolección', combat: 'Combate', production: 'Producción' };
+        const branchLabel = S.alignment === 'luz' ? '☀️ Luz' : '🌙 Sombra';
+        let html = `<div class="align-header">Senda: <b>${branchLabel}</b></div><div class="skills-grid">`;
         for (const [cat, catLabel] of Object.entries(categories)) {
+            const inCat = Object.entries(SKILLS).filter(([k, s]) => s.category === cat && s.branch === S.alignment);
+            if (!inCat.length) continue;
             html += `<div class="skill-category-title">${catLabel}</div>`;
-            for (const [key, skill] of Object.entries(SKILLS)) {
-                if (skill.category !== cat) continue;
+            for (const [key, skill] of inCat) {
                 const lvl = S.skills[key] || 0;
                 const maxed = lvl >= skill.maxLevel;
                 const canLearn = S.skillPoints >= skill.cost && !maxed;
@@ -363,6 +467,7 @@ function renderSkills() {
             }
         }
         html += '</div>';
+        html += `<button class="action respec-btn" id="respecBtn">🔄 Reespecializar (${RESPEC_COST} renombre)</button>`;
         body.innerHTML = html;
 
         body.querySelectorAll('.skill-btn').forEach(btn => {
@@ -379,6 +484,20 @@ function renderSkills() {
                 renderSkills();
             };
         });
+
+        const rb = body.querySelector('#respecBtn');
+        if (rb) rb.onclick = () => {
+            if ((S.stats.renown || 0) < RESPEC_COST) { toast(`Necesitas ${RESPEC_COST} de renombre`); return; }
+            if (!confirm(`¿Reespecializar? Recuperas tus puntos y eliges senda de nuevo.\nCoste: ${RESPEC_COST} renombre.`)) return;
+            let spent = 0;
+            for (const [k, s] of Object.entries(SKILLS)) spent += (S.skills[k] || 0) * s.cost;
+            S.stats.renown -= RESPEC_COST;
+            S.skillPoints = (S.skillPoints || 0) + spent;
+            S.skills = {};
+            S.alignment = null;
+            toast('🔄 Habilidades reiniciadas');
+            saveState(); renderSkills(); renderResources();
+        };
     });
 }
 
@@ -396,19 +515,20 @@ function renderMarket() {
             if (!meta) return;
             const fluctuation = Math.sin(seed * 0.7 + good.key.length) * good.volatility;
             const buyPrice = Math.max(1, Math.round(good.basePrice * (1 + fluctuation)));
-            const sellPrice = Math.max(1, Math.round(buyPrice * 0.6));
             const trend = fluctuation > 0.1 ? 'up' : fluctuation < -0.1 ? 'down' : '';
             const trendArrow = trend === 'up' ? '▲' : trend === 'down' ? '▼' : '—';
 
             const tradeDiscount = (S.skills?.tradeSkill || 0) * 0.15;
             const discountedBuy = Math.max(1, Math.round(buyPrice * (1 - tradeDiscount)));
+            // Vender SIEMPRE por debajo de lo que cuesta comprar (si no, tradeSkill alto = renombre infinito)
+            const sellPrice = Math.max(1, Math.round(discountedBuy * 0.5));
             const playerHas = Math.floor(S.resources[good.key] || 0);
             const canBuy = S.stats.renown >= discountedBuy;
             const canSell = playerHas >= 1;
 
             html += `
             <div class="market-item">
-                <span class="market-resource">${meta.icon} ${meta.label} (${playerHas})</span>
+                <span class="market-resource">${meta.icon} ${meta.label} (${formatNumber(playerHas)})</span>
                 <span class="market-price ${trend}">${trendArrow} ${discountedBuy}R</span>
                 <div class="market-actions">
                     <button class="market-btn buy" data-key="${good.key}" data-price="${discountedBuy}" ${canBuy ? '' : 'disabled'}>Comprar</button>
@@ -517,30 +637,28 @@ function initWaveMode() {
     }
 
     btnStart.onclick = () => {
-        const wave = (S.waveMode?.wave || 0) + 1;
+        if (isCombatOpen()) return;
+        const wave = (S.waveMode?.wave || 0) + 1;   // oleada a intentar (NO se persiste hasta vencer)
         import('./constants.js').then(({ WAVE_CONFIG }) => {
             const hp = Math.floor(WAVE_CONFIG.baseHp + WAVE_CONFIG.hpPerWave * wave);
             const atk = Math.floor(WAVE_CONFIG.baseAtk + WAVE_CONFIG.atkPerWave * wave);
             const icon = WAVE_CONFIG.icons[Math.min(wave - 1, WAVE_CONFIG.icons.length - 1)];
             const name = WAVE_CONFIG.names[Math.min(Math.floor((wave - 1) / 2), WAVE_CONFIG.names.length - 1)] + ` (Oleada ${wave})`;
 
-            S.waveMode = { wave, active: true };
-            saveState();
-
             import('./combat.js').then(({ startEnemyEncounter }) => {
                 startEnemyEncounter({
                     name, icon, hp, atk, level: wave * 2,
+                    isWave: true, waveNumber: wave,   // combat avanza S.waveMode.wave SOLO al vencer
                     loot: [{ k: 'hierro', n: [wave, wave + 2] }]
                 });
             });
-
-            btnStart.textContent = `Comenzar Oleada ${wave + 1}`;
         });
     };
 
-    if (S.waveMode?.wave) {
-        btnStart.textContent = `Comenzar Oleada ${(S.waveMode.wave || 0) + 1}`;
-    }
+    // Mantener el texto del botón sincronizado con la oleada superada (la victoria actualiza S.waveMode.wave)
+    const syncWaveBtn = () => { btnStart.textContent = `Comenzar Oleada ${(S.waveMode?.wave || 0) + 1}`; };
+    syncWaveBtn();
+    window.addEventListener('lys-actions-refresh', syncWaveBtn);
 }
 
 // ===== CONTEXTUAL TIPS =====
@@ -578,9 +696,78 @@ function checkContextualTips() {
     }
 }
 
+// ===== REVELADO PROGRESIVO DE SECCIONES (menos agobio inicial, ritmo escalonado) =====
+function announceUnlock(label) {
+    showEventBanner(`🔓 ¡Desbloqueado: ${label}!`, 'opportunity');
+    toast(`🔓 ${label}`);
+    try { AudioSystem.playTone('levelup'); } catch (e) { }
+    if (navigator.vibrate) navigator.vibrate([40, 30, 60]);
+    fireConfetti();
+    const masTab = document.querySelector('.tab[data-tab="tabMas"]');
+    if (masTab) { masTab.classList.remove('tab-flash'); void masTab.offsetWidth; masTab.classList.add('tab-flash'); }
+}
+
+// Brasas ambientales flotantes (puro adorno; se omiten si el usuario prefiere menos movimiento)
+function spawnEmbers() {
+    const amb = $('#ambient');
+    if (!amb) return;
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const count = window.innerWidth < 600 ? 10 : 18;
+    let html = '';
+    for (let i = 0; i < count; i++) {
+        const x = (Math.random() * 100).toFixed(1);
+        const dur = (9 + Math.random() * 10).toFixed(1);
+        const delay = (-Math.random() * dur).toFixed(1);
+        const drift = (Math.random() * 44 - 22).toFixed(0);
+        const size = (4 + Math.random() * 5).toFixed(1);
+        html += `<span class="ember" style="--x:${x}%;--dur:${dur}s;--delay:${delay}s;--drift:${drift}px;width:${size}px;height:${size}px"></span>`;
+    }
+    amb.innerHTML = html;
+}
+
+let _revealInit = false;
+function updateSectionVisibility() {
+    const set = (sel, show) => { const el = $(sel); if (!el) return; const v = show ? '' : 'none'; if (el.style.display !== v) el.style.display = v; };
+    const skillsOn = S.player.level >= 3 || (S.skillPoints || 0) > 0 || Object.keys(S.skills || {}).length > 0;
+    const marketOn = (S.stats.renown || 0) >= 12 || !!S.unlocked.expedition;          // mercado más tarde
+    const craftOn = !!S.unlocked.crafting;
+    const notesOn = craftOn || S.player.level >= 2;
+    const achOn = Object.keys(S.achievements || {}).length >= 1;
+    const waveOn = (S.stats.bossesDefeated || 0) >= 5;
+    const legacyOn = (S.stats.renown || 0) >= 50 || (S.prestige || 0) > 0 || (S.legacy || 0) > 0;
+
+    if (!S.revealed) S.revealed = {};
+    const sections = [
+        ['craftingSection', craftOn, '🔨 Taller de Artesanía', true],
+        ['skillsSection', skillsOn, '⭐ Habilidades', true],
+        ['marketSection', marketOn, '🪙 Mercado', true],
+        ['waveSection', waveOn, '🌊 Oleadas Infinitas', true],
+        ['legacySection', legacyOn, '🏛️ Prestigio y Legado', true],
+        ['notesSection', notesOn, 'Notas', false],
+        ['achievementsSection', achOn, 'Logros', false],
+    ];
+    let changed = false;
+    sections.forEach(([sel, show, label, announce]) => {
+        set('#' + sel, show);
+        if (show && !S.revealed[sel]) {
+            S.revealed[sel] = true; changed = true;
+            const el = $('#' + sel);
+            if (_revealInit) {                 // no anunciar lo ya desbloqueado al cargar
+                if (announce) announceUnlock(label);
+                if (el) { el.classList.remove('section-reveal'); void el.offsetWidth; el.classList.add('section-reveal'); }
+            }
+        }
+    });
+    if (changed) saveState();
+    set('#masLockedHint', !(skillsOn || marketOn || craftOn));
+    _revealInit = true;
+}
+
 function init() {
     loadState();
     applyTheme(S.theme || 'dark');
+    if (localStorage.getItem('lys_reduce_motion') === '1') document.documentElement.setAttribute('data-reduce-motion', '1');
     integrator.initializeSystems(S);
     initTabs();
     checkStreak();
@@ -596,15 +783,20 @@ function init() {
     renderSkills();
     renderMarket();
     renderCrafting();
+    renderLegacy();
     initWaveMode();
     updateWeatherVisuals(S.weather);
+    updateSectionVisibility();
+    spawnEmbers();
 
     setInterval(gameTick, 1000);
     setInterval(saveState, 10000);
     setInterval(updateCooldownVisuals, 100);
-    setInterval(() => { renderMarket(); renderCrafting(); }, 30000);
+    setInterval(() => { renderMarket(); renderCrafting(); renderSkills(); renderLegacy(); }, 30000);
 
-    window.addEventListener('lys-actions-refresh', () => { renderSettlement(); refreshOpenLocation(); renderCrafting(); });
+    window.addEventListener('lys-actions-refresh', () => { renderSettlement(); refreshOpenLocation(); renderCrafting(); renderSkills(); renderLegacy(); updateSectionVisibility(); });
+    window.addEventListener('lys-show-map', renderMap);
+    window.addEventListener('lys-skills-refresh', () => { renderSkills(); updateSectionVisibility(); });
     document.body.addEventListener('click', (e) => {
         if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
             AudioSystem.playTone('click');
@@ -621,15 +813,41 @@ function init() {
 
 startBtn.addEventListener('click', startGame);
 if (audioBtn) {
-    if (AudioSystem.muted) audioBtn.textContent = '🔈';
-    else audioBtn.textContent = '🔊';
-
+    const syncAudioBtn = () => {
+        audioBtn.textContent = AudioSystem.muted ? '🔈' : '🔊';
+        audioBtn.setAttribute('aria-label', AudioSystem.muted ? 'Activar sonido' : 'Silenciar sonido');
+        audioBtn.setAttribute('aria-pressed', String(!AudioSystem.muted));
+    };
+    syncAudioBtn();
     audioBtn.addEventListener('click', () => {
         const isMuted = AudioSystem.toggle();
-        audioBtn.textContent = isMuted ? '🔈' : '🔊';
         if (!isMuted && !AudioSystem.audio) AudioSystem.playMusic('audio1.mp3');
+        syncAudioBtn();
     });
 }
+
+// ===== INSTALAR PWA =====
+let deferredPrompt = null;
+const btnInstall = $('#btnInstall');
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (btnInstall && (S.player.level >= 2 || (S.streak?.current || 0) >= 1)) btnInstall.style.display = '';
+});
+if (btnInstall) {
+    btnInstall.onclick = async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        try { await deferredPrompt.userChoice; } catch (e) { }
+        deferredPrompt = null;
+        btnInstall.style.display = 'none';
+    };
+}
+window.addEventListener('appinstalled', () => {
+    if (btnInstall) btnInstall.style.display = 'none';
+    deferredPrompt = null;
+    toast('📲 ¡App instalada!');
+});
 
 // Theme toggle
 const btnTheme = $('#btnTheme');
@@ -676,42 +894,85 @@ if (btnImport) {
     };
 }
 
-const btnPrestige = $('#btnPrestige');
-if (btnPrestige) {
-    btnPrestige.onclick = () => {
-        if (S.stats.renown < 50) {
-            alert('Necesitas 50 de Renombre para Ascender.');
-            return;
-        }
-        if (confirm(`¿Ascender? Perderás progreso pero ganarás Prestigio ${S.prestige + 1} (+50% Renombre futuro).`)) {
-            const nextLvl = (S.prestige || 0) + 1;
-            const keptAch = S.achievements;
-            const keptStreak = S.streak;
-            const keptLevel = S.player.level;
-            localStorage.removeItem('lys_save_v2');
-            const newState = {
-                resources: { lenia: 0, agua: 0, aceitunas: 0, hierbas: 0, piedra: 0, hierro: 0, trigo: 0, sal: 0, antorchas: 0, medicina: 0 },
-                stats: { totalTicks: 0, renown: 0, explore: 0, bossesDefeated: 0 },
-                unlocked: { fire: false, water: false, hut: false, farm: false, expedition: false, mine: false, forge: false, molino: false, acequia: false },
-                people: { villagers: 0, jobs: { lumber: 0, farmer: 0, miner: 0 } },
-                fire: { lit: false, fuel: 0, heat: 0 },
-                player: { hp: 100, maxHp: 100 + (keptLevel * 5), guard: false, xp: 0, level: keptLevel },
-                time: { day: 1, minutes: 480 },
-                cooldowns: { cut: 0, fetch: 0, forage: 0, explore: 0, stoke: 0, boss: 0, craft: 0 },
-                expedition: null,
-                threat: null,
-                trader: null,
-                prestige: nextLvl,
-                achievements: keptAch,
-                streak: keptStreak,
-                regionFocus: null,
-                weather: 'clear',
-                discoveries: { lenia: false, agua: false, aceitunas: false, hierbas: false, piedra: false, hierro: false, trigo: false, sal: false }
-            };
-            localStorage.setItem('lys_save_v2', JSON.stringify(newState));
-            location.reload();
-        }
-    };
+// ===== PRESTIGIO / LEGADO =====
+const PRESTIGE_COST = 50;
+function legacyGain() {
+    return Math.floor(Math.sqrt(Math.max(0, S.stats.renown) / 10)) + Math.floor(S.player.level / 4) + 1;
+}
+function ascend() {
+    if (S.stats.renown < PRESTIGE_COST) { toast(`Necesitas ${PRESTIGE_COST} de renombre`); return; }
+    const gained = legacyGain();
+    if (!confirm(`¿Ascender al Prestigio ${(S.prestige || 0) + 1}?\n\nReinicia nivel, habilidades, recursos y edificios — pero ganas ${gained} ✦ Reliquias PERMANENTES para el árbol de Legado.`)) return;
+    const legacy = legacyEffects();
+    const keep = legacy.keepResources || 0;
+    const ns = blank();
+    ns.started = true;
+    ns.prestige = (S.prestige || 0) + 1;
+    ns.legacy = (S.legacy || 0) + gained;
+    ns.legacyUpgrades = S.legacyUpgrades || {};
+    ns.achievements = S.achievements;
+    ns.streak = S.streak;
+    ns.revealed = S.revealed;
+    ns.alignment = null;                 // re-elegir senda
+    ns.time = { day: 1, minutes: 480 };
+    ns.theme = S.theme;                                   // conservar preferencias visuales
+    ns.tutorialTips = S.tutorialTips;
+    ns.people.villagers = legacy.startVillagers || 0;     // Clan Fundador
+    ns.skillPoints = legacy.startSkillPoints || 0;        // Talento Innato
+    if (keep > 0) for (const k of Object.keys(ns.resources)) ns.resources[k] = Math.floor((S.resources[k] || 0) * keep);  // Riquezas Guardadas
+    fireConfetti(); screenFlash('gold');
+    Object.assign(S, ns);   // sincronizar la S en memoria (un autoguardado concurrente no revierte el ascenso)
+    localStorage.setItem('lys_save_v2', JSON.stringify(ns));
+    setTimeout(() => location.reload(), 400);
+}
+
+function renderLegacy() {
+    const body = $('#legacyBody');
+    const badge = $('#legacyBadge');
+    if (!body) return;
+    if (badge) badge.textContent = `${S.legacy || 0} ✦`;
+    const gained = legacyGain();
+    const canAscend = S.stats.renown >= PRESTIGE_COST;
+    let html = `
+      <div class="legacy-head">
+        <div>Prestigio <b>${S.prestige || 0}</b></div>
+        <div>Reliquias <b>${S.legacy || 0} ✦</b></div>
+      </div>
+      <button class="action glow-btn" id="ascendBtn" ${canAscend ? '' : 'disabled'}>⬆️ Ascender (+${gained} ✦)</button>
+      <p class="legacy-note">Cuesta ${PRESTIGE_COST} renombre. Reinicia el progreso; las Reliquias y sus mejoras son permanentes.</p>
+      <div class="legacy-grid">`;
+    for (const [k, up] of Object.entries(LEGACY_UPGRADES)) {
+        const lvl = S.legacyUpgrades?.[k] || 0;
+        const maxed = lvl >= up.max;
+        const c = up.cost(lvl);
+        const can = !maxed && (S.legacy || 0) >= c;
+        html += `
+        <div class="legacy-item">
+            <span class="legacy-icon">${up.icon}</span>
+            <div class="legacy-info">
+                <div class="legacy-name">${up.name}</div>
+                <div class="legacy-desc">${up.desc}</div>
+                <div class="legacy-lvl">${maxed ? 'MAX' : `Nv ${lvl}/${up.max} · ${c} ✦`}</div>
+            </div>
+            <button class="skill-btn" data-legacy="${k}" ${can ? '' : 'disabled'}>+</button>
+        </div>`;
+    }
+    html += '</div>';
+    body.innerHTML = html;
+    const ab = body.querySelector('#ascendBtn');
+    if (ab) ab.onclick = ascend;
+    body.querySelectorAll('[data-legacy]').forEach(btn => btn.onclick = () => {
+        const k = btn.dataset.legacy, up = LEGACY_UPGRADES[k], lvl = S.legacyUpgrades?.[k] || 0;
+        if (!up || lvl >= up.max) return;
+        const c = up.cost(lvl);
+        if ((S.legacy || 0) < c) return;
+        S.legacy -= c;
+        if (!S.legacyUpgrades) S.legacyUpgrades = {};
+        S.legacyUpgrades[k] = lvl + 1;
+        toast(`${up.icon} ${up.name} Nv ${lvl + 1}`);
+        AudioSystem.playTone('build'); screenFlash('gold');
+        saveState(); renderLegacy();
+    });
 }
 
 if (btnWipe) {
@@ -727,6 +988,66 @@ if (btnWipe) {
 const btnStats = $('#btnStats');
 if (btnStats) {
     btnStats.addEventListener('click', showStatistics);
+}
+
+// ===== AJUSTES =====
+const btnSettings = $('#btnSettings');
+const settingsOverlay = $('#settingsOverlay');
+if (btnSettings && settingsOverlay) {
+    const volRange = $('#volRange'), vibToggle = $('#vibToggle'), motionToggle = $('#motionToggle'),
+        themeToggle2 = $('#themeToggle2'), notifToggle2 = $('#notifToggle2');
+    const onoff = (b) => b ? 'Activada' : 'Desactivada';
+    let notifsRef = null;
+    import('./notifications.js').then(m => { notifsRef = m.notifications; syncSettings(); });
+    const syncSettings = () => {
+        if (volRange) volRange.value = AudioSystem.volume;
+        if (vibToggle) vibToggle.textContent = onoff(vibrateEnabled());
+        if (motionToggle) motionToggle.textContent = onoff(document.documentElement.getAttribute('data-reduce-motion') === '1');
+        if (themeToggle2) themeToggle2.textContent = S.theme === 'dark' ? '🌙 Oscuro' : '☀️ Claro';
+        if (notifToggle2) notifToggle2.textContent = (notifsRef && notifsRef.enabled) ? 'Activados' : 'Desactivados';
+    };
+    btnSettings.onclick = () => { syncSettings(); settingsOverlay.classList.remove('hidden'); };
+    const closeS = () => settingsOverlay.classList.add('hidden');
+    const sc = $('#settingsCloseBtn'); if (sc) sc.onclick = closeS;
+    settingsOverlay.onclick = (e) => { if (e.target === settingsOverlay) closeS(); };
+    if (volRange) volRange.oninput = () => {
+        AudioSystem.setVolume(parseFloat(volRange.value));
+        if (!AudioSystem.muted && !AudioSystem.audio) AudioSystem.playMusic('audio1.mp3');
+    };
+    if (vibToggle) vibToggle.onclick = () => { setVibrate(!vibrateEnabled()); vibrate(30); syncSettings(); };
+    if (motionToggle) motionToggle.onclick = () => {
+        const on = document.documentElement.getAttribute('data-reduce-motion') === '1';
+        if (on) { document.documentElement.removeAttribute('data-reduce-motion'); localStorage.setItem('lys_reduce_motion', '0'); }
+        else { document.documentElement.setAttribute('data-reduce-motion', '1'); localStorage.setItem('lys_reduce_motion', '1'); }
+        syncSettings();
+    };
+    if (themeToggle2) themeToggle2.onclick = () => { applyTheme(S.theme === 'dark' ? 'light' : 'dark'); saveState(); syncSettings(); };
+    if (notifToggle2) notifToggle2.onclick = async () => {
+        if (!notifsRef) return;
+        if (notifsRef.enabled) { notifsRef.enabled = false; localStorage.setItem('lys_notifications', 'disabled'); }
+        else { await notifsRef.requestPermission(); }
+        syncSettings();
+    };
+}
+
+// Notificaciones (gancho de retorno): permite avisar de bosses, mercaderes y expediciones
+const btnNotif = $('#btnNotif');
+if (btnNotif) {
+    import('./notifications.js').then(({ notifications }) => {
+        const sync = () => { btnNotif.textContent = notifications.enabled ? '🔔 Avisos: ON' : '🔕 Activar avisos'; };
+        sync();
+        btnNotif.onclick = async () => {
+            if (notifications.enabled) {
+                notifications.enabled = false;
+                localStorage.setItem('lys_notifications', 'disabled');
+                toast('🔕 Avisos desactivados');
+            } else {
+                const ok = await notifications.requestPermission();
+                toast(ok ? '🔔 Te avisaremos de bosses y mercaderes' : 'Permiso de avisos denegado');
+            }
+            sync();
+        };
+    });
 }
 
 setInterval(renderQuests, 5000);

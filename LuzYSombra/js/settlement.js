@@ -1,10 +1,15 @@
 
 import { S } from './state.js';
-import { LOCAL_LOCATIONS } from './constants.js';
-import { $ } from './utils.js';
+import { LOCAL_LOCATIONS, UNLOCK_HINT } from './constants.js';
+import { $, now } from './utils.js';
 import { renderLocationActions } from './actions.js';
 import { vibrate } from './utils.js';
 import { AudioSystem } from './audio.js';
+
+function getTodayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
 
 const settlementBody = $('#settlementBody');
 const locationOverlay = $('#locationOverlay');
@@ -26,24 +31,38 @@ export function renderSettlement() {
     const unlocked = LOCAL_LOCATIONS.filter(isUnlocked);
     const locked = LOCAL_LOCATIONS.filter(l => !isUnlocked(l));
 
+    // ¿Qué debería hacer el jugador ahora? (guía de "siguiente paso")
+    let nextStep = null;
+    if (!S.fire.lit && (S.resources.lenia || 0) <= 0) nextStep = 'bosque';
+    else if (!S.fire.lit) nextStep = 'campamento';
+
+    const hint = nextStep === 'bosque' ? 'Corta 🪵 leña en el Bosque'
+        : nextStep === 'campamento' ? 'Enciende la fogata en el Campamento'
+            : 'Toca un lugar para actuar';
+
     // Dirty check: only rebuild if state changed
-    const key = unlocked.map(l => l.id).join(',') + '|' + S.currentLocation + '|' + locked.length;
+    const key = unlocked.map(l => l.id).join(',') + '|' + S.currentLocation + '|' + locked.length + '|' + nextStep + '|' + S.fire.lit;
     if (settlementBody.dataset.key === key) return;
     settlementBody.dataset.key = key;
 
-    settlementBody.innerHTML = `<div class="s3-strip">
+    // Solo lugares desbloqueados: los bloqueados aparecen al desbloquearse (la baliza guía el próximo)
+    settlementBody.innerHTML = `
+    <p class="strip-hint">👉 ${hint}</p>
+    <div class="s3-strip">
         ${unlocked.map(loc => `
-        <button class="s3-btn${S.currentLocation === loc.id ? ' active' : ''}" data-location="${loc.id}">
+        <button class="s3-btn${S.currentLocation === loc.id ? ' active' : ''}${loc.id === nextStep ? ' next-step' : ''}" data-location="${loc.id}">
             <span class="s3-btn-icon">${loc.emoji}</span>
             <span class="s3-btn-name">${loc.name}</span>
         </button>`).join('')}
-        ${locked.length > 0 ? `<div class="s3-btn locked"><span class="s3-btn-icon">🔒</span><span class="s3-btn-name">${locked.length} más</span></div>` : ''}
     </div>`;
 
     settlementBody.querySelectorAll('.s3-btn:not(.locked)').forEach(b =>
         b.addEventListener('click', () => openLocation(b.dataset.location))
     );
 }
+
+// Navegación rápida entre lugares desde el overlay (mini-tira) sin cerrar el modal
+window.addEventListener('lys-open-location', (e) => openLocation(e.detail));
 
 // ===== AMBIENT =====
 let ambInt = null, ambNodes = [];
@@ -155,7 +174,28 @@ export function closeLocation() {
 }
 
 export function refreshOpenLocation() {
-    if (S.currentLocation && locationActions && locationOverlay && !locationOverlay.classList.contains('hidden')) {
-        renderLocationActions(S.currentLocation, locationActions);
-    }
+    if (!(S.currentLocation && locationActions && locationOverlay && !locationOverlay.classList.contains('hidden'))) return;
+    if (window.__lysSpinning) return; // no reconstruir la ruleta a mitad de giro
+
+    // Firma estructural: solo re-renderiza cuando cambia algo relevante (los cooldowns los
+    // gestiona updateCooldownVisuals sobre los mismos botones, sin re-render).
+    const r = S.resources;
+    const sig = [
+        S.currentLocation, S.fire.lit,
+        S.unlocked.crafting, S.unlocked.village, S.unlocked.expedition,
+        S.unlocked.molino, S.unlocked.acequia, S.unlocked.forge,
+        S.discoveries.piedra, S.discoveries.agua, S.discoveries.hierro,
+        S.people.villagers, (S.consumables?.pan || 0) > 0,
+        // cantidades que cambian la disponibilidad/etiquetas de botones de coste (Taller/Aldea/Fogata)
+        Math.floor(r.lenia || 0), Math.floor(r.agua || 0), Math.floor(r.piedra || 0), Math.floor(r.hierro || 0),
+        Math.floor(r.aceitunas || 0), Math.floor(r.trigo || 0), Math.floor(r.hierbas || 0), Math.floor(S.stats.renown || 0),
+        S.expedition ? (S.expedition.endsAt - now() <= 0 ? 'ready' : 'run') : 'none',
+        S.trader ? Math.ceil((S.trader.endsAt - now()) / 5000) : 0,   // refresca el contador cada ~5s
+        !!S.threat,
+        (S.streak && S.streak.lastSpinDate !== getTodayStr()) ? 'spin' : ''
+    ].join('|');
+
+    if (locationActions.dataset.sig === sig) return;
+    locationActions.dataset.sig = sig;
+    renderLocationActions(S.currentLocation, locationActions);
 }

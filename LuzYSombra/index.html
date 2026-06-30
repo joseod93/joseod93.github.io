@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover" />
   <meta name="theme-color" content="#0b0e12" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -14,6 +14,7 @@
 </head>
 
 <body>
+  <div id="ambient" class="ambient" aria-hidden="true"></div>
   <div id="weatherOverlay" class="weather-overlay"></div>
   <header role="banner">
     <div class="header-top">
@@ -36,14 +37,22 @@
     </div>
   </header>
 
-  <div id="eventBanner" class="event-banner hidden"></div>
+  <div id="eventBanner" class="event-banner hidden" role="status" aria-live="polite"></div>
+  <button id="bossBar" class="boss-bar hidden" aria-live="polite"></button>
 
   <!-- Tab Content: Aldea -->
   <main class="tab-content active" id="tabAldea">
     <div class="wrap-single">
+      <div id="unlockBeacon" class="unlock-beacon hidden"></div>
+      <button id="nextObjective" class="next-objective hidden" aria-live="polite"></button>
       <section class="card resources-card">
         <h2>Recursos</h2>
         <div class="body resources" id="resources"></div>
+      </section>
+
+      <section class="card daily-goals-card" id="dailyGoalsCard" style="display:none">
+        <h2>🎯 Objetivos de hoy <span class="dg-count" id="dailyGoalsCount"></span></h2>
+        <div class="body" id="dailyGoals"></div>
       </section>
 
       <section class="card settlement-card" id="settlementSection">
@@ -95,14 +104,16 @@
   <!-- Tab Content: Más -->
   <main class="tab-content" id="tabMas">
     <div class="wrap-single">
+      <div id="masLockedHint" class="mas-locked-hint" style="display:none">🔒 Sigue jugando para desbloquear <b>Habilidades</b>, <b>Mercado</b> y <b>Taller</b>. Sube de nivel y reúne recursos.</div>
+
       <!-- Skills Section -->
-      <section class="card skills-card" id="skillsSection">
+      <section class="card skills-card" id="skillsSection" style="display:none">
         <h2>Habilidades <span class="skill-points-badge" id="skillPointsBadge">0 pts</span></h2>
         <div class="body" id="skillsBody"></div>
       </section>
 
       <!-- Market Section -->
-      <section class="card market-card" id="marketSection">
+      <section class="card market-card" id="marketSection" style="display:none">
         <h2>Mercado</h2>
         <div class="body" id="marketBody">
           <p style="color:#666;text-align:center;padding:8px;font-size:0.85rem">Compra y vende recursos a precios dinámicos.</p>
@@ -110,7 +121,7 @@
       </section>
 
       <!-- Crafting Section -->
-      <section class="card crafting-card" id="craftingSection">
+      <section class="card crafting-card" id="craftingSection" style="display:none">
         <h2>Taller de Artesanía</h2>
         <div class="body" id="craftingBody"></div>
       </section>
@@ -124,20 +135,28 @@
         </div>
       </section>
 
-      <section class="card notes-card" id="notesSection">
+      <section class="card notes-card" id="notesSection" style="display:none">
         <h2>Notas</h2>
         <div class="body" id="notesBody"></div>
       </section>
 
-      <section class="card achs-card" id="achievementsSection">
+      <section class="card achs-card" id="achievementsSection" style="display:none">
         <h2>Logros</h2>
         <div class="body achs" id="achievements"></div>
+      </section>
+
+      <section class="card legacy-card" id="legacySection" style="display:none">
+        <h2>🏛️ Prestigio y Legado <span class="legacy-badge" id="legacyBadge">0 ✦</span></h2>
+        <div class="body" id="legacyBody"></div>
       </section>
 
       <section class="card sys-card" id="sysSection">
         <h2>Sistema</h2>
         <div class="body sys-buttons">
+          <button id="btnSettings" class="action">⚙️ Ajustes</button>
           <button id="btnStats" class="action">📊 Estadísticas</button>
+          <button id="btnInstall" class="action" style="display:none">📲 Instalar app</button>
+          <button id="btnNotif" class="action">🔕 Activar avisos</button>
           <button id="btnTheme" class="action" aria-label="Cambiar tema">🌗 Cambiar Tema</button>
           <button id="btnExport" class="action">📤 Exportar</button>
           <button id="btnImport" class="action">📥 Importar</button>
@@ -170,6 +189,7 @@
     <button class="tab" data-tab="tabMas" role="tab" aria-selected="false" aria-controls="tabMas">
       <span class="tab-icon" aria-hidden="true">⭐</span>
       <span class="tab-label">Más</span>
+      <span class="tab-badge hidden" id="masBadge" aria-live="polite">!</span>
     </button>
   </nav>
 
@@ -185,7 +205,7 @@
   <div class="combo-indicator hidden" id="comboIndicator">🔥 x1</div>
 
   <!-- Toast -->
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <!-- Confetti canvas -->
   <canvas id="confettiCanvas" class="confetti-canvas"></canvas>
@@ -208,6 +228,7 @@
   <!-- Fight Overlay -->
   <div id="fightOverlay" class="overlay hidden">
     <div class="panel">
+      <button id="fightCloseBtn" class="icon-btn fight-close" aria-label="Salir del combate">✕</button>
       <h2 id="fightTitle">Combate</h2>
       <p id="fightInfo">Prepárate...</p>
       <div id="fightUI" class="combat-ui"></div>
@@ -262,6 +283,25 @@
       <p>Tu aldea crece y se fortalece.</p>
       <div class="levelup-bonus" id="levelUpBonus"></div>
       <button id="levelUpCloseBtn" class="action glow-btn">¡Genial!</button>
+    </div>
+  </div>
+
+  <!-- Settings Overlay -->
+  <div id="settingsOverlay" class="overlay hidden">
+    <div class="panel settings-panel">
+      <div class="settings-header">
+        <h2>⚙️ Ajustes</h2>
+        <button id="settingsCloseBtn" class="icon-btn" aria-label="Cerrar">&#10005;</button>
+      </div>
+      <div class="settings-row">
+        <label for="volRange">🔊 Volumen</label>
+        <input type="range" id="volRange" min="0" max="0.6" step="0.02" />
+      </div>
+      <div class="settings-row"><span>📳 Vibración</span><button id="vibToggle" class="action toggle-btn"></button></div>
+      <div class="settings-row"><span>🌀 Menos animaciones</span><button id="motionToggle" class="action toggle-btn"></button></div>
+      <div class="settings-row"><span>🌗 Tema</span><button id="themeToggle2" class="action toggle-btn"></button></div>
+      <div class="settings-row"><span>🔔 Avisos</span><button id="notifToggle2" class="action toggle-btn"></button></div>
+      <div class="footer" style="text-align:center">Datos (exportar/importar/borrar) en la sección Sistema.</div>
     </div>
   </div>
 

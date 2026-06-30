@@ -111,10 +111,22 @@ export async function copyToClipboard(text) {
 }
 
 // Vibrar (si está disponible)
+let _vibrateOn = localStorage.getItem('lys_vibrate') !== 'false';
+export function setVibrate(on) {
+    _vibrateOn = !!on;
+    localStorage.setItem('lys_vibrate', _vibrateOn ? 'true' : 'false');
+}
+export function vibrateEnabled() { return _vibrateOn; }
 export function vibrate(pattern = 50) {
-    if ('vibrate' in navigator) {
+    if (_vibrateOn && 'vibrate' in navigator) {
         navigator.vibrate(pattern);
     }
+}
+
+// ¿El usuario prefiere menos movimiento? (flag manual de Ajustes O preferencia del sistema)
+export function prefersReducedMotion() {
+    if (document.documentElement.getAttribute('data-reduce-motion') === '1') return true;
+    return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
 // Calcular porcentaje

@@ -37,11 +37,12 @@ export function renderMap() {
         const isExpTarget = S.expedition && S.expedition.region === r.name;
         const fill = isExpTarget ? '#4dabf7' : focused ? '#ffe08a' : (active ? '#f2a65a' : '#6b7280');
         const stroke = isExpTarget ? '#228be6' : focused ? '#f59e0b' : '#1b2636';
-        const radius = focused || isExpTarget ? 14 : 10;
+        const radius = focused || isExpTarget ? 15 : 11;
+        const glow = (focused || isExpTarget) ? ' filter="url(#nodeGlow)"' : '';
         const pulseAnim = active && !isExpTarget ? `<animate attributeName="r" values="${radius};${radius+3};${radius}" dur="2s" repeatCount="indefinite"/>` : '';
         return `<g data-region="${r.name}" cursor="pointer">
-            <circle cx="${p.x}" cy="${p.y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="2" opacity="0.9">${pulseAnim}</circle>
-            <text x="${p.x}" y="${p.y - radius - 4}" fill="#c1cbe0" font-size="9" font-family="system-ui, sans-serif" text-anchor="middle">${r.emoji} ${r.name}</text>
+            <circle cx="${p.x}" cy="${p.y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="2.5" opacity="0.95"${glow}>${pulseAnim}</circle>
+            <text x="${p.x}" y="${p.y - radius - 5}" fill="#dbe4f7" font-size="11" font-weight="600" font-family="system-ui, sans-serif" text-anchor="middle" style="paint-order:stroke" stroke="#070a14" stroke-width="0.6">${r.emoji} ${r.name}</text>
         </g>`;
     }).join('');
 
@@ -83,8 +84,19 @@ export function renderMap() {
     }
 
     let svgHTML = `<div class="map-svg-wrap">
-        <svg id="mapSvg" viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block;background:#0b1020;border:1px solid #1b2636;border-radius:12px">
-            <rect x="0" y="0" width="${w}" height="${h}" fill="#0b1020"/>
+        <svg id="mapSvg" viewBox="0 0 ${w} ${h}" width="100%" preserveAspectRatio="xMidYMid meet" style="display:block;border:1px solid #1b2636;border-radius:12px">
+            <defs>
+                <radialGradient id="mapBg" cx="62%" cy="22%" r="95%">
+                    <stop offset="0%" stop-color="#17223e"/>
+                    <stop offset="55%" stop-color="#0b1020"/>
+                    <stop offset="100%" stop-color="#06090f"/>
+                </radialGradient>
+                <filter id="nodeGlow" x="-70%" y="-70%" width="240%" height="240%">
+                    <feGaussianBlur stdDeviation="3" result="b"/>
+                    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+            </defs>
+            <rect x="0" y="0" width="${w}" height="${h}" fill="url(#mapBg)"/>
             ${lines}
             ${expRouteLine}
             ${lockedNodes}
@@ -194,6 +206,7 @@ function sendExpedition(regionName) {
     S.expedition = { endsAt: now() + dur, startedAt: now(), region: region.name };
     S.regionFocus = region.name;
     log(`${region.emoji} Expedición hacia ${region.name}.`, 'warn');
+    import('./notifications.js').then(({ notifications }) => setTimeout(() => notifications.expeditionComplete(region.name), dur));
     addXP(5); xpFlash();
     vibrate(40);
     updateTags(); saveState(); renderMap(); renderNotes();

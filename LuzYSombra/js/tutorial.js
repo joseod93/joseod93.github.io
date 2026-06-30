@@ -7,47 +7,47 @@ const TUTORIAL_STEPS = [
     {
         id: 'welcome',
         title: '¡Bienvenido a Andalucía!',
-        message: 'Despiertas en una habitación fría. Tu primera tarea es encender la fogata para sobrevivir.',
-        highlight: '#btnStoke',
-        position: 'bottom',
-        action: 'Haz clic en "Encender la fogata"'
+        message: 'Despiertas en una habitación fría y oscura. Sobrevive, enciende el fuego y haz crecer tu aldea.',
+        highlight: null,
+        position: 'center',
+        action: null
     },
     {
-        id: 'gather_wood',
-        title: 'Recolectar Leña',
-        message: 'Necesitas leña para mantener el fuego. Explora el bosque cercano.',
-        highlight: '#btnCut',
+        id: 'settlement',
+        title: 'Tu Asentamiento',
+        message: 'Estos son los lugares de tu asentamiento. Al cerrar esta guía, toca cada uno para actuar: Campamento (fuego), Bosque (leña), Río, Campos...',
+        highlight: '#settlementBody',
         position: 'bottom',
-        action: 'Haz clic en "Cortar leña"'
+        action: 'El lugar que parpadea es tu próximo paso'
     },
     {
         id: 'resources',
-        title: 'Recursos',
-        message: 'Aquí puedes ver tus recursos. Gestiónalos sabiamente para sobrevivir.',
-        highlight: '#resources',
-        position: 'right',
-        action: 'Revisa tus recursos'
-    },
-    {
-        id: 'explore',
-        title: 'Exploración',
-        message: 'Explora los contornos para descubrir nuevos recursos y ganar renombre.',
-        highlight: '#settlementBody',
+        title: 'Tus Recursos',
+        message: 'Lo que recolectas aparece aquí. Con leña enciendes el fuego; con más recursos desbloqueas construcciones y mejoras.',
+        highlight: '.resources-card',
         position: 'bottom',
-        action: 'Explora cuando puedas'
+        action: null
     },
     {
-        id: 'log',
-        title: 'Diario',
-        message: 'El diario registra todos los eventos importantes. Revísalo regularmente.',
-        highlight: '#log',
-        position: 'left',
-        action: 'Lee el diario'
+        id: 'xp',
+        title: 'Sube de Nivel',
+        message: 'Cada acción te da experiencia. Al subir de nivel ganas puntos de habilidad, vida y bonificaciones.',
+        highlight: '.xp-bar-wrap',
+        position: 'bottom',
+        action: null
+    },
+    {
+        id: 'navigation',
+        title: 'Explora el Mundo',
+        message: 'Usa estas pestañas: Diario (eventos y misiones), Mapa (expediciones y combate) y Más (habilidades, mercado, taller).',
+        highlight: '.tab-bar',
+        position: 'top',
+        action: 'Vuelve cada día para tu racha y la ruleta'
     },
     {
         id: 'complete',
-        title: '¡Tutorial Completado!',
-        message: 'Ahora estás listo para tu aventura en Andalucía. ¡Buena suerte!',
+        title: '¡Listo para la aventura!',
+        message: 'Mantén el fuego vivo, completa misiones y derrota bosses. ¡Buena suerte en Hispania!',
         highlight: null,
         position: 'center',
         action: null

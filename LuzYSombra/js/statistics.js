@@ -71,6 +71,9 @@ class StatisticsTracker {
             if (saved) {
                 const data = JSON.parse(saved);
                 this.stats = { ...this.stats, ...data };
+                // JSON serializa Infinity como null -> restaurar el centinela del récord
+                if (!this.stats.records) this.stats.records = { longestFireStreak: 0, mostResourcesInDay: 0, fastestBossDefeat: Infinity, highestRenown: 0 };
+                if (this.stats.records.fastestBossDefeat == null) this.stats.records.fastestBossDefeat = Infinity;
                 this.stats.currentSessionStart = Date.now();
                 this.stats.sessionsCount++;
             }

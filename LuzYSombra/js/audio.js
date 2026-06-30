@@ -5,10 +5,24 @@ export const AudioSystem = {
     ctx: null,
     init() {
         this.muted = localStorage.getItem('lys_muted') === 'true';
+        this.volume = parseFloat(localStorage.getItem('lys_volume'));
+        if (isNaN(this.volume)) this.volume = 0.28;
         try {
             const Ctx = window.AudioContext || window.webkitAudioContext;
-            if (Ctx) this.ctx = new Ctx();
+            if (Ctx) {
+                this.ctx = new Ctx();
+                this.master = this.ctx.createGain();
+                this.master.gain.value = this.volume / 0.28;   // 0.28 = referencia (=1)
+                this.master.connect(this.ctx.destination);
+            }
         } catch (e) { console.error('AudioContext not supported'); }
+    },
+    setVolume(v) {
+        this.volume = Math.max(0, Math.min(0.6, v));
+        localStorage.setItem('lys_volume', String(this.volume));
+        if (this.master) this.master.gain.value = this.volume / 0.28;
+        if (this.audio) this.audio.volume = this.volume;
+        this._baseVol = this.volume;
     },
     toggle() {
         if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
@@ -23,15 +37,33 @@ export const AudioSystem = {
         }
         return this.muted;
     },
-    playMusic(src, vol = 0.28) {
+    playMusic(src) {
         if (!this.audio) {
             this.audio = new Audio(src);
             this.audio.loop = true;
-            this.audio.volume = vol;
+            this.audio.volume = this.volume;
+            this._track = src;
+            this._baseVol = this.volume;
         }
         if (!this.muted) {
             this.audio.play().catch(() => { });
         }
+    },
+    // Cambia de pista con un fundido corto (música de combate <-> ambiente)
+    crossfadeTo(src) {
+        if (!this.audio || this.muted || this.volume <= 0 || this._track === src) return;
+        this._track = src;
+        const a = this.audio;
+        const base = (this._baseVol != null ? this._baseVol : 0.28);
+        if (this._fadeTimer) clearInterval(this._fadeTimer);
+        let step = 0;
+        this._fadeTimer = setInterval(() => {
+            step++;
+            if (step <= 6) a.volume = Math.max(0, base * (1 - step / 6));
+            else if (step === 7) { try { a.src = src; a.play().catch(() => { }); } catch (e) { } }
+            else if (step <= 13) a.volume = Math.min(base, base * ((step - 7) / 6));
+            else { clearInterval(this._fadeTimer); this._fadeTimer = null; a.volume = base; }
+        }, 45);
     },
     playTone(type) {
         if (this.muted || !this.ctx) return;
@@ -40,7 +72,7 @@ export const AudioSystem = {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.connect(gain);
-        gain.connect(this.ctx.destination);
+        gain.connect(this.master || this.ctx.destination);
 
         const now = this.ctx.currentTime;
 

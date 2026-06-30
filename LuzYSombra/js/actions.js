@@ -1,13 +1,14 @@
 
 import { S, saveState } from './state.js';
-import { REGIONS, BOSSES, RES_META, ENEMIES } from './constants.js';
+import { REGIONS, BOSSES, RES_META, ENEMIES, LOCAL_LOCATIONS, BUILDING_UPGRADES } from './constants.js';
 import { now, fmtMs, $, randomRange, randomChoice, vibrate } from './utils.js';
-import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash, incrementCombo, fireConfetti } from './ui.js';
+import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash, incrementCombo, fireConfetti, getComboCount } from './ui.js';
 import { openCombat, showEncounterPrompt, startEnemyEncounter } from './combat.js';
 import { renderMap, getRandomRegion } from './map.js';
 import { AudioSystem } from './audio.js';
 import { spawnBoss } from './game.js';
 import integrator from './integrator.js';
+import { triggerRegionEvent } from './events.js';
 
 const ACTION_LOCKS = {
     crafting: () => S.unlocked.crafting,
@@ -17,6 +18,11 @@ const ACTION_LOCKS = {
 
 function can(action) {
     return now() >= (S.cooldowns[action] || 0);
+}
+
+// Multiplicador por combo: encadenar acciones rinde más recursos (cap x2)
+function comboMult() {
+    return Math.min(2, 1 + getComboCount() * 0.1);
 }
 
 function addRes(key, n) {
@@ -66,31 +72,23 @@ function craft(item) {
     refreshAll();
 }
 
-function build(edificio) {
-    if (edificio === 'molino' && S.resources.piedra >= 5) {
-        S.resources.piedra -= 5; S.unlocked.molino = true;
-        log('Has construido un molino.', 'good');
-        AudioSystem.playTone('build');
-        integrator.onBuildingConstructed(S, edificio, log);
-        addXP(20);
-        screenFlash('gold');
-    }
-    if (edificio === 'acequia' && S.resources.piedra >= 3 && S.resources.agua >= 2) {
-        S.resources.piedra -= 3; S.resources.agua -= 2; S.unlocked.acequia = true;
-        log('Has construido una acequia.', 'good');
-        AudioSystem.playTone('build');
-        integrator.onBuildingConstructed(S, edificio, log);
-        addXP(20);
-        screenFlash('gold');
-    }
-    if (edificio === 'fragua' && S.resources.hierro >= 5) {
-        S.resources.hierro -= 5; S.unlocked.forge = true;
-        log('Has construido una fragua.', 'good');
-        AudioSystem.playTone('build');
-        integrator.onBuildingConstructed(S, edificio, log);
-        addXP(25);
-        screenFlash('gold');
-    }
+// Construir (nivel 0->1) o mejorar (nivel>=1) un edificio con coste escalado
+function buildOrUpgrade(key) {
+    const up = BUILDING_UPGRADES[key];
+    if (!up) return;
+    const lvl = S.buildings?.[key] || 0;
+    if (lvl >= up.max) return;
+    const cost = up.cost(lvl);
+    for (const [r, n] of Object.entries(cost)) if ((S.resources[r] || 0) < n) return;
+    for (const [r, n] of Object.entries(cost)) S.resources[r] -= n;
+    if (!S.buildings) S.buildings = { molino: 0, acequia: 0, forge: 0 };
+    S.buildings[key] = lvl + 1;
+    S.unlocked[key] = true;   // molino/acequia/forge coinciden con S.unlocked
+    AudioSystem.playTone('build');
+    screenFlash('gold');
+    vibrate(40);
+    if (lvl === 0) { log(`Has construido: ${up.name}.`, 'good'); integrator.onBuildingConstructed(S, key, log); addXP(20); }
+    else { log(`${up.name} mejorado a nivel ${lvl + 1}.`, 'good'); addXP(10); }
     refreshAll();
 }
 
@@ -122,8 +120,8 @@ const SPIN_REWARDS = [
 ];
 
 function doSpin(container) {
-    if (!canSpin()) return;
-    S.streak.lastSpinDate = getTodayStr();
+    if (!canSpin() || window.__lysSpinning) return;
+    window.__lysSpinning = true;   // evita re-giro y que el refresh del overlay destruya la ruleta a mitad
 
     const resultEl = container.querySelector('.spin-result');
     const btnEl = container.querySelector('.spin-btn');
@@ -143,6 +141,7 @@ function doSpin(container) {
         if (ticks >= totalTicks) {
             clearInterval(interval);
             if (resultEl) resultEl.textContent = `${picked.icon} ${picked.label}`;
+            S.streak.lastSpinDate = getTodayStr();   // marcar consumida AL aplicar el premio (no antes)
             picked.apply();
             log(`🎰 Rueda diaria: ${picked.icon} ${picked.label}`, 'good');
             toast(`🎰 ${picked.label}`);
@@ -154,6 +153,8 @@ function doSpin(container) {
             xpFlash();
             renderResources();
             saveState();
+            window.__lysSpinning = false;
+            window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
         }
     }, 80 + ticks * 12);
 }
@@ -162,6 +163,24 @@ function doSpin(container) {
 export function renderLocationActions(locationId, container) {
     if (!container) return;
     container.innerHTML = '';
+
+    // Mini-tira de cambio rápido: saltar entre lugares sin cerrar el overlay (encadenar acciones)
+    const others = LOCAL_LOCATIONS.filter(l => !l.unlock || S.unlocked[l.unlock]);
+    if (others.length > 1) {
+        const strip = document.createElement('div');
+        strip.className = 's3-strip mini-strip';
+        others.forEach(l => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 's3-btn mini' + (l.id === locationId ? ' active' : '');
+            b.title = l.name;
+            b.innerHTML = `<span class="s3-btn-icon">${l.emoji}</span>`;
+            b.onclick = () => window.dispatchEvent(new CustomEvent('lys-open-location', { detail: l.id }));
+            strip.appendChild(b);
+        });
+        container.appendChild(strip);
+    }
+    const baseCount = container.children.length;   // hijos "base" (mini-tira) para detectar "sin contenido"
 
     const reg = (key, btn, ms) => {
         import('./ui.js').then(ui => ui.registerCooldownBtn(btn, key, ms));
@@ -248,23 +267,25 @@ export function renderLocationActions(locationId, container) {
 
         case 'bosque': {
             const btnWood = document.createElement('button');
+            btnWood.id = 'btnCut';
             btnWood.className = 'action';
             btnWood.textContent = '🪵 Cortar leña';
             btnWood.disabled = !can('cut');
             btnWood.onclick = () => {
                 const bonus = S.skills?.sharpAxe || 0;
-                addRes('lenia', 1 + bonus);
-                log(`Cortas leña del bosque.${bonus > 0 ? ` (+${bonus} bonus)` : ''}`, '');
+                const got = Math.round((1 + bonus) * comboMult());
+                addRes('lenia', got);
+                log(`Cortas leña del bosque.${got > 1 + bonus ? ` (combo +${got - 1 - bonus})` : bonus > 0 ? ` (+${bonus} bonus)` : ''}`, '');
                 AudioSystem.playTone('wood');
                 vibrate(30);
                 addXP(2);
                 xpFlash();
                 incrementCombo();
-                setCooldown(btnWood, 'cut', 1800, '🪵 Cortar leña');
+                setCooldown(btnWood, 'cut', 1000, '🪵 Cortar leña');
                 saveState();
                 renderLocationActions(locationId, container);
             };
-            reg('cut', btnWood, 1800);
+            reg('cut', btnWood, 1000);
             container.appendChild(btnWood);
 
             // Basic explore
@@ -283,16 +304,16 @@ export function renderLocationActions(locationId, container) {
                     integrator.onRenownGained(S, 1, log);
                     log('Ayudas a un viajero. (+Renombre)', 'good');
                 }
-                if (!S.threat && Math.random() < 0.18) spawnBoss();
+                if (!S.threat && S.player.level >= 2 && Math.random() < 0.12) spawnBoss();
                 integrator.onActionPerformed(S, 'explore', log);
                 addXP(4);
                 xpFlash();
                 vibrate(40);
-                setCooldown(btnExplore, 'explore', 6000, '🧭 Explorar contornos');
+                setCooldown(btnExplore, 'explore', 4000, '🧭 Explorar contornos');
                 updateTags(); saveState();
                 renderLocationActions(locationId, container);
             };
-            reg('explore', btnExplore, 6000);
+            reg('explore', btnExplore, 4000);
             container.appendChild(btnExplore);
             break;
         }
@@ -304,18 +325,19 @@ export function renderLocationActions(locationId, container) {
             btnWater.disabled = !can('fetch');
             btnWater.onclick = () => {
                 const wBonus = S.skills?.deepWells || 0;
-                addRes('agua', 1 + wBonus);
-                log(`Llenas un odre con agua fresca.${wBonus > 0 ? ` (+${wBonus} bonus)` : ''}`, '');
+                const got = Math.round((1 + wBonus) * comboMult());
+                addRes('agua', got);
+                log(`Llenas un odre con agua fresca.${got > 1 + wBonus ? ` (combo +${got - 1 - wBonus})` : wBonus > 0 ? ` (+${wBonus} bonus)` : ''}`, '');
                 AudioSystem.playTone('water');
                 vibrate(20);
                 addXP(2);
                 xpFlash();
                 incrementCombo();
-                setCooldown(btnWater, 'fetch', 3000, '💧 Buscar agua');
+                setCooldown(btnWater, 'fetch', 1500, '💧 Buscar agua');
                 saveState();
                 renderLocationActions(locationId, container);
             };
-            reg('fetch', btnWater, 3000);
+            reg('fetch', btnWater, 1500);
             container.appendChild(btnWater);
             break;
         }
@@ -329,18 +351,19 @@ export function renderLocationActions(locationId, container) {
             btnHerb.onclick = () => {
                 const herbBonus = (S.skills?.herbalLore || 0) * 0.15;
                 const roll = Math.random();
-                if (roll < 0.6 + herbBonus) { addRes('hierbas', 1); log('Recolectas hierbas aromáticas.', ''); }
-                else { addRes('aceitunas', 1); log('Encuentras aceitunas maduras.', ''); }
+                const got = Math.max(1, Math.round(comboMult()));
+                if (roll < 0.6 + herbBonus) { addRes('hierbas', got); log(`Recolectas hierbas aromáticas.${got > 1 ? ` (combo +${got - 1})` : ''}`, ''); }
+                else { addRes('aceitunas', got); log(`Encuentras aceitunas maduras.${got > 1 ? ` (combo +${got - 1})` : ''}`, ''); }
                 AudioSystem.playTone('herb');
                 vibrate(20);
                 addXP(2);
                 xpFlash();
                 incrementCombo();
-                setCooldown(btnHerb, 'forage', 3500, '🌿 Forrajear');
+                setCooldown(btnHerb, 'forage', 1800, '🌿 Forrajear');
                 saveState();
                 renderLocationActions(locationId, container);
             };
-            reg('forage', btnHerb, 3500);
+            reg('forage', btnHerb, 1800);
             container.appendChild(btnHerb);
             break;
         }
@@ -348,54 +371,58 @@ export function renderLocationActions(locationId, container) {
         case 'taller': {
             // Crafting
             if (ACTION_LOCKS.crafting()) {
+                const craftCd = Math.max(200, Math.round(800 * (1 - (S.skills?.fastCraft || 0) * 0.2)));   // Artesanía Rápida
                 const row = document.createElement('div'); row.className = 'inline';
                 const b1 = document.createElement('button');
                 b1.className = 'action';
                 b1.textContent = '🔥 Antorcha';
                 b1.disabled = !(S.resources.lenia >= 1 && S.resources.aceitunas >= 1) || !can('craft');
-                b1.onclick = () => { craft('antorchas'); setCooldown(b1, 'craft', 800, '🔥 Antorcha'); renderLocationActions(locationId, container); };
+                b1.onclick = () => { craft('antorchas'); setCooldown(b1, 'craft', craftCd, '🔥 Antorcha'); renderLocationActions(locationId, container); };
 
                 const b2 = document.createElement('button');
                 b2.className = 'action';
                 b2.textContent = '💊 Medicina';
                 b2.disabled = !(S.resources.hierbas >= 2 && S.resources.agua >= 1) || !can('craft');
-                b2.onclick = () => { craft('medicina'); setCooldown(b2, 'craft', 800, '💊 Medicina'); renderLocationActions(locationId, container); };
+                b2.onclick = () => { craft('medicina'); setCooldown(b2, 'craft', craftCd, '💊 Medicina'); renderLocationActions(locationId, container); };
 
                 row.appendChild(b1); row.appendChild(b2);
                 container.appendChild(row);
-                reg('craft', b1, 800);
+                reg('craft', b1, craftCd);
             }
 
-            // Buildings
-            const buildWrap = document.createElement('div'); buildWrap.className = 'inline';
-            if (S.discoveries?.piedra && !S.unlocked.molino) {
-                const bm = document.createElement('button');
-                bm.className = 'action';
-                bm.textContent = `🏚️ Molino (${S.resources.piedra}/5 🪨)`;
-                bm.disabled = S.resources.piedra < 5;
-                bm.onclick = () => { build('molino'); renderLocationActions(locationId, container); };
-                buildWrap.appendChild(bm);
-            }
-            if (S.discoveries?.agua && S.discoveries?.piedra && !S.unlocked.acequia) {
-                const ba = document.createElement('button');
-                ba.className = 'action';
-                ba.textContent = `💧 Acequia (${S.resources.piedra}/3 🪨, ${S.resources.agua}/2 💧)`;
-                ba.disabled = !(S.resources.piedra >= 3 && S.resources.agua >= 2);
-                ba.onclick = () => { build('acequia'); renderLocationActions(locationId, container); };
-                buildWrap.appendChild(ba);
-            }
-            if (S.discoveries?.hierro && !S.unlocked.forge) {
-                const bf = document.createElement('button');
-                bf.className = 'action';
-                bf.textContent = `⚒️ Fragua (${S.resources.hierro}/5 ⛓️)`;
-                bf.disabled = S.resources.hierro < 5;
-                bf.onclick = () => { build('fragua'); renderLocationActions(locationId, container); };
-                buildWrap.appendChild(bf);
-            }
+            // Buildings (construir + mejorar por niveles)
+            const buildWrap = document.createElement('div'); buildWrap.className = 'actions';
+            const RICON = { piedra: '🪨', agua: '💧', hierro: '⛓️' };
+            const buildDefs = [
+                { key: 'molino', icon: '🏚️', name: 'Molino', disc: S.discoveries?.piedra },
+                { key: 'acequia', icon: '💧', name: 'Acequia', disc: S.discoveries?.agua && S.discoveries?.piedra },
+                { key: 'forge', icon: '⚒️', name: 'Fragua', disc: S.discoveries?.hierro },
+            ];
+            buildDefs.forEach(d => {
+                if (!d.disc) return;
+                const up = BUILDING_UPGRADES[d.key];
+                const lvl = S.buildings?.[d.key] || 0;
+                const b = document.createElement('button');
+                b.className = 'action';
+                if (lvl >= up.max) {
+                    b.textContent = `${d.icon} ${d.name} · MAX (Nv ${up.max})`;
+                    b.disabled = true;
+                } else {
+                    const cost = up.cost(lvl);
+                    const costStr = Object.entries(cost).map(([r, n]) => `${RICON[r] || r}${n}`).join(' ');
+                    const can = Object.entries(cost).every(([r, n]) => (S.resources[r] || 0) >= n);
+                    b.textContent = lvl === 0
+                        ? `${d.icon} Construir ${d.name} (${costStr})`
+                        : `${d.icon} Mejorar ${d.name} Nv ${lvl}→${lvl + 1} (${costStr})`;
+                    b.disabled = !can;
+                    b.onclick = () => { buildOrUpgrade(d.key); renderLocationActions(locationId, container); };
+                }
+                buildWrap.appendChild(b);
+            });
             if (buildWrap.children.length > 0) container.appendChild(buildWrap);
 
             // Show message if nothing available
-            if (container.children.length === 0) {
+            if (container.children.length === baseCount) {
                 const p = document.createElement('p');
                 p.style.cssText = 'color:var(--muted);font-size:0.85rem;text-align:center;padding:12px';
                 p.textContent = 'Descubre más recursos para desbloquear construcciones.';
@@ -412,11 +439,12 @@ export function renderLocationActions(locationId, container) {
                 bVill.textContent = '👥 Reclutar aldeano (-2 comida)';
                 bVill.disabled = (S.resources.trigo + S.resources.aceitunas < 2);
                 bVill.onclick = () => {
-                    let left = 2;
-                    if (S.resources.trigo >= 1) { S.resources.trigo--; left--; }
-                    if (left > 0 && S.resources.aceitunas >= left) { S.resources.aceitunas -= left; left = 0; }
-                    if (left > 0 && S.resources.trigo >= left) { S.resources.trigo -= left; left = 0; }
-                    if (left > 0) return;
+                    // Comprobar el total ANTES de gastar (no restar comida si no llega a 2)
+                    if (((S.resources.trigo || 0) + (S.resources.aceitunas || 0)) < 2) return;
+                    let need = 2;
+                    const t = Math.min(S.resources.trigo || 0, need);
+                    S.resources.trigo -= t; need -= t;
+                    if (need > 0) S.resources.aceitunas -= need;
                     S.people.villagers = (S.people.villagers || 0) + 1;
                     log('Nuevo aldeano se une a tu poblado.', 'good');
                     integrator.onVillagerRecruited(S, log);
@@ -490,7 +518,7 @@ export function renderLocationActions(locationId, container) {
                 btnTrade.disabled = S.resources[S.trader.wants] < S.trader.rate;
                 btnTrade.onclick = () => {
                     S.resources[S.trader.wants] -= S.trader.rate;
-                    const gained = 1 + ((S.prestige || 0) * 0.5);
+                    const gained = 1 + ((S.prestige || 0) * 0.25);
                     S.stats.renown += gained;
                     integrator.onRenownGained(S, gained, log);
                     log('El mercader habla bien de ti. (+Renombre)', 'good');
@@ -505,7 +533,7 @@ export function renderLocationActions(locationId, container) {
                 container.appendChild(div);
             }
 
-            if (container.children.length === 0) {
+            if (container.children.length === baseCount) {
                 const p = document.createElement('p');
                 p.style.cssText = 'color:var(--muted);font-size:0.85rem;text-align:center;padding:12px';
                 p.textContent = 'Gana renombre para atraer aldeanos.';
@@ -526,6 +554,8 @@ export function renderLocationActions(locationId, container) {
                         const dur = (3 + Math.floor(Math.random() * 6)) * 60 * 1000;
                         S.expedition = { endsAt: now() + dur, startedAt: now(), region: region.name };
                         log(`${region.emoji} Expedición hacia ${region.name}.`, 'warn');
+                        // Avisar al terminar (gancho de retorno si activó notificaciones)
+                        import('./notifications.js').then(({ notifications }) => setTimeout(() => notifications.expeditionComplete(region.name), dur));
                         addXP(5);
                         xpFlash();
                         updateTags(); saveState(); renderMap();
@@ -547,6 +577,7 @@ export function renderLocationActions(locationId, container) {
                         });
                         const ev = randomChoice(region.events);
                         log(`${region.emoji} Expedición: ${ev}`, 'good');
+                        triggerRegionEvent(region.name, S, log);   // evento temático de la región (variedad)
                         S.expedition = null;
                         integrator.onExpeditionCompleted(S, region.name, log);
                         addXP(12);
@@ -584,6 +615,7 @@ export function renderLocationActions(locationId, container) {
                     if (roll < 0.5) { addRes('piedra', 2); log(`Materiales en ${region.name}.`, ''); }
                     else if (roll < 0.75) { addRes('hierro', 2); log(`Vetas en ${region.name}.`, ''); }
                     else { S.stats.renown += 2; integrator.onRenownGained(S, 2, log); log(`Fama en ${region.name}.`, 'good'); }
+                    triggerRegionEvent(region.name, S, log);
                     integrator.onActionPerformed(S, 'explore', log);
                     addXP(6);
                     xpFlash();
@@ -596,7 +628,7 @@ export function renderLocationActions(locationId, container) {
                 container.appendChild(bAdv);
             }
 
-            if (container.children.length === 0) {
+            if (container.children.length === baseCount) {
                 const p = document.createElement('p');
                 p.style.cssText = 'color:var(--muted);font-size:0.85rem;text-align:center;padding:12px';
                 p.textContent = 'Explora más para desbloquear expediciones.';

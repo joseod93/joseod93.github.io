@@ -54,6 +54,36 @@ const QUEST_TEMPLATES = {
         reward: { renown: 3, lenia: 10 },
         generateAmount: () => randomRange(1, 3)
     },
+    daily_gather_water: {
+        id: 'daily_gather_water', type: QUEST_TYPES.DAILY, name: 'Aguador del Día',
+        description: 'Recolecta {amount} agua', icon: '💧',
+        target: { resource: 'agua', amount: 15 }, reward: { renown: 2, hierbas: 2 },
+        generateAmount: () => randomRange(10, 18)
+    },
+    daily_gather_stone: {
+        id: 'daily_gather_stone', type: QUEST_TYPES.DAILY, name: 'Cantero del Día',
+        description: 'Recolecta {amount} piedra', icon: '🪨',
+        target: { resource: 'piedra', amount: 12 }, reward: { renown: 3, hierro: 2 },
+        generateAmount: () => randomRange(8, 15)
+    },
+    daily_gather_olives: {
+        id: 'daily_gather_olives', type: QUEST_TYPES.DAILY, name: 'Aceitunero del Día',
+        description: 'Recolecta {amount} aceitunas', icon: '🫒',
+        target: { resource: 'aceitunas', amount: 12 }, reward: { renown: 2, medicina: 1 },
+        generateAmount: () => randomRange(8, 15)
+    },
+    daily_gather_herbs: {
+        id: 'daily_gather_herbs', type: QUEST_TYPES.DAILY, name: 'Herborista del Día',
+        description: 'Recolecta {amount} hierbas', icon: '🌿',
+        target: { resource: 'hierbas', amount: 10 }, reward: { renown: 2, medicina: 1 },
+        generateAmount: () => randomRange(6, 12)
+    },
+    daily_hunt: {
+        id: 'daily_hunt', type: QUEST_TYPES.DAILY, name: 'Cazador del Día',
+        description: 'Derrota {amount} enemigos', icon: '🗡️',
+        target: { action: 'defeat_enemy', amount: 3 }, reward: { renown: 4, antorchas: 2 },
+        generateAmount: () => randomRange(2, 4)
+    },
 
     // Misiones semanales
     weekly_boss: {
@@ -85,6 +115,18 @@ const QUEST_TEMPLATES = {
         target: { action: 'recruit_villager', amount: 5 },
         reward: { renown: 10, trigo: 20 },
         generateAmount: () => randomRange(3, 7)
+    },
+    weekly_craft: {
+        id: 'weekly_craft', type: QUEST_TYPES.WEEKLY, name: 'Maestro Artesano',
+        description: 'Fabrica {amount} objetos', icon: '🔨',
+        target: { action: 'craft', amount: 15 }, reward: { renown: 12, hierro: 8 },
+        generateAmount: () => randomRange(10, 20)
+    },
+    weekly_renown: {
+        id: 'weekly_renown', type: QUEST_TYPES.WEEKLY, name: 'Renombre Creciente',
+        description: 'Alcanza {amount} de renombre', icon: '⭐',
+        target: { condition: 'renown', amount: 40 }, reward: { medicina: 5, antorchas: 5 },
+        generateAmount: () => randomRange(30, 60)
     },
 
     // Misiones de historia
@@ -340,6 +382,16 @@ class QuestSystem {
         };
     }
 
+    addStoryQuests() {
+        // Sembrar las misiones de historia (oneTime) que no estén activas ni completadas
+        const storyTemplates = Object.values(QUEST_TEMPLATES).filter(t => t.type === QUEST_TYPES.STORY);
+        storyTemplates.forEach(t => {
+            const active = this.activeQuests.some(q => q.templateId === t.id);
+            const done = this.completedQuests.some(q => q.templateId === t.id);
+            if (!active && !done) this.addQuest(t);
+        });
+    }
+
     initialize() {
         this.checkResets();
 
@@ -348,6 +400,8 @@ class QuestSystem {
             this.resetDailyQuests();
             this.resetWeeklyQuests();
         }
+        // Misiones de historia (no las generan los resets diarios/semanales)
+        this.addStoryQuests();
     }
 }
 

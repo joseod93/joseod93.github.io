@@ -196,6 +196,49 @@ export const ACHIEVEMENTS = {
         },
         hidden: true,
         reward: { renown: 15 }
+    },
+
+    // Metas a largo plazo
+    ach_cazador: {
+        id: 'ach_cazador', name: 'Cazador', description: 'Derrota 25 enemigos', icon: '🗡️',
+        condition: (S) => (S.enemiesDefeated || 0) >= 25, hidden: false, reward: { renown: 8 }
+    },
+    ach_exterminador: {
+        id: 'ach_exterminador', name: 'Exterminador', description: 'Derrota 100 enemigos', icon: '☠️',
+        condition: (S) => (S.enemiesDefeated || 0) >= 100, hidden: false, reward: { renown: 20 }
+    },
+    ach_oleadas10: {
+        id: 'ach_oleadas10', name: 'Rompeolas', description: 'Supera la oleada 10', icon: '🌊',
+        condition: (S) => (S.waveMode?.wave || 0) >= 10, hidden: false, reward: { renown: 12 }
+    },
+    ach_oleadas25: {
+        id: 'ach_oleadas25', name: 'Muro Inquebrantable', description: 'Supera la oleada 25', icon: '🛡️',
+        condition: (S) => (S.waveMode?.wave || 0) >= 25, hidden: true, reward: { renown: 30 }
+    },
+    ach_viajero25: {
+        id: 'ach_viajero25', name: 'Trotamundos', description: 'Completa 25 expediciones', icon: '🗺️',
+        condition: (S) => (S.stats.expeditionsCompleted || 0) >= 25, hidden: false, reward: { renown: 12 }
+    },
+    ach_viajero50: {
+        id: 'ach_viajero50', name: 'Explorador Legendario', description: 'Completa 50 expediciones', icon: '🧭',
+        condition: (S) => (S.stats.expeditionsCompleted || 0) >= 50, hidden: true, reward: { renown: 25 }
+    },
+    ach_veterano: {
+        id: 'ach_veterano', name: 'Veterano', description: 'Sobrevive 7 días', icon: '📅',
+        condition: (S) => (S.time.day || 1) >= 7, hidden: false, reward: { renown: 6 }
+    },
+    ach_anciano: {
+        id: 'ach_anciano', name: 'Anciano Sabio', description: 'Sobrevive 60 días', icon: '🧙',
+        condition: (S) => (S.time.day || 1) >= 60, hidden: true, reward: { renown: 40 }
+    },
+    ach_acaparador: {
+        id: 'ach_acaparador', name: 'Gran Acaparador', description: 'Ten 5000 de un recurso', icon: '🏆',
+        condition: (S) => Object.values(S.resources).some(v => v >= 5000), hidden: true, reward: { renown: 30 }
+    },
+    ach_arsenal: {
+        id: 'ach_arsenal', name: 'Arsenal Completo', description: 'Forja espada, armadura y escudo', icon: '⚒️',
+        condition: (S) => (S.equipment?.espada || 0) >= 1 && (S.equipment?.armadura || 0) >= 1 && (S.equipment?.escudo || 0) >= 1,
+        hidden: false, reward: { renown: 15 }
     }
 };
 

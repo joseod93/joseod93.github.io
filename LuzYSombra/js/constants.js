@@ -34,18 +34,23 @@ export const REGIONS = [
     { name: 'Constantinopla', emoji: '🕌', unlockDay: 30, loot: [{ k: 'hierro', n: [4, 6] }, { k: 'sal', n: [3, 5] }, { k: 'renown', n: [6, 8] }], events: ['La puerta entre mundos se abre ante ti.', 'Mercaderes de oriente ofrecen exóticas mercancías.'] }
 ];
 
+// atk = 4 + level (escala el daño con el nivel); hp escalada para que el combate no sea trivial en mid/late
 export const BOSSES = [
-    { key: 'boss_guadalquivir', name: 'La Sombra del Guadalquivir', icon: '🌊', hp: 12, duration: 90000, region: 'Sevilla', level: 1 },
-    { key: 'boss_toro', name: 'Toro de Fuego', icon: '🐂', hp: 20, duration: 120000, region: 'Jaén', level: 3 },
-    { key: 'boss_alhambra', name: 'Eco de la Alhambra', icon: '🏯', hp: 28, duration: 150000, region: 'Granada', level: 5 },
-    { key: 'boss_cadiz', name: 'Dama de Cádiz', icon: '🧜', hp: 32, duration: 150000, region: 'Cádiz', level: 7 },
-    { key: 'boss_sierra', name: 'Centinela de Sierra Morena', icon: '🌲', hp: 18, duration: 120000, region: 'Sevilla', level: 4 },
-    // End-game bosses
-    { key: 'boss_dragon', name: 'Dragón de Montserrat', icon: '🐉', hp: 45, duration: 180000, region: 'Barcelona', level: 10 },
-    { key: 'boss_kraken', name: 'Kraken del Cantábrico', icon: '🦑', hp: 50, duration: 180000, region: 'Bilbao', level: 12 },
-    { key: 'boss_fantasma', name: 'Fantasma del Camino', icon: '👻', hp: 38, duration: 150000, region: 'Santiago', level: 9 },
-    { key: 'boss_coloso', name: 'Coloso de Roma', icon: '🗿', hp: 60, duration: 200000, region: 'Roma', level: 14 },
-    { key: 'boss_sultan', name: 'El Sultán Oscuro', icon: '👁️', hp: 75, duration: 200000, region: 'Constantinopla', level: 16 },
+    { key: 'boss_guadalquivir', name: 'La Sombra del Guadalquivir', icon: '🌊', hp: 12, atk: 5, duration: 90000, region: 'Sevilla', level: 1 },
+    { key: 'boss_jabali', name: 'Jabalí Ancestral', icon: '🐗', hp: 16, atk: 6, duration: 90000, region: 'Córdoba', level: 2 },
+    { key: 'boss_toro', name: 'Toro de Fuego', icon: '🐂', hp: 40, atk: 7, duration: 120000, region: 'Jaén', level: 3 },
+    { key: 'boss_sierra', name: 'Centinela de Sierra Morena', icon: '🌲', hp: 50, atk: 8, duration: 120000, region: 'Sevilla', level: 4 },
+    { key: 'boss_mezquita', name: 'Guardián de la Mezquita', icon: '🕌', hp: 48, atk: 8, duration: 110000, region: 'Córdoba', level: 4 },
+    { key: 'boss_alhambra', name: 'Eco de la Alhambra', icon: '🏯', hp: 70, atk: 9, duration: 150000, region: 'Granada', level: 5 },
+    { key: 'boss_levante', name: 'Espíritu del Levante', icon: '🌬️', hp: 80, atk: 10, duration: 120000, region: 'Málaga', level: 6 },
+    { key: 'boss_cadiz', name: 'Dama de Cádiz', icon: '🧜', hp: 95, atk: 11, duration: 150000, region: 'Cádiz', level: 7 },
+    { key: 'boss_marisma', name: 'Bestia de las Marismas', icon: '🐊', hp: 110, atk: 12, duration: 130000, region: 'Huelva', level: 8 },
+    { key: 'boss_fantasma', name: 'Fantasma del Camino', icon: '👻', hp: 120, atk: 13, duration: 150000, region: 'Santiago', level: 9 },
+    { key: 'boss_dragon', name: 'Dragón de Montserrat', icon: '🐉', hp: 130, atk: 14, duration: 180000, region: 'Barcelona', level: 10 },
+    { key: 'boss_ebro', name: 'Coloso del Ebro', icon: '🗿', hp: 145, atk: 15, duration: 150000, region: 'Zaragoza', level: 11 },
+    { key: 'boss_kraken', name: 'Kraken del Cantábrico', icon: '🦑', hp: 150, atk: 16, duration: 180000, region: 'Bilbao', level: 12 },
+    { key: 'boss_coloso', name: 'Coloso de Roma', icon: '🗿', hp: 180, atk: 18, duration: 200000, region: 'Roma', level: 14 },
+    { key: 'boss_sultan', name: 'El Sultán Oscuro', icon: '👁️', hp: 220, atk: 20, duration: 200000, region: 'Constantinopla', level: 16 },
 ];
 
 // Regular enemies for expeditions
@@ -58,6 +63,12 @@ export const ENEMIES = [
     { name: 'Contrabandista', icon: '🏴', hp: 10, atk: 6, level: 4, loot: [{ k: 'sal', n: [2, 3] }] },
     { name: 'Espectro Errante', icon: '👤', hp: 18, atk: 9, level: 8, loot: [{ k: 'medicina', n: [1, 2] }] },
     { name: 'Capitán Pirata', icon: '☠️', hp: 22, atk: 10, level: 10, loot: [{ k: 'hierro', n: [2, 4] }, { k: 'sal', n: [2, 3] }] },
+    { name: 'Salteador de Caminos', icon: '🥷', hp: 6, atk: 4, level: 2, loot: [{ k: 'trigo', n: [1, 3] }] },
+    { name: 'Lobo de las Nieves', icon: '🐺', hp: 14, atk: 7, level: 6, loot: [{ k: 'hierbas', n: [1, 2] }, { k: 'medicina', n: [1, 1] }] },
+    { name: 'Saqueador', icon: '🪓', hp: 11, atk: 6, level: 4, loot: [{ k: 'lenia', n: [2, 4] }, { k: 'piedra', n: [1, 2] }] },
+    { name: 'Caballero Renegado', icon: '🛡️', hp: 24, atk: 11, level: 11, loot: [{ k: 'hierro', n: [3, 5] }] },
+    { name: 'Hechicero Errante', icon: '🔮', hp: 20, atk: 12, level: 13, loot: [{ k: 'medicina', n: [2, 3] }, { k: 'hierbas', n: [2, 3] }] },
+    { name: 'Mercenario', icon: '⚔️', hp: 16, atk: 8, level: 8, loot: [{ k: 'sal', n: [2, 3] }, { k: 'hierro', n: [1, 2] }] },
 ];
 
 // Wave system for infinite mode
@@ -73,21 +84,40 @@ export const WAVE_CONFIG = {
 };
 
 // Skill tree
+// Árbol de habilidades con dos ramas exclusivas: Luz (producción/recolección) y Sombra (combate)
 export const SKILLS = {
-    // Gathering
-    sharpAxe:     { name: 'Hacha Afilada', desc: '+1 leña por tala', icon: '🪓', cost: 1, maxLevel: 3, category: 'gather', effect: (lvl) => ({ bonusWood: lvl }) },
-    deepWells:    { name: 'Pozos Profundos', desc: '+1 agua por recolección', icon: '🪣', cost: 1, maxLevel: 3, category: 'gather', effect: (lvl) => ({ bonusWater: lvl }) },
-    herbalLore:   { name: 'Saber Herbal', desc: '+30% prob. hierbas raras', icon: '🌿', cost: 2, maxLevel: 2, category: 'gather', effect: (lvl) => ({ herbBonus: lvl * 0.15 }) },
-    // Combat
-    swordMastery: { name: 'Maestría con Espada', desc: '+1 ataque base', icon: '⚔️', cost: 1, maxLevel: 5, category: 'combat', effect: (lvl) => ({ bonusAtk: lvl }) },
-    ironSkin:     { name: 'Piel de Hierro', desc: '-10% daño recibido', icon: '🛡️', cost: 2, maxLevel: 3, category: 'combat', effect: (lvl) => ({ dmgReduction: lvl * 0.1 }) },
-    criticalEye:  { name: 'Ojo Crítico', desc: '+5% prob. crítico', icon: '🎯', cost: 2, maxLevel: 3, category: 'combat', effect: (lvl) => ({ critBonus: lvl * 0.05 }) },
-    dodgeReflex:  { name: 'Reflejos Evasivos', desc: '+8% prob. esquivar', icon: '💨', cost: 2, maxLevel: 3, category: 'combat', effect: (lvl) => ({ dodgeChance: lvl * 0.08 }) },
-    // Production
-    fastCraft:    { name: 'Artesanía Rápida', desc: '-20% cooldown craft', icon: '🔨', cost: 1, maxLevel: 3, category: 'production', effect: (lvl) => ({ craftCdReduction: lvl * 0.2 }) },
-    efficientFire:{ name: 'Fuego Eficiente', desc: '-15% consumo combustible', icon: '🔥', cost: 2, maxLevel: 2, category: 'production', effect: (lvl) => ({ fuelReduction: lvl * 0.15 }) },
-    tradeSkill:   { name: 'Comerciante Nato', desc: '-15% coste mercader', icon: '🤝', cost: 2, maxLevel: 3, category: 'production', effect: (lvl) => ({ tradeDiscount: lvl * 0.15 }) },
-    leadership:   { name: 'Liderazgo', desc: '+15% producción aldeanos', icon: '👑', cost: 3, maxLevel: 3, category: 'production', effect: (lvl) => ({ villagerBonus: lvl * 0.15 }) },
+    // --- LUZ: recolección y producción ---
+    sharpAxe:     { name: 'Hacha Afilada', desc: '+1 leña por tala', icon: '🪓', cost: 1, maxLevel: 3, category: 'gather', branch: 'luz', effect: (lvl) => ({ bonusWood: lvl }) },
+    deepWells:    { name: 'Pozos Profundos', desc: '+1 agua por recolección', icon: '🪣', cost: 1, maxLevel: 3, category: 'gather', branch: 'luz', effect: (lvl) => ({ bonusWater: lvl }) },
+    herbalLore:   { name: 'Saber Herbal', desc: '+15% prob. hierbas por nivel', icon: '🌿', cost: 2, maxLevel: 2, category: 'gather', branch: 'luz', effect: (lvl) => ({ herbBonus: lvl * 0.15 }) },
+    fastCraft:    { name: 'Artesanía Rápida', desc: '-20% cooldown craft', icon: '🔨', cost: 1, maxLevel: 3, category: 'production', branch: 'luz', effect: (lvl) => ({ craftCdReduction: lvl * 0.2 }) },
+    efficientFire:{ name: 'Fuego Eficiente', desc: '-15% consumo combustible', icon: '🔥', cost: 2, maxLevel: 2, category: 'production', branch: 'luz', effect: (lvl) => ({ fuelReduction: lvl * 0.15 }) },
+    tradeSkill:   { name: 'Comerciante Nato', desc: '-15% coste mercader', icon: '🤝', cost: 2, maxLevel: 3, category: 'production', branch: 'luz', effect: (lvl) => ({ tradeDiscount: lvl * 0.15 }) },
+    leadership:   { name: 'Liderazgo', desc: '+15% producción aldeanos', icon: '👑', cost: 3, maxLevel: 3, category: 'production', branch: 'luz', effect: (lvl) => ({ villagerBonus: lvl * 0.15 }) },
+    // --- SOMBRA: combate ---
+    swordMastery: { name: 'Maestría con Espada', desc: '+1 ataque base', icon: '⚔️', cost: 1, maxLevel: 5, category: 'combat', branch: 'sombra', effect: (lvl) => ({ bonusAtk: lvl }) },
+    ironSkin:     { name: 'Piel de Hierro', desc: '-10% daño recibido', icon: '🛡️', cost: 2, maxLevel: 3, category: 'combat', branch: 'sombra', effect: (lvl) => ({ dmgReduction: lvl * 0.1 }) },
+    criticalEye:  { name: 'Ojo Crítico', desc: '+5% prob. crítico', icon: '🎯', cost: 2, maxLevel: 3, category: 'combat', branch: 'sombra', effect: (lvl) => ({ critBonus: lvl * 0.05 }) },
+    dodgeReflex:  { name: 'Reflejos Evasivos', desc: '+8% prob. esquivar', icon: '💨', cost: 2, maxLevel: 3, category: 'combat', branch: 'sombra', effect: (lvl) => ({ dodgeChance: lvl * 0.08 }) },
+    bloodlust:    { name: 'Sed de Botín', desc: '+20% botín de enemigos', icon: '🩸', cost: 3, maxLevel: 3, category: 'combat', branch: 'sombra', effect: (lvl) => ({ lootBonus: lvl * 0.2 }) },
+};
+
+// Mejora de edificios (nivel) — sumidero de recursos a largo plazo. cost(nivelActual) -> coste del SIGUIENTE nivel
+// cost(lvlActual): lvl 0 = construir (coste original), lvl>=1 = mejorar (escala)
+export const BUILDING_UPGRADES = {
+    molino:  { name: 'Molino', icon: '🏚️', max: 5, cost: (lvl) => ({ piedra: 5 * (lvl + 1) * (lvl + 1) }) },
+    acequia: { name: 'Acequia', icon: '💧', max: 5, cost: (lvl) => ({ piedra: 3 * (lvl + 1) * (lvl + 1), agua: 2 * (lvl + 1) }) },
+    forge:   { name: 'Fragua', icon: '⚒️', max: 5, cost: (lvl) => ({ hierro: 5 * (lvl + 1) * (lvl + 1) }) },
+};
+
+// Árbol de Legado (Reliquias) — mejoras PERMANENTES que sobreviven al prestigio
+export const LEGACY_UPGRADES = {
+    fertileLand:  { name: 'Tierra Fértil', desc: '+10% producción por nivel', icon: '🌱', max: 5, cost: (lvl) => 2 + lvl, effect: (lvl) => ({ prodMult: lvl * 0.1 }) },
+    deepStores:   { name: 'Despensas Profundas', desc: '+2h tope idle por nivel', icon: '🛢️', max: 4, cost: (lvl) => 2 + lvl, effect: (lvl) => ({ idleHours: lvl * 2 }) },
+    foundingClan: { name: 'Clan Fundador', desc: '+1 aldeano inicial por nivel', icon: '👨‍👩‍👧', max: 3, cost: (lvl) => 3 + lvl * 2, effect: (lvl) => ({ startVillagers: lvl }) },
+    bornTalent:   { name: 'Talento Innato', desc: '+1 punto de habilidad inicial', icon: '✨', max: 3, cost: (lvl) => 3 + lvl * 2, effect: (lvl) => ({ startSkillPoints: lvl }) },
+    keptRiches:   { name: 'Riquezas Guardadas', desc: 'Conserva 10% de recursos al ascender', icon: '💎', max: 5, cost: (lvl) => 3 + lvl, effect: (lvl) => ({ keepResources: lvl * 0.1 }) },
+    renownLegacy: { name: 'Fama Imperecedera', desc: '+25% renombre de producción/nivel', icon: '⭐', max: 4, cost: (lvl) => 3 + lvl, effect: (lvl) => ({ renownMult: lvl * 0.25 }) },
 };
 
 // Expanded crafting recipes
@@ -106,12 +136,12 @@ export const CRAFT_RECIPES = {
 export const TRADE_GOODS = [
     { key: 'lenia', basePrice: 5, volatility: 0.3 },
     { key: 'agua', basePrice: 4, volatility: 0.2 },
-    { key: 'aceitunas', basePrice: 6, volatility: 0.4 },
+    { key: 'aceitunas', basePrice: 6, volatility: 0.3 },
     { key: 'hierbas', basePrice: 7, volatility: 0.3 },
     { key: 'piedra', basePrice: 8, volatility: 0.25 },
-    { key: 'hierro', basePrice: 12, volatility: 0.35 },
+    { key: 'hierro', basePrice: 12, volatility: 0.3 },
     { key: 'trigo', basePrice: 5, volatility: 0.3 },
-    { key: 'sal', basePrice: 10, volatility: 0.4 },
+    { key: 'sal', basePrice: 10, volatility: 0.3 },
 ];
 
 export const EXTRA_ACHIEVEMENTS = [
@@ -144,6 +174,19 @@ export const REGION_POS = {
     'Lisboa':  { x: 10, y: 100 },
     'Roma':    { x: 290, y: 190 },
     'Constantinopla': { x: 290, y: 210 }
+};
+
+// Requisitos legibles para desbloquear cada lugar/sistema (mostrados en la tira de localizaciones)
+export const UNLOCK_HINT = {
+    water: 'Junta 3 🪵 leña',
+    herbs: 'Consigue 2 💧 agua',
+    olives: 'Consigue 1 🌿 hierba',
+    crafting: 'Ten 1 🫒 y 1 🪵',
+    village: 'Llega a 5 de renombre',
+    expedition: 'Explora 8 veces',
+    forge: 'Construye la fragua',
+    molino: 'Construye el molino',
+    acequia: 'Construye la acequia'
 };
 
 // ===== LOCAL SETTLEMENT LOCATIONS =====

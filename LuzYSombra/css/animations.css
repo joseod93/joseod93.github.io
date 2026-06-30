@@ -441,7 +441,7 @@ html { scroll-behavior: smooth; }
   left: 0;
   right: 0;
   z-index: 600;
-  padding: 12px 16px;
+  padding: calc(12px + var(--safe-top, 0px)) 16px 12px;
   text-align: center;
   font-weight: 700;
   font-size: 0.9rem;
@@ -633,6 +633,109 @@ body.screen-shake { animation: screenShake 0.4s ease-out; }
   .s3-strip { gap: 8px; }
   .s3-btn { padding: 10px 18px; }
 }
+
+/* ============================================================
+   ===== BEAUTY / EFFECTS PASS =================================
+   ============================================================ */
+
+/* --- Aurora ambiental + brasas flotantes (capa de fondo) --- */
+.ambient { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.ambient::before, .ambient::after {
+  content: ''; position: absolute; width: 62vmax; height: 62vmax; border-radius: 50%;
+  filter: blur(55px); opacity: 0.30; will-change: transform;
+}
+.ambient::before { background: radial-gradient(circle, var(--accent), transparent 68%); top: -22vmax; left: -12vmax; animation: auroraA 28s ease-in-out infinite alternate; }
+.ambient::after  { background: radial-gradient(circle, #4dabf7, transparent 68%); bottom: -26vmax; right: -16vmax; animation: auroraB 34s ease-in-out infinite alternate; }
+@keyframes auroraA { from { transform: translate(0,0) scale(1); } to { transform: translate(12vmax,8vmax) scale(1.25); } }
+@keyframes auroraB { from { transform: translate(0,0) scale(1.1); } to { transform: translate(-10vmax,-6vmax) scale(1); } }
+[data-theme="light"] .ambient::before { opacity: 0.16; }
+[data-theme="light"] .ambient::after  { opacity: 0.12; }
+
+.ember {
+  position: absolute; bottom: -12px; width: 6px; height: 6px; border-radius: 50%;
+  background: radial-gradient(circle, #fff2d6, #f2a65a 55%, transparent 72%);
+  box-shadow: 0 0 8px 2px rgba(242,166,90,0.45);
+  opacity: 0; will-change: transform, opacity;
+  animation: emberRise var(--dur, 12s) linear infinite; animation-delay: var(--delay, 0s);
+  left: var(--x, 50%);
+}
+@keyframes emberRise {
+  0%   { transform: translateY(0) translateX(0) scale(0.6); opacity: 0; }
+  12%  { opacity: 0.85; }
+  50%  { transform: translateY(-52vh) translateX(var(--drift, 10px)) scale(1); }
+  88%  { opacity: 0.6; }
+  100% { transform: translateY(-104vh) translateX(calc(var(--drift, 10px) * -1)) scale(0.35); opacity: 0; }
+}
+[data-theme="light"] .ember { mix-blend-mode: multiply; box-shadow: 0 0 6px 1px rgba(217,119,6,0.35); }
+
+/* --- Título con brillo dorado animado (sin afectar el emoji del fuego) --- */
+header h1 {
+  background: linear-gradient(90deg, #ffe08a, #f2a65a, #fff1cf, #f2a65a, #ffe08a);
+  background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: titleShimmer 6s linear infinite;
+}
+.fire-indicator { -webkit-text-fill-color: initial; }
+@keyframes titleShimmer { to { background-position: 200% center; } }
+[data-theme="light"] header h1 { background: linear-gradient(90deg, #d97706, #f59e0b, #b45309, #f59e0b, #d97706); background-size: 200% auto; -webkit-background-clip: text; background-clip: text; }
+
+/* --- Barra de XP con destello que recorre --- */
+.xp-bar { position: relative; overflow: hidden; }
+.xp-bar::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(110deg, transparent 32%, rgba(255,255,255,0.5) 50%, transparent 68%);
+  transform: translateX(-120%); animation: xpSheen 3.4s ease-in-out infinite;
+}
+@keyframes xpSheen { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
+
+/* --- Anillo giratorio de luz en la insignia de nivel --- */
+.level-badge { position: relative; isolation: isolate; }
+.level-badge::before {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%; z-index: -1;
+  background: conic-gradient(from 0deg, var(--accent), var(--accent2), var(--accent), var(--accent2), var(--accent));
+  filter: blur(2px); opacity: 0.85; animation: badgeSpin 4.5s linear infinite;
+}
+@keyframes badgeSpin { to { transform: rotate(360deg); } }
+
+/* --- Tarjetas: filo superior luminoso + glow al hover (solo puntero fino) --- */
+.card { position: relative; }
+.card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; z-index: 1;
+  background: linear-gradient(90deg, transparent, rgba(242,166,90,0.55), transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(242,166,90,0.22); }
+}
+
+/* --- Flash de la pestaña "Más" al desbloquear --- */
+@keyframes tabFlash {
+  0%, 100% { filter: none; }
+  25%, 75% { filter: drop-shadow(0 0 8px var(--accent)); }
+  50% { filter: drop-shadow(0 0 16px var(--accent)); transform: translateY(-2px); }
+}
+.tab.tab-flash { animation: tabFlash 1.2s ease-in-out 2; }
+
+/* --- Aparición espectacular de una sección recién desbloqueada --- */
+@keyframes sectionReveal {
+  0%   { opacity: 0; transform: translateY(16px) scale(0.97); box-shadow: 0 0 0 0 rgba(242,166,90,0.6); }
+  55%  { box-shadow: 0 0 26px 5px rgba(242,166,90,0.4); }
+  100% { opacity: 1; transform: translateY(0) scale(1); box-shadow: 0 8px 24px #00000044; }
+}
+.section-reveal { animation: sectionReveal 0.75s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+/* --- Icono de inicio flotante con halo --- */
+.start-icon { animation: startFloat 3.4s ease-in-out infinite; filter: drop-shadow(0 0 18px rgba(242,166,90,0.5)); }
+@keyframes startFloat { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-8px) rotate(3deg); } }
+.start-btn { position: relative; }
+
+/* --- Brillo suave recurrente en botones CTA (refuerza el breathing existente) --- */
+.glow-btn::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(110deg, transparent 35%, rgba(255,255,255,0.35) 50%, transparent 65%);
+  transform: translateX(-130%); animation: ctaSheen 4.5s ease-in-out infinite;
+}
+@keyframes ctaSheen { 0% { transform: translateX(-130%); } 55%, 100% { transform: translateX(130%); } }
 
 /* ===== SVG ICON STYLES ===== */
 .svg-icon {

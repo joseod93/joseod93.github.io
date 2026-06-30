@@ -1,9 +1,10 @@
 
-import { $, sleep, vibrate } from './utils.js';
+import { $, sleep, vibrate, formatNumber, prefersReducedMotion } from './utils.js';
 import { AudioSystem } from './audio.js';
 import { S, saveState } from './state.js';
 import { log, toast, updateTags, renderResources, addXP, xpFlash, screenFlash, fireConfetti } from './ui.js';
 import integrator from './integrator.js';
+import { quests } from './quests.js';
 import { ENEMIES } from './constants.js';
 
 const fightOverlay = $('#fightOverlay');
@@ -50,27 +51,31 @@ function renderCombatUI() {
             <div class="fighter" id="warrior">
                 <div class="icon">🧑‍⚔️</div>
                 <div class="hp-bar"><div class="hp-fill player" style="width:100%"></div></div>
-                <div style="margin-top:4px;font-size:0.82rem;color:var(--muted)">Tú (${S.player.hp}/${S.player.maxHp})</div>
+                <div class="hp-label" style="margin-top:4px;font-size:0.82rem;color:var(--muted);font-variant-numeric:tabular-nums">Tú (${formatNumber(S.player.hp)}/${formatNumber(S.player.maxHp)})</div>
             </div>
             <div class="vs">⚔️</div>
             <div class="fighter" id="enemy">
                 <div class="icon">${boss.icon}</div>
                 <div class="hp-bar"><div class="hp-fill" style="width:100%"></div></div>
-                <div style="margin-top:4px;font-size:0.82rem;color:var(--muted)">${boss.name}</div>
+                <div class="hp-label" style="margin-top:4px;font-size:0.82rem;color:var(--muted);font-variant-numeric:tabular-nums">${boss.name}</div>
             </div>
         `;
     }
 
+    const hpClass = (pct) => pct <= 25 ? ' hp-low' : pct <= 55 ? ' hp-mid' : '';
+
     const playerBar = fightUI.querySelector('#warrior .hp-fill');
     if (playerBar) {
-        playerBar.style.width = Math.max(0, (S.player.hp / S.player.maxHp) * 100) + '%';
-        fightUI.querySelector('#warrior div:last-child').textContent = `Tú (${S.player.hp}/${S.player.maxHp})`;
+        const ppct = Math.max(0, (S.player.hp / S.player.maxHp) * 100);
+        playerBar.style.width = ppct + '%';
+        playerBar.className = 'hp-fill player' + hpClass(ppct);
+        fightUI.querySelector('#warrior div:last-child').textContent = `Tú (${formatNumber(Math.max(0, S.player.hp))}/${formatNumber(S.player.maxHp)})`;
     }
 
     const enemyBar = fightUI.querySelector('#enemy .hp-fill');
     if (enemyBar) {
         enemyBar.style.width = Math.max(0, (combatState.boss.hp / combatState.boss.max) * 100) + '%';
-        fightUI.querySelector('#enemy div:last-child').textContent = `${boss.name} (${combatState.boss.hp}/${combatState.boss.max})`;
+        fightUI.querySelector('#enemy div:last-child').textContent = `${boss.name} (${formatNumber(Math.max(0, combatState.boss.hp))}/${formatNumber(combatState.boss.max)})`;
     }
 }
 
@@ -93,13 +98,21 @@ function getSkillEffects() {
         if (skills.ironSkin) effects.dmgReduction = skills.ironSkin * 0.1;
         if (skills.criticalEye) effects.critBonus = skills.criticalEye * 0.05;
         if (skills.dodgeReflex) effects.dodgeChance = skills.dodgeReflex * 0.08;
+        if (skills.bloodlust) effects.lootBonus = skills.bloodlust * 0.2;
         return effects;
     } catch { return {}; }
 }
 
+export function isCombatOpen() { return !!combatState; }
+
 export function openCombat(enemy = null) {
+    if (combatState) return;                 // no reentrar (evita pushState doble y abandonar un combate)
     const target = enemy || S.threat;
     if (!target) return;
+    if (S.player.hp <= 0) {                   // no luchar a 0 HP (bucle de derrotas)
+        S.player.hp = Math.max(1, Math.floor(S.player.maxHp * 0.3));
+    }
+    S.player.guard = false;                   // empezar siempre sin guardia heredada
     combatState = {
         boss: target,
         isRegularEnemy: !!enemy,
@@ -122,18 +135,50 @@ export function openCombat(enemy = null) {
     }
 
     fightOverlay.classList.remove('hidden');
+    // Integrar el botón físico "Atrás" de Android: una entrada de historial por combate
+    try { history.pushState({ lysCombat: 1 }, ''); } catch (e) { }
+    try { AudioSystem.crossfadeTo(Math.random() < 0.5 ? 'audioFight1.mp3' : 'audioFight2.mp3'); } catch (e) { }
     renderCombatUI();
     enableCombatBtns();
 }
 
-function closeCombat() {
+function teardownCombat() {
     fightOverlay.classList.add('hidden');
     combatState = null;
+    S.player.guard = false;   // limpiar estado de combate para que no se fugue al siguiente
+    try { AudioSystem.crossfadeTo('audio1.mp3'); } catch (e) { }
     fightUI.innerHTML = '';
     window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
     updateTags();
     saveState();
 }
+
+function closeCombat() {
+    // Si abrimos con pushState, retroceder dispara popstate -> teardown (sin entradas huérfanas)
+    if (history.state && history.state.lysCombat) {
+        try { history.back(); return; } catch (e) { }
+    }
+    teardownCombat();
+}
+
+// Botón físico Atrás de Android / gesto de retroceso cierra el combate
+window.addEventListener('popstate', () => { if (combatState) teardownCombat(); });
+
+// Abrir combate desde la barra de boss persistente (cualquier pestaña)
+window.addEventListener('lys-open-combat', () => { if (S.threat && !combatState) openCombat(); });
+
+// Botón X (siempre habilitado): el jugador nunca queda atrapado en el overlay
+const fightCloseBtn = $('#fightCloseBtn');
+if (fightCloseBtn) fightCloseBtn.onclick = () => {
+    if (combatState && !combatState.isRegularEnemy && S.threat) {
+        // Huir de un boss tiene un coste leve de renombre
+        S.stats.renown = Math.max(0, S.stats.renown - 1);
+        log('Huyes del combate. Pierdes algo de renombre.', 'warn');
+    } else if (combatState) {
+        log('Te retiras del combate.', 'dim');
+    }
+    closeCombat();
+};
 
 function disableCombatBtns() {
     btnAttack.disabled = true;
@@ -145,7 +190,8 @@ function enableCombatBtns() {
     if (!combatState) return;
     btnAttack.disabled = false;
     btnDefend.disabled = false;
-    btnHeal.disabled = false;
+    btnHeal.disabled = !(S.resources.medicina > 0);
+    btnHeal.textContent = `💊 Curar (${S.resources.medicina || 0})`;
     if (btnDodge) btnDodge.disabled = false;
     if (btnPotion) {
         btnPotion.disabled = !(S.consumables?.pocion > 0) || combatState.potionUsed;
@@ -176,7 +222,7 @@ function enemyTurn() {
     const armorReduction = (S.equipment?.armadura || 0) * 0.2;
     const effects = getSkillEffects();
     const skillReduction = effects.dmgReduction || 0;
-    dmg = Math.max(1, Math.floor(dmg * (1 - armorReduction - skillReduction)));
+    dmg = Math.max(1, Math.floor(dmg * (1 - Math.min(0.75, armorReduction + skillReduction))));   // cap 75% reducción
 
     if (S.player.guard === 'dodge') {
         dmg = 0;
@@ -199,6 +245,7 @@ function enemyTurn() {
             combatState.boss.hp = Math.max(0, combatState.boss.hp - 1);
             log('¡Riposte! Devuelves 1 de daño.', 'good');
             createDamageNumber(1, enemyEl);
+            if (combatState.boss.hp <= 0) { S.player.guard = false; renderCombatUI(); resolveVictory(); return; }
         }
     }
     S.player.guard = false;
@@ -229,8 +276,10 @@ function enemyTurn() {
     renderCombatUI();
 
     if (S.player.hp <= 0) {
-        log('Has caído en combate. Pierdes renombre.', 'bad');
         S.stats.renown = Math.max(0, S.stats.renown - 2);
+        // Recuperar algo de vida al caer (evita el bucle de re-entrar a 0 HP)
+        S.player.hp = Math.max(1, Math.floor(S.player.maxHp * 0.3));
+        log('Has caído en combate. Pierdes renombre y te retiras a curarte.', 'bad');
         screenFlash('red');
         closeCombat();
         return;
@@ -247,9 +296,9 @@ btnAttack.addEventListener('click', () => {
     const effects = getSkillEffects();
     const critChance = 0.15 + (effects.critBonus || 0);
     const isCrit = Math.random() < critChance;
-    let atk = 1 + (S.resources.antorchas > 0 ? 1 : 0) + (S.unlocked.forge ? 1 : 0);
+    let atk = 2 + (S.resources.antorchas > 0 ? 1 : 0) + (S.unlocked.forge ? 1 : 0);
     atk += (effects.bonusAtk || 0);
-    atk += (S.equipment?.espada || 0) * 2;
+    atk += Math.min(6, (S.equipment?.espada || 0)) * 2;   // tope +12 por espadas
     const levelBonus = Math.floor(S.player.level / 5);
     atk += levelBonus;
     if (combatState.potionUsed) { atk *= 2; combatState.potionUsed = false; }
@@ -290,51 +339,49 @@ btnAttack.addEventListener('click', () => {
 
     renderResources(); renderCombatUI();
 
-    if (combatState.boss.hp <= 0) {
-        const t = combatState.boss;
-        const isRegular = combatState.isRegularEnemy;
-
-        if (isRegular) {
-            // Regular enemy rewards
-            log(`${t.name} ha sido derrotado.`, 'good');
-            S.enemiesDefeated = (S.enemiesDefeated || 0) + 1;
-            if (t.loot) {
-                t.loot.forEach(l => {
-                    const n = l.n[0] + Math.floor(Math.random() * (l.n[1] - l.n[0] + 1));
-                    S.resources[l.k] = (S.resources[l.k] || 0) + n;
-                });
-            }
-            const xpReward = 5 + Math.floor((t.max || t.hp) / 2);
-            addXP(xpReward);
-            xpFlash();
-            screenFlash('green');
-            toast(`Victoria: ${t.name} +${xpReward} XP`);
-        } else {
-            // Boss rewards
-            log(`${t.name} ha sido derrotado.`, 'good');
-            S.stats.bossesDefeated++;
-            window.dispatchEvent(new CustomEvent('lys-unlock-achievement', { detail: { key: t.key, mk: `Derrotaste a ${t.name}` } }));
-
-            const duration = Date.now() - combatState.startTime;
-            integrator.onBossDefeated(S, t.name, combatState.totalDamageDealt, combatState.totalDamageTaken, duration, log);
-
-            const xpReward = 15 + Math.floor(t.max / 2);
-            addXP(xpReward);
-            xpFlash();
-            screenFlash('gold');
-            fireConfetti();
-
-            S.threat = null;
-            if (bossTag) bossTag.textContent = '👁️ Sin amenaza';
-            toast(`🏆 ¡Victoria! +${xpReward} XP`);
-        }
-
-        closeCombat();
-        return;
-    }
+    if (combatState.boss.hp <= 0) { resolveVictory(); return; }
     combatState.turn = 'enemy';
     setTimeout(enemyTurn, 700);
 });
+
+// Resolución de victoria (reutilizada por ataque normal y por riposte)
+function resolveVictory() {
+    if (!combatState) return;
+    const t = combatState.boss;
+    const isRegular = combatState.isRegularEnemy;
+
+    if (isRegular) {
+        log(`${t.name} ha sido derrotado.`, 'good');
+        S.enemiesDefeated = (S.enemiesDefeated || 0) + 1;
+        S.stats.renown += 1;                          // faucet de renombre para la senda Sombra
+        quests.updateProgress('defeat_enemy', 1);   // misión diaria de caza
+        if (t.loot) {
+            const lootMul = 1 + (getSkillEffects().lootBonus || 0);   // Sed de Botín
+            t.loot.forEach(l => {
+                let n = l.n[0] + Math.floor(Math.random() * (l.n[1] - l.n[0] + 1));
+                n = Math.max(1, Math.round(n * lootMul));
+                S.resources[l.k] = (S.resources[l.k] || 0) + n;
+            });
+        }
+        // Oleadas: el contador avanza SOLO al vencer (perder/huir no salta de oleada)
+        if (t.isWave) S.waveMode = { wave: t.waveNumber, active: false };
+        const xpReward = 5 + Math.floor((t.max || t.hp) / 2);
+        addXP(xpReward); xpFlash(); screenFlash('green');
+        toast(`Victoria: ${t.name} +${xpReward} XP`);
+    } else {
+        log(`${t.name} ha sido derrotado.`, 'good');
+        S.stats.bossesDefeated++;
+        S.stats.renown += Math.max(2, Math.floor(t.max / 4));   // botín de renombre por boss
+        const duration = Date.now() - combatState.startTime;
+        integrator.onBossDefeated(S, t.name, combatState.totalDamageDealt, combatState.totalDamageTaken, duration, log);
+        const xpReward = 15 + (t.level || 1) * 15;
+        addXP(xpReward); xpFlash(); screenFlash('gold'); fireConfetti();
+        S.threat = null;
+        if (bossTag) bossTag.textContent = '👁️ Sin amenaza';
+        toast(`🏆 ¡Victoria! +${xpReward} XP`);
+    }
+    closeCombat();
+}
 
 btnDefend.addEventListener('click', () => {
     if (!combatState || combatState.turn !== 'player') return;
@@ -357,7 +404,7 @@ btnHeal.addEventListener('click', () => {
     if (S.resources.medicina > 0) {
         disableCombatBtns();
         S.resources.medicina--;
-        const amount = 20 + Math.floor(S.player.level * 2);
+        const amount = 15 + S.player.level;
         S.player.hp = Math.min(S.player.maxHp, S.player.hp + amount);
         fightInfo.textContent = `💊 Recuperas ${amount} HP.`;
         AudioSystem.playTone('heal');
@@ -390,7 +437,7 @@ btnHeal.addEventListener('click', () => {
 
 // Encounter
 export function showEncounterPrompt() {
-    if (!S.threat) return;
+    if (!S.threat || combatState) return;
     const bossLevel = S.threat.level || Math.ceil(S.threat.max / 5);
     const diff = getDifficultyLabel(bossLevel);
     encounterTitle.textContent = S.threat.name;
@@ -470,6 +517,8 @@ export function startEnemyEncounter(enemy) {
         atk: enemy.atk,
         level: enemy.level,
         loot: enemy.loot,
+        isWave: !!enemy.isWave,
+        waveNumber: enemy.waveNumber,
         endsAt: Date.now() + 120000,
         region: ''
     };

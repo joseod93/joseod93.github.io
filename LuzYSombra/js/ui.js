@@ -1,5 +1,5 @@
 
-import { $, fmtMs, now } from './utils.js';
+import { $, fmtMs, now, formatNumber, prefersReducedMotion } from './utils.js';
 import { AudioSystem } from './audio.js';
 import { S, saveState, xpForLevel } from './state.js';
 import { RES_META, BOSSES } from './constants.js';
@@ -29,11 +29,25 @@ const streakPill = $('#streakPill');
 const logBadge = $('#logBadge');
 const mapaBadge = $('#mapaBadge');
 const aldeaBadge = $('#aldeaBadge');
+const masBadge = $('#masBadge');
+
+// Fecha local (idéntica a la usada por racha/ruleta en game/actions)
+function getDateStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+function spinAvailable() {
+    return S.streak && S.streak.lastSpinDate !== getDateStr();
+}
 const comboIndicator = $('#comboIndicator');
 const confettiCanvas = $('#confettiCanvas');
+const bossBar = $('#bossBar');
+const unlockBeacon = $('#unlockBeacon');
 
 let logCount = 0;
 let activeTab = 'tabAldea';
+
+export function getActiveTab() { return activeTab; }
 
 export const BUTTON_REFS = {};
 
@@ -69,6 +83,14 @@ export function switchTab(tabId) {
     if (tabId === 'tabDiario' && logBadge) logBadge.classList.add('hidden');
     if (tabId === 'tabMapa' && mapaBadge) mapaBadge.classList.add('hidden');
     if (tabId === 'tabAldea' && aldeaBadge) aldeaBadge.classList.add('hidden');
+    if (tabId === 'tabMas' && masBadge) masBadge.classList.add('hidden');
+
+    // Refrescar mapa al entrar (el tick no lo redibuja fuera de la pestaña activa)
+    if (tabId === 'tabMapa') window.dispatchEvent(new CustomEvent('lys-show-map'));
+
+    // Empezar arriba al cambiar de pestaña
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    if (navigator.vibrate) navigator.vibrate(8);
 }
 
 // ===== TOAST =====
@@ -136,11 +158,30 @@ export function updateCooldownVisuals() {
 }
 
 // ===== XP / LEVEL SYSTEM =====
+// Floating "+N XP" near the level badge (coalesced to avoid spam)
+let _xpAccum = 0, _xpFloatTimer = null;
+function showXpFloat(amount) {
+    if (amount <= 0 || document.hidden) return;
+    _xpAccum += amount;
+    if (_xpFloatTimer) return;
+    _xpFloatTimer = setTimeout(() => {
+        const amt = _xpAccum; _xpAccum = 0; _xpFloatTimer = null;
+        const anchor = levelBadge || document.querySelector('.header-right');
+        if (!anchor || amt <= 0) return;
+        const el = document.createElement('div');
+        el.className = 'xp-float';
+        el.textContent = `+${amt} XP`;
+        anchor.appendChild(el);
+        setTimeout(() => el.remove(), 1000);
+    }, 320);
+}
+
 export function addXP(amount) {
     S.player.xp += amount;
-    const needed = xpForLevel(S.player.level);
+    showXpFloat(amount);
 
-    while (S.player.xp >= needed) {
+    // Subir de nivel: re-evaluar el umbral en CADA vuelta (no fijarlo una vez)
+    while (S.player.xp >= xpForLevel(S.player.level)) {
         S.player.xp -= xpForLevel(S.player.level);
         S.player.level++;
         onLevelUp(S.player.level);
@@ -173,6 +214,7 @@ function onLevelUp(level) {
     // Skill points
     const skillPts = (level % 5 === 0) ? 2 : 1;
     S.skillPoints = (S.skillPoints || 0) + skillPts;
+    window.dispatchEvent(new CustomEvent('lys-skills-refresh'));
 
     const overlay = $('#levelUpOverlay');
     const text = $('#levelUpText');
@@ -223,7 +265,7 @@ export function screenFlash(color = 'gold') {
 
 // ===== CONFETTI =====
 export function fireConfetti() {
-    if (!confettiCanvas) return;
+    if (!confettiCanvas || prefersReducedMotion()) return;
     const ctx = confettiCanvas.getContext('2d');
     confettiCanvas.width = window.innerWidth;
     confettiCanvas.height = window.innerHeight;
@@ -283,6 +325,10 @@ export function updateStreakDisplay() {
         streakPill.textContent = `🔥 Racha: ${streak}`;
         if (streak >= 3) streakPill.classList.add('hot');
         else streakPill.classList.remove('hot');
+        // Aversión a la pérdida: recuerda que volver mantiene la racha
+        streakPill.title = streak > 0
+            ? `Racha de ${streak} día${streak > 1 ? 's' : ''}. ¡Vuelve mañana o la perderás! Mañana: racha ${streak + 1}.`
+            : 'Juega cada día para construir tu racha y ganar mejores recompensas.';
     }
 }
 
@@ -334,7 +380,57 @@ export function updateTags() {
     updateStreakDisplay();
     updateTabBadges();
     updateTimeClass();
+    updateBossBar();
+    maybeRefreshAchievements();
+    renderNextObjective();
     // updateStarfield();
+}
+
+// Re-renderiza el grid de logros solo cuando cambia el nº de desbloqueados (live + reveal progresivo)
+let _achCount = -1;
+function maybeRefreshAchievements() {
+    const n = Object.keys(S.achievements || {}).length;
+    if (n !== _achCount) {
+        const grew = _achCount >= 0 && n > _achCount;   // no celebrar el conteo inicial al cargar
+        _achCount = n;
+        renderAchievements();
+        if (grew) { screenFlash('gold'); fireConfetti(); if (navigator.vibrate) navigator.vibrate([30, 40, 60]); }
+    }
+}
+
+// ===== PERSISTENT BOSS BAR (FOMO, clicable desde cualquier pestaña) =====
+function updateBossBar() {
+    if (!bossBar) return;
+    if (S.threat) {
+        const remain = S.threat.endsAt - now();
+        if (remain > 0) {
+            bossBar.classList.remove('hidden');
+            bossBar.innerHTML = `<span class="boss-bar-icon">${S.threat.icon || '👁️'}</span><b>${S.threat.name}</b><span class="boss-bar-time">⏳ ${fmtMs(remain)}</span><span class="boss-bar-cta">⚔️ ¡Luchar!</span>`;
+            bossBar.onclick = () => window.dispatchEvent(new CustomEvent('lys-open-combat'));
+            return;
+        }
+    }
+    bossBar.classList.add('hidden');
+}
+
+// ===== NEXT-UNLOCK BEACON (orientación: qué desbloqueas a continuación) =====
+const UNLOCK_STEPS = [
+    { key: 'water', label: 'Río 💧', cur: s => s.resources.lenia || 0, target: 3, unit: '🪵' },
+    { key: 'herbs', label: 'Campos 🌿', cur: s => s.resources.agua || 0, target: 2, unit: '💧' },
+    { key: 'crafting', label: 'Taller 🔨', cur: s => Math.min(s.resources.aceitunas || 0, 1) + Math.min(s.resources.lenia || 0, 1), target: 2, unit: '🫒🪵' },
+    { key: 'village', label: 'Aldea 🏘️', cur: s => Math.floor(s.stats.renown || 0), target: 5, unit: '⭐' },
+    { key: 'expedition', label: 'Caminos 🛤️', cur: s => s.stats.explore || 0, target: 8, unit: '🧭' },
+];
+function renderUnlockBeacon() {
+    if (!unlockBeacon) return;
+    const step = UNLOCK_STEPS.find(s => !S.unlocked[s.key]);
+    if (!step) { unlockBeacon.classList.add('hidden'); return; }
+    const cur = Math.min(step.cur(S), step.target);
+    const pct = Math.min(100, (cur / step.target) * 100);
+    unlockBeacon.classList.remove('hidden');
+    unlockBeacon.innerHTML =
+        `<div class="beacon-row"><span>🔓 Próximo: <b>${step.label}</b></span><span class="beacon-num">${Math.floor(cur)}/${step.target} ${step.unit}</span></div>` +
+        `<div class="beacon-bar"><div style="width:${pct}%"></div></div>`;
 }
 
 // ===== TAB BADGES =====
@@ -350,15 +446,36 @@ function updateTabBadges() {
         }
     }
 
-    // Aldea badge: boss or trader present
+    // Aldea badge: boss / trader / ruleta diaria disponible
     if (aldeaBadge) {
         const hasBoss = !!S.threat;
         const hasTrader = !!S.trader;
-        if ((hasBoss || hasTrader) && activeTab !== 'tabAldea') {
+        const canSpin = spinAvailable();
+        if ((hasBoss || hasTrader || canSpin) && activeTab !== 'tabAldea') {
             aldeaBadge.classList.remove('hidden');
-            aldeaBadge.textContent = hasBoss ? '⚔' : '🪵';
+            aldeaBadge.textContent = hasBoss ? '⚔' : hasTrader ? '🪵' : '🎰';
         } else {
             aldeaBadge.classList.add('hidden');
+        }
+    }
+
+    // Diario badge: misión lista para reclamar
+    if (logBadge) {
+        let claimable = false;
+        try { claimable = integrator.getActiveQuests().some(q => q.completed); } catch (e) { }
+        if (claimable && activeTab !== 'tabDiario') {
+            logBadge.classList.remove('hidden');
+            logBadge.textContent = '🎁';
+        }
+    }
+
+    // Más badge: puntos de habilidad sin gastar
+    if (masBadge) {
+        if ((S.skillPoints || 0) > 0 && activeTab !== 'tabMas') {
+            masBadge.classList.remove('hidden');
+            masBadge.textContent = S.skillPoints;
+        } else {
+            masBadge.classList.add('hidden');
         }
     }
 }
@@ -369,7 +486,7 @@ export function renderResources() {
     const prev = {};
     resEl.querySelectorAll('.res').forEach(el => {
         const key = el.dataset.key;
-        if (key) prev[key] = el.querySelector('b')?.textContent;
+        if (key) prev[key] = el.dataset.val;   // valor crudo (no el texto formateado K/M)
     });
 
     resEl.innerHTML = '';
@@ -381,11 +498,12 @@ export function renderResources() {
         d.dataset.key = k;
 
         const rounded = Math.floor(v);
-        d.innerHTML = `<b>${meta.icon} ${rounded}</b><small>${meta.label}</small>`;
+        d.dataset.val = String(rounded);
+        d.innerHTML = `<b>${meta.icon} ${formatNumber(rounded)}</b><small>${meta.label}</small>`;
 
         const prevText = prev[k];
-        if (prevText) {
-            const prevNum = parseInt(prevText.replace(/[^\d]/g, '')) || 0;
+        if (prevText !== undefined) {
+            const prevNum = parseInt(prevText) || 0;
             const b = d.querySelector('b');
             if (rounded > prevNum) {
                 d.classList.add('gained');
@@ -405,6 +523,13 @@ export function renderResources() {
 
         resEl.appendChild(d);
     }
+
+    // Estado vacío útil: dile al jugador qué hacer
+    if (!resEl.children.length) {
+        resEl.innerHTML = '<p class="empty-hint">Aún no tienes recursos. Abre el 🌲 <b>Bosque</b> y corta leña para empezar.</p>';
+    }
+
+    renderUnlockBeacon();
 }
 
 // ===== RENDER NOTES =====
@@ -415,10 +540,10 @@ export function renderNotes() {
     const lines = [];
     lines.push(`👥 Aldeanos: ${villagers} — producción pasiva de recursos.`);
     lines.push(`🔥 Fogata: ${heat}° — mejora producción con calor alto.`);
-    if (S.unlocked.molino) lines.push(`🏚️ Molino: transforma trigo y da renombre.`);
-    if (S.unlocked.acequia) lines.push(`💧 Acequia: genera agua pasiva.`);
-    if (S.unlocked.forge) lines.push(`⚒️ Fragua: hierro pasivo y +1 daño.`);
-    lines.push(`📊 Nivel: ${S.player.level} | Renombre: ${Math.floor(S.stats.renown)}`);
+    if (S.unlocked.molino) lines.push(`🏚️ Molino Nv ${S.buildings?.molino || 1}: transforma trigo y da renombre.`);
+    if (S.unlocked.acequia) lines.push(`💧 Acequia Nv ${S.buildings?.acequia || 1}: genera agua pasiva.`);
+    if (S.unlocked.forge) lines.push(`⚒️ Fragua Nv ${S.buildings?.forge || 1}: hierro pasivo y +1 daño.`);
+    lines.push(`📊 Nivel: ${S.player.level} | Renombre: ${formatNumber(S.stats.renown)}`);
     notesBody.innerHTML = '<ul style="margin:0;padding-left:18px;list-style:none">' + lines.map(t => `<li style="padding:4px 0;border-bottom:1px solid #1b263633">${t}</li>`).join('') + '</ul>';
 }
 
@@ -445,7 +570,50 @@ export function setTip(text) {
 }
 
 // ===== QUESTS =====
+function questClaimable() {
+    try { return integrator.getActiveQuests().some(q => q.completed); } catch (e) { return false; }
+}
+
+// Tarjeta "¿Qué hacer ahora?" — la primera acción pendiente, clicable
+export function renderNextObjective() {
+    const el = $('#nextObjective'); if (!el) return;
+    const openLoc = (id) => window.dispatchEvent(new CustomEvent('lys-open-location', { detail: id }));
+    let o = null;
+    if (S.expedition && (S.expedition.endsAt - now()) <= 0) o = { icon: '🎁', text: 'Expedición lista para reclamar', cta: 'Mapa', act: () => switchTab('tabMapa') };
+    else if (S.threat) o = { icon: '⚔️', text: `Amenaza: ${S.threat.name}`, cta: 'Luchar', act: () => window.dispatchEvent(new CustomEvent('lys-open-combat')) };
+    else if (questClaimable()) o = { icon: '🎁', text: 'Misión lista para reclamar', cta: 'Diario', act: () => switchTab('tabDiario') };
+    else if ((S.skillPoints || 0) > 0 && S.player.level >= 3) o = { icon: '⭐', text: `${S.skillPoints} punto(s) de habilidad sin usar`, cta: 'Mejorar', act: () => switchTab('tabMas') };
+    else if (spinAvailable()) o = { icon: '🎰', text: 'Ruleta de la suerte disponible', cta: 'Girar', act: () => openLoc('campamento') };
+    else if (!S.fire.lit) o = (S.resources.lenia > 0)
+        ? { icon: '🔥', text: '¡Enciende la fogata!', cta: 'Campamento', act: () => openLoc('campamento') }
+        : { icon: '🪵', text: 'Consigue leña en el Bosque', cta: 'Bosque', act: () => openLoc('bosque') };
+    if (!o) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.innerHTML = `<span class="no-icon">${o.icon}</span><span class="no-text">${o.text}</span><span class="no-cta">${o.cta} →</span>`;
+    el.onclick = o.act;
+}
+
+// Objetivos diarios visibles en la pantalla principal (Aldea)
+export function renderDailyGoals() {
+    const card = $('#dailyGoalsCard'), body = $('#dailyGoals'), cnt = $('#dailyGoalsCount');
+    if (!body) return;
+    if (S.player.level < 2) { if (card) card.style.display = 'none'; return; }
+    let dailies = [];
+    try { dailies = integrator.getActiveQuests().filter(q => q.type === 'daily'); } catch (e) { }
+    if (!dailies.length) { if (card) card.style.display = 'none'; return; }
+    if (card) card.style.display = '';
+    const done = dailies.filter(q => q.completed).length;
+    if (cnt) cnt.textContent = `${done}/${dailies.length}`;
+    body.innerHTML = dailies.slice(0, 4).map(q => {
+        const pct = Math.min(100, (q.progress / q.target.amount) * 100);
+        const right = q.completed ? '🎁 listo' : `${Math.min(q.progress, q.target.amount)}/${q.target.amount}`;
+        return `<div class="dg-row"><div class="dg-top"><span class="dg-name">${q.icon} ${q.name}</span><span class="dg-num">${right}</span></div><div class="dg-bar"><div style="width:${pct}%"></div></div></div>`;
+    }).join('');
+    body.onclick = () => switchTab('tabDiario');
+}
+
 export function renderQuests() {
+    renderDailyGoals();
     const questsContainer = $('#quests');
     if (!questsContainer) return;
 
@@ -492,14 +660,21 @@ export function incrementCombo() {
     if (comboTimer) clearTimeout(comboTimer);
 
     if (comboIndicator) {
-        comboIndicator.textContent = `🔥 x${comboCount}`;
-        comboIndicator.classList.remove('hidden');
+        comboIndicator.innerHTML = `<span class="combo-label">🔥 x${comboCount}</span><span class="combo-drain"></span>`;
+        comboIndicator.classList.remove('hidden', 'combo-hot', 'combo-mega');
+        if (comboCount >= 10) comboIndicator.classList.add('combo-mega');
+        else if (comboCount >= 5) comboIndicator.classList.add('combo-hot');
         comboIndicator.style.animation = 'none';
         void comboIndicator.offsetWidth;
         comboIndicator.style.animation = '';
+        const drain = comboIndicator.querySelector('.combo-drain');
+        if (drain) drain.style.animation = `comboDrain ${COMBO_TIMEOUT}ms linear forwards`;
+        // Recompensa sensorial creciente por encadenar
+        if (comboCount === 5) { AudioSystem.playTone('event'); }
+        if (comboCount === 10) { AudioSystem.playTone('levelup'); screenFlash('gold'); }
     }
 
-    const bonusXP = Math.min(comboCount, 10);
+    const bonusXP = Math.min(comboCount, 5);
     if (comboCount >= 2) {
         addXP(bonusXP);
     }

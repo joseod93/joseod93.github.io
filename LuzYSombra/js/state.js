@@ -1,7 +1,7 @@
 
 import { now } from './utils.js';
 
-const blank = () => ({
+export const blank = () => ({
     version: 3,
     started: false,
     startedAt: now(),
@@ -34,7 +34,12 @@ const blank = () => ({
     theme: 'dark',      // dark | light
     tutorialTips: {},   // tipKey -> shown bool
     enemiesDefeated: 0,
-    currentLocation: null  // open settlement location id
+    currentLocation: null,  // open settlement location id
+    revealed: {},       // secciones del "Más" ya anunciadas (revelado progresivo)
+    buildings: { molino: 0, acequia: 0, forge: 0 },  // nivel de cada edificio (0 = sin construir)
+    alignment: null,    // null | 'luz' | 'sombra' (rama del árbol de habilidades)
+    legacy: 0,          // moneda permanente de prestigio (Reliquias)
+    legacyUpgrades: {}  // mejoras de Legado compradas: key -> nivel
 });
 
 export let S = blank();
@@ -58,6 +63,17 @@ export function loadState() {
         if (raw) {
             const loaded = JSON.parse(raw);
             S = { ...blank(), ...loaded };
+
+            // Merge superficial -> backfill por objeto canónico (saves antiguos sin campos anidados darían NaN)
+            const b = blank();
+            ['fire', 'time', 'player', 'people', 'stats', 'resources', 'cooldowns', 'unlocked', 'discoveries', 'streak', 'equipment', 'consumables', 'buildings', 'legacyUpgrades'].forEach(k => {
+                if (S[k] && typeof S[k] === 'object' && !Array.isArray(S[k])) S[k] = { ...b[k], ...S[k] };
+                else S[k] = b[k];
+            });
+            // Edificios booleanos antiguos -> nivel 1
+            ['molino', 'acequia', 'forge'].forEach(k => { if (S.unlocked[k] && !S.buildings[k]) S.buildings[k] = 1; });
+            if (S.alignment === undefined) S.alignment = null;
+            if (S.legacy === undefined) S.legacy = 0;
 
             if (!S.people.jobs) S.people.jobs = { lumber: 0, farmer: 0, miner: 0 };
             if (S.people.jobs.miner === undefined) S.people.jobs.miner = 0;

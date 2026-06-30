@@ -280,6 +280,36 @@ export const REGION_EVENTS = {
         { message: 'El Gran Bazar ofrece riquezas sin fin.', effect: (S) => { S.resources.sal += 3; S.resources.hierro += 3; S.stats.renown += 2; } },
         { message: 'Sabios bizantinos comparten conocimiento ancestral.', effect: (S) => { S.resources.medicina += 3; S.stats.renown += 3; } },
         { message: 'Las murallas de Teodosio impresionan al viajero.', effect: (S) => { S.resources.piedra += 6; S.stats.renown += 1; } }
+    ],
+    'Málaga': [
+        { message: 'La brisa del Mediterráneo trae sal y calma.', effect: (S) => { S.resources.sal += 3; } },
+        { message: 'Viñas de la Axarquía regalan dulzura.', effect: (S) => { S.resources.aceitunas += 3; S.stats.renown += 1; } },
+        { message: 'El castillo de Gibralfaro vigila la costa.', effect: (S) => S.stats.renown += 2 }
+    ],
+    'Córdoba': [
+        { message: 'Los arcos de la Mezquita susurran historia.', effect: (S) => { S.resources.piedra += 4; S.stats.renown += 2; } },
+        { message: 'Patios floridos perfuman las callejuelas.', effect: (S) => S.resources.hierbas += 3 },
+        { message: 'Herreros del zoco te enseñan su arte.', effect: (S) => S.resources.hierro += 2 }
+    ],
+    'Huelva': [
+        { message: 'Las marismas del Odiel rebosan vida.', effect: (S) => { S.resources.agua += 3; S.resources.hierbas += 1; } },
+        { message: 'Minas de Riotinto tiñen la tierra de cobre.', effect: (S) => S.resources.hierro += 4 },
+        { message: 'Marineros parten a descubrir nuevos mundos.', effect: (S) => S.stats.renown += 2 }
+    ],
+    'Almería': [
+        { message: 'El desierto de Tabernas esconde minerales.', effect: (S) => { S.resources.piedra += 4; S.resources.hierro += 1; } },
+        { message: 'La Alcazaba domina el mar árido.', effect: (S) => S.stats.renown += 2 },
+        { message: 'Cabo de Gata regala sal cristalina.', effect: (S) => S.resources.sal += 3 }
+    ],
+    'Toledo': [
+        { message: 'Maestros forjadores templan acero legendario.', effect: (S) => { S.resources.hierro += 4; S.stats.renown += 1; } },
+        { message: 'Las tres culturas dejan sabiduría.', effect: (S) => S.stats.renown += 3 },
+        { message: 'El Tajo abraza la ciudad imperial.', effect: (S) => { S.resources.agua += 2; S.resources.piedra += 2; } }
+    ],
+    'Madrid': [
+        { message: 'Un cruce de caminos abre oportunidades.', effect: (S) => S.stats.renown += 3 },
+        { message: 'Mercados bulliciosos ofrecen de todo.', effect: (S) => { S.resources.trigo += 3; S.resources.sal += 2; } },
+        { message: 'La villa crece y tu fama con ella.', effect: (S) => { S.stats.renown += 2; S.resources.piedra += 2; } }
     ]
 };
 

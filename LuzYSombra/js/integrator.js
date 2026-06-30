@@ -86,6 +86,8 @@ export function onActionPerformed(S, action, log) {
 export function onExpeditionCompleted(S, region, log) {
     // Track estadísticas
     statistics.trackExpedition(region);
+    // Reflejar en el estado del juego (lo usa el logro ach_andalucia)
+    S.stats.expeditionsCompleted = (S.stats.expeditionsCompleted || 0) + 1;
 
     // Actualizar progreso de misiones
     quests.updateProgress('complete_expedition', 1);
@@ -99,9 +101,7 @@ export function onExpeditionCompleted(S, region, log) {
             }
         });
     }
-
-    // Notificación
-    notifications.expeditionComplete(region);
+    // (El aviso de expedición ya se programa al INICIARLA; no duplicar aquí)
 }
 
 /**
@@ -188,10 +188,7 @@ export function onGameTick(S, log) {
         }
     }
 
-    // Actualizar clima (1% de probabilidad)
-    if (Math.random() < 0.01) {
-        updateWeather(S, log);
-    }
+    // (El clima lo gestiona game.js gameTick, que SÍ refresca los visuales; no duplicar aquí)
 
     // Verificar condiciones de misiones
     quests.checkCondition('fire_hours', S);
@@ -299,8 +296,10 @@ export function claimQuestReward(S, questId, log) {
                 S.stats.renown += amount;
                 onRenownGained(S, amount, log);
             } else {
+                // Entregar directamente: NO pasar por onResourceGathered (re-alimentaría el progreso de misiones)
                 S.resources[resource] = (S.resources[resource] || 0) + amount;
-                onResourceGathered(S, resource, amount, log);
+                statistics.trackResourceGathered(resource, amount);
+                checkAchievements(S, log);
             }
         }
 
