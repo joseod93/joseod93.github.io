@@ -85,6 +85,8 @@ var Prestige = {
 
         this.points -= cost;
         this.upgrades[upgradeId] = currentLevel + 1;
+        // Velocidad de cinta retroactiva en líneas existentes
+        if (upgradeId === 'belt_speed') Belts.recomputeSpeeds();
         return true;
     },
 

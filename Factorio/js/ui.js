@@ -7,6 +7,92 @@ var UI = {
         this.buildToolbar();
         this.bindButtons();
         this.updateResources();
+        this.renderObjective();
+        this.maybeShowOfflineModal();
+        this.maybeShowTouchHint();
+    },
+
+    // Resumen "mientras no estabas": modal con lo que produjo la fábrica offline
+    maybeShowOfflineModal: function() {
+        var rep = Game._offlineReport;
+        Game._offlineReport = null;
+        if (!rep || !rep.gains || rep.gains.length === 0) return;
+        var mins = Math.floor(rep.seconds / 60);
+        var timeStr = mins >= 1 ? (mins + ' min') : (rep.seconds + 's');
+        var html = '<h2>🏭 Mientras no estabas</h2>';
+        html += '<p style="color:#bbb;margin-bottom:12px;">Tu fábrica siguió produciendo durante ' +
+            '<b style="color:#ffd700;">' + timeStr + '</b>' + (rep.capped ? ' <span style="color:#888;font-size:11px;">(máx. 30 min)</span>' : '') + ':</p>';
+        html += '<div class="offline-list">';
+        var top = rep.gains.slice(0, 8);
+        for (var i = 0; i < top.length; i++) {
+            var g = top[i];
+            html += '<div class="offline-row">' +
+                '<span class="offline-dot" style="background:' + Items.color(g.item) + '"></span>' +
+                '<span class="offline-name">' + (ITEM_NAMES[g.item] || g.item) + '</span>' +
+                '<span class="offline-amt">+' + this.formatNumber(g.n) + '</span></div>';
+        }
+        html += '</div>';
+        html += '<button class="btn-action offline-collect" onclick="UI.closeModal();">¡A seguir construyendo! 🚀</button>';
+        var content = document.getElementById('modal-content');
+        if (!content) return;
+        content.innerHTML = html;
+        document.getElementById('modal').style.display = 'flex';
+        Audio.play('milestone');
+        Particles.spawn(window.innerWidth / 2, window.innerHeight / 2, 'achievement');
+    },
+
+    // HUD del objetivo actual: la guía siempre visible de "qué hacer ahora"
+    renderObjective: function() {
+        var el = document.getElementById('objective-hud');
+        if (!el) return;
+        var idx = Game.objectiveIndex || 0;
+        var obj = CFG.OBJECTIVES[idx];
+        if (!obj) { el.style.display = 'none'; return; }
+        var total = CFG.OBJECTIVES.length - 1; // el último ('expand') es abierto
+        var countTxt, pct;
+        if (obj.prog) {
+            var p = obj.prog();
+            countTxt = p.cur + '/' + p.max;
+            pct = p.max > 0 ? Math.min(100, Math.round(p.cur / p.max * 100)) : 0;
+        } else {
+            countTxt = Math.min(idx, total) + '/' + total;
+            pct = Math.round((Math.min(idx, total) / total) * 100);
+        }
+        el.innerHTML =
+            '<span class="obj-label">🎯 Objetivo</span>' +
+            '<span class="obj-text">' + obj.text + '</span>' +
+            '<span class="obj-progress">' + countTxt + '</span>' +
+            '<span class="obj-bar"><span class="obj-bar-fill" style="width:' + pct + '%"></span></span>';
+        el.style.display = 'flex';
+        this._objHudIdx = idx;
+    },
+
+    // Refresco vivo del progreso del objetivo actual (1/seg): solo actualiza texto+barra
+    // del elemento existente (no rebuild → sin re-disparar la transición CSS cada segundo)
+    updateObjectiveLive: function() {
+        var el = document.getElementById('objective-hud');
+        if (!el || el.style.display === 'none') return;
+        if (Game.objectiveIndex !== this._objHudIdx) { this.renderObjective(); return; }
+        var obj = CFG.OBJECTIVES[Game.objectiveIndex];
+        if (!obj || !obj.prog) return;
+        var p = obj.prog();
+        var frac = p.max > 0 ? Math.min(1, p.cur / p.max) : 0;
+        var prog = el.querySelector ? el.querySelector('.obj-progress') : null;
+        var fill = el.querySelector ? el.querySelector('.obj-bar-fill') : null;
+        if (prog) prog.textContent = p.cur + '/' + p.max;
+        if (fill) fill.style.width = Math.round(frac * 100) + '%';
+    },
+
+    // Legenda de gestos una sola vez para usuarios táctiles (descubribilidad)
+    maybeShowTouchHint: function() {
+        if (!Input.isTouchDevice) return;
+        var KEY = 'factoryEmpire_touchHint';
+        try { if (localStorage.getItem(KEY)) return; } catch (e) { return; }
+        var self = this;
+        setTimeout(function() {
+            self.showToast('👆 Toca para construir · ✋ arrastra para mover · 🤏 pellizca para zoom · ⏱️ mantén pulsado un edificio para opciones', 'achievement');
+            try { localStorage.setItem(KEY, '1'); } catch (e2) {}
+        }, 2800);
     },
 
     buildToolbar: function() {
@@ -207,7 +293,6 @@ var UI = {
             e.stopPropagation();
             Game.paused = !Game.paused;
             self.updatePauseState();
-            this.textContent = Game.paused ? '▶' : '⏸';
         });
 
         var undoBtn = document.getElementById('btn-undo');
@@ -328,15 +413,11 @@ var UI = {
 
         var important = ['iron_plate','copper_plate','steel','iron_gear','green_circuit','advanced_circuit','red_science','green_science','blue_science'];
 
-        if (!this._lastProduced) this._lastProduced = {};
+        // Las tasas (+X/s) se muestrean en sampleRates() una vez por segundo desde UI.update.
+        // updateResources puede invocarse muchas veces por segundo (place/transfer), así que
+        // aquí solo se LEEN; recalcular el delta aquí daría tasas erráticas/0.
         if (!this._rates) this._rates = {};
         var produced = Game.stats.itemsProduced;
-        for (var rk in produced) {
-            var prev = this._lastProduced[rk] || 0;
-            var delta = produced[rk] - prev;
-            this._rates[rk] = delta;
-            this._lastProduced[rk] = produced[rk];
-        }
 
         for (var i = 0; i < important.length; i++) {
             var item = important[i];
@@ -608,6 +689,7 @@ var UI = {
     setRecipe: function(buildingId, recipeId) {
         var b = World.buildings[buildingId];
         if (!b || b.removed) return;
+        if (b.recipeId !== recipeId) Buildings.refundInputs(b); // devolver input al cambiar receta
         b.recipeId = recipeId;
         b.progress = 0;
         b.input = {};
@@ -639,9 +721,14 @@ var UI = {
 
         menu.innerHTML = '';
         var actions = [
-            {label: 'Info', icon: 'ℹ️', action: function() { Input.selectedBuilding = b; UI.showBuildingInfo(b); }},
-            {label: 'Rotar', icon: '🔄', action: function() { b.direction = (b.direction + 1) % 4; }}
+            {label: 'Info', icon: 'ℹ️', action: function() { Input.selectedBuilding = b; UI.showBuildingInfo(b); }}
         ];
+        // Rotar in situ solo donde b.direction gobierna el comportamiento. En cintas la
+        // dirección vive en la línea de transporte (y en subterráneas rompería el par),
+        // así que rotar ahí solo desincronizaría la flecha dibujada.
+        if (b.type !== 'belt' && b.type !== 'fast_belt' && b.type !== 'underground_belt') {
+            actions.push({label: 'Rotar', icon: '🔄', action: function() { b.direction = (b.direction + 1) % 4; }});
+        }
         if (Buildings.getConfigSnapshot(b)) {
             actions.push({label: 'Copiar ajustes', icon: '📋', action: function() { Input.copyConfigFrom(b); }});
         }
@@ -920,10 +1007,15 @@ var UI = {
             return;
         }
 
-        // Firma para no regenerar DOM en vano
+        // Firma para no regenerar DOM en vano. Incluye el texto: la alerta de energía
+        // comparte key constante 'power' pero su texto lleva kW en vivo (si no, se congelaría).
         var sig = '';
-        for (var i = 0; i < this.alerts.length; i++) sig += this.alerts[i].key + ';';
-        var onlyGood = this.alerts.length > 0 && this.alerts[0].kind === 'silo' && this.alerts.length === 1;
+        for (var i = 0; i < this.alerts.length; i++) sig += this.alerts[i].key + '=' + this.alerts[i].text + ';';
+        // "Bueno" si TODAS las alertas son cohetes listos (no penalizar tener 2+ silos)
+        var onlyGood = this.alerts.length > 0;
+        for (var g = 0; g < this.alerts.length; g++) {
+            if (this.alerts[g].kind !== 'silo') { onlyGood = false; break; }
+        }
 
         badge.style.display = 'block';
         badge.textContent = (onlyGood ? '🚀 ' : '⚠️ ') + this.alerts.length;
@@ -1139,6 +1231,16 @@ var UI = {
         html += '<button class="btn-action" onclick="if(!Save.hasBackup()){UI.showToast(\'No hay backup\');}else if(Save.loadBackup()){UI.showToast(\'¡Backup restaurado!\');UI.closeModal();}else{UI.showToast(\'El backup está dañado\',\'warning\');}">Restaurar Backup</button>';
 
         html += '<h3>Controles</h3>';
+        if (Input.isTouchDevice) {
+            html += '<div style="font-size:13px;color:#ccc;line-height:1.9;">';
+            html += '<p>👆 <b>Tocar</b> — Colocar / minar / seleccionar</p>';
+            html += '<p>✋ <b>Arrastrar</b> — Mover la cámara (o trazar cintas)</p>';
+            html += '<p>🤏 <b>Pellizcar</b> (2 dedos) — Zoom</p>';
+            html += '<p>⏱️ <b>Mantener pulsado</b> — Menú del edificio</p>';
+            html += '<p>🗑️ <b>Demoler</b> — Botón papelera; arrastra para un área</p>';
+            html += '<p>↻ <b>Rotar</b> — Botón al colocar (abajo)</p>';
+            html += '</div>';
+        }
         html += '<div style="font-size:12px;color:#ccc;line-height:2;">';
         html += '<p><kbd>WASD</kbd> / Flechas — Mover cámara</p>';
         html += '<p><kbd>R</kbd> — Rotar dirección</p>';
@@ -1261,6 +1363,9 @@ var UI = {
 
     updatePauseState: function() {
         document.getElementById('pause-indicator').style.display = Game.paused ? 'block' : 'none';
+        // El glifo del botón móvil debe seguir cualquier vía de pausa (Espacio incluido)
+        var pm = document.getElementById('btn-pause-mobile');
+        if (pm) pm.textContent = Game.paused ? '▶' : '⏸';
     },
 
     formatNumber: function(n) {
@@ -1270,12 +1375,49 @@ var UI = {
         return '' + n;
     },
 
+    // Muestreo de tasas de producción una vez por segundo (intervalo fijo, no por evento)
+    sampleRates: function() {
+        if (!this._lastProduced) this._lastProduced = {};
+        if (!this._rates) this._rates = {};
+        var produced = Game.stats.itemsProduced;
+        var totalPerSec = 0;
+        for (var rk in produced) {
+            var d = produced[rk] - (this._lastProduced[rk] || 0);
+            this._rates[rk] = d;
+            this._lastProduced[rk] = produced[rk];
+            if (d > 0) totalPerSec += d;
+        }
+
+        // Celebración de hitos de producción (items/min cruzando una nueva cota: 100,1k,10k...)
+        var perMin = totalPerSec * 60;
+        if (this._tpTier === undefined) this._tpTier = 0;
+        var tiers = [100, 500, 2000, 10000, 50000, 200000, 1000000];
+        var tier = 0;
+        for (var ti = 0; ti < tiers.length; ti++) { if (perMin >= tiers[ti]) tier = tiers[ti]; }
+        if (tier > this._tpTier) {
+            this._tpTier = tier;
+            Particles.spawn(window.innerWidth / 2, window.innerHeight / 2, 'achievement');
+            this.showToast('⚡ ¡' + this.formatNumber(tier) + ' items/min! Tu imperio acelera', 'achievement');
+            Audio.play('milestone');
+        }
+    },
+
+    // Reinicia la línea base de tasas (carga/prestigio) para no mostrar un pico falso
+    resetRates: function() {
+        this._lastProduced = {};
+        this._rates = {};
+        var produced = Game.stats ? Game.stats.itemsProduced : null;
+        if (produced) for (var k in produced) this._lastProduced[k] = produced[k];
+    },
+
     update: function(dt) {
         this.toastTimer += dt;
         if (this.toastTimer > 1) {
             this.toastTimer = 0;
+            this.sampleRates();
             this.updateResources();
             this.updateToolbarSelection();
+            this.updateObjectiveLive();
 
             var undoBtn = document.getElementById('btn-undo');
             if (undoBtn) undoBtn.style.display = Buildings.undoStack.length > 0 ? '' : 'none';

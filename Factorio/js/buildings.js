@@ -5,38 +5,41 @@ var Buildings = {
     UNDO_MAX: 20,
     _undoBatch: null,
 
-    tryPlace: function(tx, ty, type, dir) {
+    // silent: en colocación por lote (drag) no spamear toasts/sonidos de fallo ni el
+    // sonido de éxito por edificio (el llamador reproduce uno solo al final).
+    tryPlace: function(tx, ty, type, dir, silent) {
         var def = CFG.BUILDING_DEFS[type];
         if (!def) return false;
         if (def.unlocked === false && !Tech.isUnlocked(type)) {
-            UI.showToast('Requiere investigar: ' + (CFG.TECH_TREE[def.tech] ? CFG.TECH_TREE[def.tech].name : def.tech));
-            Audio.play('error');
+            if (!silent) { UI.showToast('Requiere investigar: ' + (CFG.TECH_TREE[def.tech] ? CFG.TECH_TREE[def.tech].name : def.tech)); Audio.play('error'); }
             return false;
         }
 
         var w = def.size[0], h = def.size[1];
         if (!World.canPlace(tx, ty, w, h)) {
-            UI.showToast('No se puede colocar aquí');
+            if (!silent) UI.showToast('No se puede colocar aquí');
             return false;
         }
 
         if ((type === 'miner' || type === 'electric_miner') && !World.hasResource(tx, ty, w, h)) {
-            UI.showToast('Necesita veta de recurso debajo');
+            if (!silent) UI.showToast('Necesita veta de recurso debajo');
             return false;
         }
 
         if (!Game.creativeModeOn) {
             if (def.cost && def.cost.length > 0) {
                 if (!Inventory.hasAll(Game.player.inventory, def.cost)) {
-                    var missing = [];
-                    for (var i = 0; i < def.cost.length; i++) {
-                        var have = Inventory.count(Game.player.inventory, def.cost[i].item);
-                        if (have < def.cost[i].qty) {
-                            missing.push((ITEM_NAMES[def.cost[i].item] || def.cost[i].item) + ' (' + have + '/' + def.cost[i].qty + ')');
+                    if (!silent) {
+                        var missing = [];
+                        for (var i = 0; i < def.cost.length; i++) {
+                            var have = Inventory.count(Game.player.inventory, def.cost[i].item);
+                            if (have < def.cost[i].qty) {
+                                missing.push((ITEM_NAMES[def.cost[i].item] || def.cost[i].item) + ' (' + have + '/' + def.cost[i].qty + ')');
+                            }
                         }
+                        UI.showToast('Faltan: ' + missing.join(', '));
+                        Audio.play('error');
                     }
-                    UI.showToast('Faltan: ' + missing.join(', '));
-                    Audio.play('error');
                     return false;
                 }
                 Inventory.removeAll(Game.player.inventory, def.cost);
@@ -50,8 +53,10 @@ var Buildings = {
             this.linkUnderground(b);
         }
         Game.stats.buildingsPlaced++;
-        Particles.spawn(tx * CFG.TILE + (w * CFG.TILE) / 2, ty * CFG.TILE + (h * CFG.TILE) / 2, 'place');
-        Audio.play('place');
+        var pcx = tx * CFG.TILE + (w * CFG.TILE) / 2, pcy = ty * CFG.TILE + (h * CFG.TILE) / 2;
+        Particles.spawn(pcx, pcy, 'place');
+        Particles.spawn(pcx, pcy, 'ring', (CFG.COLORS.buildings[type] && CFG.COLORS.buildings[type].fg) || '#e6a832');
+        if (!silent) Audio.play('place');
         Tutorial.onEvent('place', type);
         UI.updateResources();
         return true;
@@ -271,6 +276,16 @@ var Buildings = {
         return null;
     },
 
+    // Devuelve el contenido de b.input al inventario del jugador (al cambiar de receta)
+    refundInputs: function(b) {
+        if (!b.input) return;
+        for (var item in b.input) {
+            var n = b.input[item];
+            if (n > 0) Inventory.add(Game.player.inventory, item, n);
+        }
+        b.input = {};
+    },
+
     applyConfigSnapshot: function(b, props) {
         if (!props) return;
         if (b.type === 'inserter' && props.filterItem !== undefined) {
@@ -278,7 +293,8 @@ var Buildings = {
         }
         if (b.type === 'assembler' && props.recipeId !== undefined) {
             if (b.recipeId !== props.recipeId) {
-                // Misma semántica que UI.setRecipe: cambiar receta vacía el input
+                // Cambiar receta vacía el input: devolver lo que hubiera al jugador (no destruir)
+                this.refundInputs(b);
                 b.recipeId = props.recipeId;
                 b.progress = 0;
                 b.input = {};
@@ -726,11 +742,19 @@ var Buildings = {
         var tech = CFG.TECH_TREE[Game.currentResearch];
         if (!tech) { b.active = false; return; }
 
-        var hasScience = true;
+        // Solo se necesitan/consumen los tipos de ciencia que aún no llegaron a su
+        // coste (evita sobreconsumir el pack barato y bloquear techs de coste desigual)
+        var prog = Tech.progress[Game.currentResearch] || {};
+        var needed = b._labNeed || (b._labNeed = []);
+        needed.length = 0;
         for (var sciType in tech.cost) {
-            if (!Inventory.has(b.input, sciType, 1)) { hasScience = false; break; }
+            if ((prog[sciType] || 0) < tech.cost[sciType]) needed.push(sciType);
         }
-        if (!hasScience) { b.active = false; return; }
+        if (needed.length === 0) { b.active = false; return; }
+
+        for (var n = 0; n < needed.length; n++) {
+            if (!Inventory.has(b.input, needed[n], 1)) { b.active = false; return; }
+        }
 
         if (def.powerDraw > 0 && Game.power.satisfaction < 0.1) { b.active = false; return; }
 
@@ -740,8 +764,8 @@ var Buildings = {
 
         if (b.progress >= 1) {
             b.progress = 0;
-            for (var sciType2 in tech.cost) {
-                Inventory.remove(b.input, sciType2, 1);
+            for (var c = 0; c < needed.length; c++) {
+                Inventory.remove(b.input, needed[c], 1);
             }
             Tech.addProgress(Game.currentResearch, 1);
         }
@@ -752,6 +776,7 @@ var Buildings = {
         b.progress += def.grabSpeed * grabMult;
         if (b.progress < 1) return;
         b.progress = 0;
+        b.active = false; // cada ciclo parte de inactivo; solo un commit lo pone a true
 
         var d = CFG.DIRECTIONS[b.direction];
         var fromX = b.x - d.dx, fromY = b.y - d.dy;
@@ -842,6 +867,7 @@ var Buildings = {
                     return;
                 }
             }
+            b.active = false; // tiene item pero la salida está bloqueada: estancado, no "trabajando"
             return;
         }
 

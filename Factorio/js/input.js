@@ -19,9 +19,19 @@ var Input = {
     configClipboard: null,
     demolishMode: false,
     demolishEnd: null,
+    _longPressFired: false,
+    _wasMultiTouch: false,
 
     isBeltMode: function() {
         return this.buildMode === 'belt' || this.buildMode === 'fast_belt';
+    },
+
+    // Arrastrar para colocar una fila de edificios 1×1 (insertadores, almacenes, etc.).
+    // Las cintas tienen su propio flujo (isBeltMode); los multi-tile no se arrastran.
+    isDragPlaceMode: function() {
+        if (!this.buildMode || this.isBeltMode()) return false;
+        var def = CFG.BUILDING_DEFS[this.buildMode];
+        return !!def && def.size[0] === 1 && def.size[1] === 1;
     },
 
     init: function(canvas) {
@@ -41,6 +51,11 @@ var Input = {
 
         window.addEventListener('keydown', function(e) { self.onKeyDown(e); });
         window.addEventListener('keyup', function(e) { self.onKeyUp(e); });
+        // Al perder foco no llegan los keyup: limpiar teclas para evitar paneo descontrolado
+        window.addEventListener('blur', function() { self.keys = {}; });
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) self.keys = {};
+        });
     },
 
     onMouseDown: function(e) {
@@ -93,6 +108,8 @@ var Input = {
 
         if (this.isDragging && this.isBeltMode() && this.dragStart) {
             this.updateBeltPath(Camera.screenToTile(sx, sy));
+        } else if (this.isDragging && this.isDragPlaceMode() && this.dragStart) {
+            this.updateBuildPath(Camera.screenToTile(sx, sy));
         }
 
         if (this.isDragging && this.demolishMode && this.dragStart) {
@@ -121,6 +138,8 @@ var Input = {
             Buildings.removeArea(this.dragStart.x, this.dragStart.y, this.demolishEnd.x, this.demolishEnd.y);
         } else if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
             this.placeBeltPath();
+        } else if (this.isDragPlaceMode() && this.isDragging && this.ghostTiles.length > 0) {
+            this.placeBuildPath();
         } else if (!this.isDragging) {
             this.handleTap(tile);
         }
@@ -162,6 +181,8 @@ var Input = {
             this.tapStartTime = Date.now();
             this.tapStartPos = {x: p.x, y: p.y};
             this.isDragging = false;
+            this._longPressFired = false;
+            this._wasMultiTouch = false;
             this.mouse.x = p.x;
             this.mouse.y = p.y;
             this.mouse.tile = Camera.screenToTile(p.x, p.y);
@@ -183,6 +204,13 @@ var Input = {
 
         if (this.pointerCount === 2) {
             clearTimeout(this.longPressTimer);
+            this._wasMultiTouch = true; // un gesto multitáctil no debe terminar en tap/colocación fantasma
+            // Cancelar cualquier arrastre de 1 dedo en curso (cinta/demolición/drag-place):
+            // el 2º dedo es para zoom/pan, no debe confirmar nada al soltar.
+            this.isDragging = false;
+            this.ghostTiles = [];
+            this.beltPath = [];
+            this.demolishEnd = null;
             var pts = this.getPointerArray();
             this.lastPinchDist = this.dist(pts[0], pts[1]);
             this.isPanning = true;
@@ -250,6 +278,8 @@ var Input = {
             if (this.isDragging) {
                 if (this.isBeltMode()) {
                     this.updateBeltPath(Camera.screenToTile(p2.x, p2.y));
+                } else if (this.isDragPlaceMode()) {
+                    this.updateBuildPath(Camera.screenToTile(p2.x, p2.y));
                 } else if (this.demolishMode) {
                     // 1 dedo dibuja el rectángulo; 2 dedos siguen paneando
                     this.demolishEnd = Camera.screenToTile(p2.x, p2.y);
@@ -273,17 +303,20 @@ var Input = {
         clearTimeout(this.longPressTimer);
 
         if (this.pointerCount === 0) {
+            // El arrastre de minimapa no confirma colocación/demolición, pero SÍ debe pasar
+            // por el reset común de abajo (si no, fuga isPanning/_wasMultiTouch/_longPressFired
+            // y el siguiente arrastre con ratón panea en vez de construir).
             if (this.minimapDrag) {
                 this.minimapDrag = false;
-                this.isDragging = false;
-                this.tapStartPos = null;
-                return;
-            }
-            if (this.demolishMode && this.isDragging && this.dragStart && this.demolishEnd) {
+            } else if (this.demolishMode && this.isDragging && this.dragStart && this.demolishEnd) {
                 Buildings.removeArea(this.dragStart.x, this.dragStart.y, this.demolishEnd.x, this.demolishEnd.y);
             } else if (this.isBeltMode() && this.isDragging && this.ghostTiles.length > 0) {
                 this.placeBeltPath();
-            } else if (!this.isDragging && Date.now() - this.tapStartTime < 300) {
+            } else if (this.isDragPlaceMode() && this.isDragging && this.ghostTiles.length > 0) {
+                this.placeBuildPath();
+            } else if (!this.isDragging && !this._longPressFired && !this._wasMultiTouch) {
+                // Sin tope de 300ms: un toque quieto pero lento (300-500ms) seguía siendo un tap.
+                // El long-press (500ms) ya consume el gesto poniendo _longPressFired.
                 if (this.tapStartPos) {
                     var tile = Camera.screenToTile(this.tapStartPos.x, this.tapStartPos.y);
                     this.handleTap(tile);
@@ -296,6 +329,8 @@ var Input = {
             this.demolishEnd = null;
             this.beltPath = [];
             this.ghostTiles = [];
+            this._longPressFired = false;
+            this._wasMultiTouch = false;
         }
     },
 
@@ -533,10 +568,13 @@ var Input = {
     },
 
     handleLongPress: function(tile) {
-        if (this.demolishMode) return;
-        this.vibrate(30);
+        // En modos de colocación/demolición un toque mantenido debe resolverse como tap
+        // (lo gestiona onTouchEnd); no abrir menú ni consumir el gesto.
+        if (this.buildMode || this.isBeltMode() || this.demolishMode) return;
         var b = World.getBuildingAt(tile.x, tile.y);
         if (b) {
+            this._longPressFired = true; // consumir: evita que onTouchEnd haga además un tap-select
+            this.vibrate(30);
             UI.showContextMenu(tile, b);
         }
     },
@@ -546,6 +584,12 @@ var Input = {
         var sx = this.dragStart.x, sy = this.dragStart.y;
         var ex = endTile.x, ey = endTile.y;
         var path = [];
+
+        // Drag que empieza y acaba en el mismo tile: respetar la rotación elegida (R)
+        if (sx === ex && sy === ey) {
+            this.ghostTiles = [{x:sx, y:sy, dir:this.buildDirection}];
+            return;
+        }
 
         var dx = ex - sx, dy = ey - sy;
         var absDx = Math.abs(dx), absDy = Math.abs(dy);
@@ -585,6 +629,43 @@ var Input = {
             if (Belts.tryPlaceSingle(g.x, g.y, g.dir, this.buildMode)) placed++;
         }
         if (placed > 0) Audio.play('place');
+        this.ghostTiles = [];
+    },
+
+    // Camino en L de tiles (misma forma que las cintas) pero con dirección constante,
+    // para colocar una fila de edificios 1×1 arrastrando.
+    updateBuildPath: function(endTile) {
+        if (!this.dragStart) return;
+        var sx = this.dragStart.x, sy = this.dragStart.y;
+        var ex = endTile.x, ey = endTile.y;
+        var dir = this.buildDirection;
+        var path = [];
+        var dx = ex - sx, dy = ey - sy;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            var stepX = dx > 0 ? 1 : -1;
+            for (var x = sx; x !== ex + stepX; x += stepX) path.push({x:x, y:sy, dir:dir});
+            if (dy !== 0) {
+                var stepY = dy > 0 ? 1 : -1;
+                for (var y = sy + stepY; y !== ey + stepY; y += stepY) path.push({x:ex, y:y, dir:dir});
+            }
+        } else {
+            var stepY2 = dy > 0 ? 1 : -1;
+            for (var y2 = sy; y2 !== ey + stepY2; y2 += stepY2) path.push({x:sx, y:y2, dir:dir});
+            if (dx !== 0) {
+                var stepX2 = dx > 0 ? 1 : -1;
+                for (var x2 = sx + stepX2; x2 !== ex + stepX2; x2 += stepX2) path.push({x:x2, y:ey, dir:dir});
+            }
+        }
+        this.ghostTiles = path;
+    },
+
+    placeBuildPath: function() {
+        var placed = 0;
+        for (var i = 0; i < this.ghostTiles.length; i++) {
+            var g = this.ghostTiles[i];
+            if (Buildings.tryPlace(g.x, g.y, this.buildMode, this.buildDirection, true)) placed++; // silent
+        }
+        if (placed > 0) { Audio.play('place'); this.vibrate(12); }
         this.ghostTiles = [];
     },
 

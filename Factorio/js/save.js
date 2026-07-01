@@ -47,6 +47,7 @@ var Save = {
             prestige: Prestige.getSaveData(),
             stats: Game.stats,
             milestones: Game.milestones,
+            objective: Game.objectiveIndex,
             creativeModeOn: Game.creativeModeOn
         };
 
@@ -140,7 +141,11 @@ var Save = {
         if (!data || typeof data !== 'object') return;
         data = this.migrate(data);
         if (!data.player) data.player = {inventory:{}};
-        if (!data.camera) data.camera = {x:0, y:0, zoom:1};
+        if (!data.camera || typeof data.camera !== 'object') data.camera = {};
+        if (typeof data.camera.x !== 'number') data.camera.x = 0;
+        if (typeof data.camera.y !== 'number') data.camera.y = 0;
+        if (typeof data.camera.zoom !== 'number' || data.camera.zoom <= 0) data.camera.zoom = 1;
+        data.camera.zoom = Math.max(CFG.ZOOM_MIN, Math.min(CFG.ZOOM_MAX, data.camera.zoom)); // save corrupto/editado
         if (!data.buildings) data.buildings = [];
         if (!data.belts) data.belts = [];
         if (!data.stats) data.stats = null;
@@ -152,6 +157,7 @@ var Save = {
         Game.player.inventory = data.player.inventory || {};
         Game.stats = data.stats || Game.createStats();
         Game.milestones = data.milestones || {};
+        Game.objectiveIndex = data.objective || 0;
         Game.currentResearch = data.research ? data.research.current : null;
         Game.creativeModeOn = data.creativeModeOn || false;
 
@@ -163,8 +169,8 @@ var Save = {
         Camera.zoom = data.camera.zoom;
 
         Prestige.init(data.prestige);
-        Tech.completed = data.research ? data.research.completed : {};
-        Tech.progress = data.research ? data.research.progress : {};
+        Tech.completed = (data.research && data.research.completed) || {};
+        Tech.progress = (data.research && data.research.progress) || {};
 
         // La selección y los snapshots de undo apuntan al mundo anterior
         Input.selectedBuilding = null;
@@ -185,15 +191,31 @@ var Save = {
         Belts.compactLines();
 
         Game.recalcPowerCache();
-        Game.initHistory(); // evita delta gigante falso al cargar en caliente
+        Belts.recomputeSpeeds(); // aplica mejoras de velocidad de cinta a líneas ya colocadas
+
+        // Objetivos ya completos al GUARDAR: saltarlos sin recompensa (ya se concedieron en
+        // vivo, o es un save legacy previo al sistema). Debe ir ANTES del offline para no
+        // re-recompensar lo ya hecho.
+        Game.syncObjectivesSilently();
 
         var elapsed = Date.now() - (data.timestamp || Date.now());
-        var offlineTicks = Math.min(Math.floor(elapsed / CFG.TICK_MS), 20 * 60 * 60 * 8);
+        // Cap de catch-up: el bucle es síncrono O(ticks×edificios); 30 min evita congelar la pestaña
+        var requested = Math.floor(elapsed / CFG.TICK_MS);
+        var offlineTicks = Math.min(requested, 20 * 60 * 30);
         if (offlineTicks > 20) {
-            this.simulateOffline(offlineTicks);
+            this.simulateOffline(offlineTicks, requested > offlineTicks);
         }
 
+        // initHistory DESPUÉS del offline: su línea base incluye la producción offline,
+        // así el primer muestreo no marca un pico gigante falso en la gráfica.
+        Game.initHistory();
+        UI.resetRates(); // ídem para las tasas +X/s de la barra de recursos
+
+        // Objetivos cruzados DURANTE el offline sí dan recompensa + fanfarria
+        Game.checkObjectives();
+
         UI.updateResources();
+        UI.renderObjective();
     },
 
     // Compacto: emite solo edificios vivos, con pi (pairId) remapeado al índice
@@ -331,7 +353,8 @@ var Save = {
                 t: line.tiles.map(function(t) { return [t.x, t.y]; }),
                 it: items,
                 hg: line.headGap,
-                sp: line.speed
+                sp: line.speed,
+                fa: line.fast ? 1 : 0
             });
         }
         return arr;
@@ -344,21 +367,29 @@ var Save = {
             // Nada del save referencia índices de línea: los nulls de saves
             // viejos se saltan sin placeholder
             if (!d) continue;
-            var line = {
-                id: Belts.lines.length,
-                dir: d.d,
-                tiles: d.t.map(function(t) { return {x:t[0], y:t[1]}; }),
-                items: d.it.map(function(it) { return {type:it[0], gap:it[1]}; }),
-                headGap: d.hg,
-                lastPositiveGapIndex: -1,
-                speed: d.sp || CFG.BELT_SPEED,
-                removed: false
-            };
-            // gap del item de cola siempre 0 (saves antiguos podían traer valores stale)
-            if (line.items.length > 0) line.items[0].gap = 0;
-            Belts.lines.push(line);
-            Belts.rebuildTileIndex(line);
-            Belts.recalcLastPositive(line);
+            // Resiliencia por entrada: una línea corrupta no debe tirar el resto
+            try {
+                var sp = d.sp || CFG.BELT_SPEED;
+                var fast = (d.fa !== undefined) ? !!d.fa : (sp >= CFG.FAST_BELT_SPEED - 0.001);
+                var line = {
+                    id: Belts.lines.length,
+                    dir: d.d,
+                    tiles: d.t.map(function(t) { return {x:t[0], y:t[1]}; }),
+                    items: d.it.map(function(it) { return {type:it[0], gap:it[1]}; }),
+                    headGap: d.hg,
+                    lastPositiveGapIndex: -1,
+                    fast: fast,
+                    speed: sp,
+                    removed: false
+                };
+                // gap del item de cola siempre 0 (saves antiguos podían traer valores stale)
+                if (line.items.length > 0) line.items[0].gap = 0;
+                Belts.lines.push(line);
+                Belts.rebuildTileIndex(line);
+                Belts.recalcLastPositive(line);
+            } catch (e) {
+                console.error('Cinta dañada en save (entrada ' + i + '):', e);
+            }
         }
     },
 
@@ -435,14 +466,39 @@ var Save = {
         return fixes;
     },
 
-    simulateOffline: function(ticks) {
-        var produced = {};
+    simulateOffline: function(ticks, capped) {
+        // Snapshot para el resumen "mientras no estabas"
+        var before = {};
+        var produced = Game.stats.itemsProduced;
+        for (var k in produced) before[k] = produced[k];
+
         for (var t = 0; t < ticks; t++) {
             Buildings.update();
             Belts.update();
             Game.tick++;
         }
-        UI.showToast('¡Bienvenido! Tu fábrica produjo durante ' + Math.floor(ticks / 20) + 's.', 'achievement');
+
+        // Diferencia: qué se fabricó durante la ausencia
+        var gains = [];
+        for (var item in produced) {
+            var delta = produced[item] - (before[item] || 0);
+            if (delta > 0) gains.push({item: item, n: delta});
+        }
+        gains.sort(function(a, b) { return b.n - a.n; });
+
+        Game._offlineReport = {
+            seconds: Math.floor(ticks / 20),
+            capped: !!capped,
+            gains: gains
+        };
+
+        // La presentación rica (modal "mientras no estabas") la hace UI.maybeShowOfflineModal
+        // en UI.init si hay gains; aquí solo un toast de respaldo para ausencias sin producción.
+        var mins = Math.floor(ticks / 20 / 60);
+        var timeStr = mins >= 1 ? (mins + ' min') : (Math.floor(ticks / 20) + 's');
+        if (gains.length === 0) {
+            UI.showToast('🏭 ¡Bienvenido de vuelta! (' + timeStr + ')', 'achievement');
+        }
     },
 
     update: function(dt) {

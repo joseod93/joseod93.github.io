@@ -9,6 +9,29 @@ var Belts = {
         this.deadCount = 0;
     },
 
+    // Multiplicador global de velocidad de cinta (tech + prestige), aplicado a TODAS
+    // las líneas vivas para que las mejoras sean retroactivas.
+    speedMult: function() {
+        var m = 1;
+        if (Game.prestige) m += (Game.prestige.upgrades.belt_speed || 0) * 0.1;
+        if (Tech.isCompleted('logistics_2')) m *= 1.5;
+        return m;
+    },
+
+    baseSpeedFor: function(fast) {
+        return fast ? CFG.FAST_BELT_SPEED : CFG.BELT_SPEED;
+    },
+
+    // Recalcula line.speed = base × mult para cada línea (al investigar/prestigiar/cargar)
+    recomputeSpeeds: function() {
+        var mult = this.speedMult();
+        for (var i = 0; i < this.lines.length; i++) {
+            var l = this.lines[i];
+            if (l.removed) continue;
+            l.speed = this.baseSpeedFor(l.fast) * mult;
+        }
+    },
+
     // Purga líneas muertas (removeBelt/mergeLines solo marcan removed).
     // Nada persiste índices de línea: basta reasignar ids y reindexar tiles.
     compactLines: function() {
@@ -46,16 +69,15 @@ var Belts = {
             input: {}, output: {}, progress: 0, active: true
         });
 
-        var beltSpeed = (beltType === 'fast_belt' ? CFG.FAST_BELT_SPEED : CFG.BELT_SPEED);
-        beltSpeed *= (1 + (Game.prestige ? (Game.prestige.upgrades.belt_speed || 0) * 0.1 : 0));
-        if (Tech.isCompleted('logistics_2')) beltSpeed *= 1.5;
+        var fast = (beltType === 'fast_belt');
+        var beltSpeed = this.baseSpeedFor(fast) * this.speedMult();
 
-        this.addToLine(tx, ty, dir, beltSpeed);
+        this.addToLine(tx, ty, dir, beltSpeed, fast);
         Tutorial.onEvent('place', beltType);
         return true;
     },
 
-    addToLine: function(tx, ty, dir, beltSpeed) {
+    addToLine: function(tx, ty, dir, beltSpeed, fast) {
         var key = tx + ',' + ty;
         var d = CFG.DIRECTIONS[dir];
         var behindX = tx - d.dx, behindY = ty - d.dy;
@@ -70,9 +92,13 @@ var Belts = {
         var aLine = aheadLine ? this.lines[aheadLine.lineId] : null;
 
         if (bLine && bLine.dir === dir && !bLine.removed && Math.abs(bLine.speed - beltSpeed) < 0.001) {
-            if (aLine && aLine.dir === dir && !aLine.removed && bLine !== aLine) {
+            if (aLine && aLine.dir === dir && !aLine.removed && bLine !== aLine &&
+                Math.abs(aLine.speed - beltSpeed) < 0.001) {
                 bLine.tiles.push({x:tx, y:ty});
                 this.tileToLine[key] = {lineId: bLine.id, idx: bLine.tiles.length - 1};
+                // El tile de conexión es espacio nuevo en la cabeza de bLine: contarlo en
+                // headGap ANTES de fusionar, o los items de la cola saltan 1 tile adelante.
+                bLine.headGap += 1;
                 this.mergeLines(bLine, aLine);
                 return;
             }
@@ -99,6 +125,7 @@ var Belts = {
             items: [],
             headGap: 1,
             lastPositiveGapIndex: -1,
+            fast: !!fast,
             speed: beltSpeed,
             removed: false
         };
@@ -173,6 +200,7 @@ var Belts = {
                 ? tiles.length - (absItems[absItems.length - 1].p - offset)
                 : tiles.length,
             lastPositiveGapIndex: -1,
+            fast: !!template.fast,
             speed: template.speed,
             removed: false
         };

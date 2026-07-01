@@ -120,10 +120,8 @@ var World = {
     setTileBuilding: function(tx, ty, buildingId) {
         var tile = this.getTile(tx, ty);
         tile.buildingId = buildingId;
-        var c = CFG.CHUNK;
-        var cx = Math.floor(tx / c), cy = Math.floor(ty / c);
-        var chunk = this.getChunk(cx, cy);
-        chunk.dirty = true;
+        // No se marca el chunk dirty: el canvas horneado solo lleva terreno+recursos
+        // (los edificios se dibujan aparte cada frame). Re-hornear aquí era trabajo inútil.
     },
 
     canPlace: function(tx, ty, w, h) {

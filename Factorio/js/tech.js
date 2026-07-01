@@ -60,6 +60,9 @@ var Tech = {
         this.completed[techId] = true;
         Game.stats.techsCompleted = Object.keys(this.completed).length;
 
+        // Velocidad de cinta retroactiva: las líneas ya colocadas adoptan la mejora
+        if (techId === 'logistics_2') Belts.recomputeSpeeds();
+
         var tech = CFG.TECH_TREE[techId];
         if (tech) {
             UI.showToast('¡Investigación completada: ' + tech.name + '!', 'achievement');

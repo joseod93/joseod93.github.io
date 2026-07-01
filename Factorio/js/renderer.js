@@ -35,8 +35,16 @@ var Renderer = {
         this.frameCount++;
         if (this.frameCount % 300 === 0) this.evictChunkCanvases();
 
-        ctx.fillStyle = '#111122';
-        ctx.fillRect(0, 0, w, h);
+        // Ciclo día/noche ambiental. Offset de medio ciclo: time=0 arranca a mediodía
+        // (luz plena), no a medianoche, para no recibir al jugador a oscuras.
+        var dayPhase = ((this.time + this.DAY_LENGTH * 0.5) % this.DAY_LENGTH) / this.DAY_LENGTH;
+        var light = (Math.sin(dayPhase * Math.PI * 2 - Math.PI / 2) + 1) / 2;
+        this.nightFactor = Math.max(0, (0.55 - light) / 0.55); // 0 de día, ~1 noche cerrada
+        // Calidez de amanecer/atardecer: pico en la banda de transición (luz ~0.4)
+        this.duskFactor = Math.max(0, 1 - Math.abs(light - 0.4) * 4);
+
+        // Fondo con gradiente radial sutil (profundidad) en vez de relleno plano
+        this.drawBackground(ctx, w, h);
 
         var shake = Camera.getShakeOffset(dt);
         ctx.save();
@@ -45,6 +53,7 @@ var Renderer = {
         ctx.scale(Camera.zoom, Camera.zoom);
 
         this.drawTerrain();
+        this.drawCloudShadows();
         this.drawResourceLabels();
         this.drawResourceHighlight();
         this.drawGrid();
@@ -59,17 +68,123 @@ var Renderer = {
 
         ctx.restore();
 
+        this.applyDayNight(ctx, w, h);
         this.drawVignette(ctx, w, h);
+
+        // Fogonazo de pantalla (lanzamiento de cohete u otros clímax)
+        if (this.flash > 0.01) {
+            ctx.fillStyle = 'rgba(255,250,235,' + (this.flash * 0.7).toFixed(3) + ')';
+            ctx.fillRect(0, 0, w, h);
+            this.flash -= dt * 1.8;
+            if (this.flash < 0) this.flash = 0;
+        }
+
         Particles.render(ctx);
+        this.drawDust(ctx, w, h);
         this.drawMinimap(ctx, w, h);
     },
 
-    drawVignette: function(ctx, w, h) {
-        var g = ctx.createRadialGradient(w/2, h/2, w * 0.3, w/2, h/2, w * 0.8);
-        g.addColorStop(0, 'rgba(0,0,0,0)');
-        g.addColorStop(1, 'rgba(0,0,10,0.35)');
-        ctx.fillStyle = g;
+    // Sombras de nubes a la deriva (mundo): elipses radiales suaves, se atenúan de noche
+    drawCloudShadows: function() {
+        var sun = 1 - this.nightFactor;
+        if (sun <= 0.05) return;
+        var ctx = this.ctx, t = CFG.TILE, b = Camera.getVisibleBounds();
+        var CELL = 520;
+        var driftX = this.time * 9, driftY = this.time * 4;
+        var minWX = b.minX * t, maxWX = (b.maxX + 1) * t, minWY = b.minY * t, maxWY = (b.maxY + 1) * t;
+        var c0x = Math.floor((minWX - driftX) / CELL) - 1, c1x = Math.floor((maxWX - driftX) / CELL) + 1;
+        var c0y = Math.floor((minWY - driftY) / CELL) - 1, c1y = Math.floor((maxWY - driftY) / CELL) + 1;
+        var alpha = 0.08 * sun;
+        for (var cy = c0y; cy <= c1y; cy++) {
+            for (var cx = c0x; cx <= c1x; cx++) {
+                var h = World.hash2d(cx * 3 + 1, cy * 7 + 2);
+                var pxc = cx * CELL + driftX + h * 200;
+                var pyc = cy * CELL + driftY + World.hash2d(cx * 5, cy * 3) * 200;
+                var r = 150 + h * 130;
+                var g = ctx.createRadialGradient(pxc, pyc, 0, pxc, pyc, r);
+                g.addColorStop(0, 'rgba(0,0,18,' + alpha.toFixed(3) + ')');
+                g.addColorStop(1, 'rgba(0,0,18,0)');
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.ellipse(pxc, pyc, r, r * 0.62, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    },
+
+    // Motas de polvo flotando (espacio de pantalla): atmósfera ambiental barata
+    drawDust: function(ctx, w, h) {
+        var n = 14;
+        ctx.fillStyle = 'rgba(255,250,220,0.35)';
+        for (var i = 0; i < n; i++) {
+            var sx = World.hash2d(i * 17 + 1, 3) * w;
+            var sy = World.hash2d(i * 13 + 5, 9) * h;
+            var spd = 6 + (i % 5) * 4;
+            var x = (sx + this.time * spd) % (w + 40) - 20;
+            var y = (sy + this.time * spd * 0.4 + Math.sin(this.time * 0.6 + i) * 12) % (h + 40) - 20;
+            var a = 0.18 + 0.22 * (0.5 + 0.5 * Math.sin(this.time * 1.3 + i * 2));
+            ctx.globalAlpha = a;
+            ctx.beginPath();
+            ctx.arc(x, y, 1 + (i % 3) * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    },
+
+    flash: 0,
+
+    DAY_LENGTH: 150, // segundos por ciclo completo día→noche→día
+    nightFactor: 0,
+    duskFactor: 0,
+
+    // Tipos sin E/S direccional: no dibujar la flecha (inserter se dibuja aparte)
+    NO_ARROW: {inserter:1, storage:1, solar_panel:1, accumulator:1, steam_engine:1, lab:1},
+
+    drawBackground: function(ctx, w, h) {
+        // Gradiente cacheado (solo cambia al redimensionar)
+        if (!this._bgGrad || this._gradW !== w || this._gradH !== h) this.buildScreenGradients(ctx, w, h);
+        ctx.fillStyle = this._bgGrad;
         ctx.fillRect(0, 0, w, h);
+    },
+
+    buildScreenGradients: function(ctx, w, h) {
+        var R = Math.max(w, h);
+        var bg = ctx.createRadialGradient(w * 0.5, h * 0.42, 0, w * 0.5, h * 0.5, R * 0.75);
+        bg.addColorStop(0, '#1b1d33');
+        bg.addColorStop(1, '#0c0d18');
+        this._bgGrad = bg;
+        var vg = ctx.createRadialGradient(w/2, h/2, R * 0.35, w/2, h/2, R * 0.72);
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, 'rgba(0,0,10,0.38)');
+        this._vigGrad = vg;
+        this._gradW = w; this._gradH = h;
+    },
+
+    // Tinte global día/noche: oscurece de noche, baña de cálido al amanecer/atardecer
+    applyDayNight: function(ctx, w, h) {
+        if (this.nightFactor > 0.01) {
+            ctx.fillStyle = 'rgba(14,22,54,' + (this.nightFactor * 0.42).toFixed(3) + ')';
+            ctx.fillRect(0, 0, w, h);
+        }
+        if (this.duskFactor > 0.01) {
+            ctx.fillStyle = 'rgba(255,140,55,' + (this.duskFactor * 0.15).toFixed(3) + ')';
+            ctx.fillRect(0, 0, w, h);
+        }
+    },
+
+    drawVignette: function(ctx, w, h) {
+        if (!this._vigGrad || this._gradW !== w || this._gradH !== h) this.buildScreenGradients(ctx, w, h);
+        ctx.fillStyle = this._vigGrad;
+        ctx.fillRect(0, 0, w, h);
+    },
+
+    // Aclara (amt>0) u oscurece (amt<0) un color hex #rrggbb
+    shade: function(hex, amt) {
+        var n = parseInt(hex.slice(1), 16);
+        var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+        if (amt >= 0) { r += (255 - r) * amt; g += (255 - g) * amt; b += (255 - b) * amt; }
+        else { r *= (1 + amt); g *= (1 + amt); b *= (1 + amt); }
+        return 'rgb(' + (r|0) + ',' + (g|0) + ',' + (b|0) + ')';
     },
 
     // Hornea terreno + recursos de un chunk en un canvas offscreen (a 2x para DPR/zoom).
@@ -99,27 +214,100 @@ var Renderer = {
                 if (tile.terrain === 'water') {
                     ctx.fillStyle = '#19378f';
                     ctx.fillRect(px, py, t, t);
+                    // Espuma de orilla: banda clara hacia los vecinos de tierra
+                    var edges = [[0,-1,px,py,t,3],[0,1,px,py+t-3,t,3],[-1,0,px,py,3,t],[1,0,px+t-3,py,3,t]];
+                    for (var ne = 0; ne < 4; ne++) {
+                        var nt = World.getTile(tx + edges[ne][0], ty + edges[ne][1]);
+                        if (nt.terrain !== 'water') {
+                            ctx.fillStyle = 'rgba(150,205,235,0.40)';
+                            ctx.fillRect(edges[ne][2], edges[ne][3], edges[ne][4], edges[ne][5]);
+                        }
+                    }
                     waterTiles.push({tx: tx, ty: ty});
                 } else if (tile.terrain === 'sand') {
                     ctx.fillStyle = colors.sand;
                     ctx.fillRect(px, py, t, t);
-                    ctx.fillStyle = 'rgba(180,160,130,0.15)';
+                    ctx.fillStyle = 'rgba(180,160,130,0.18)';
                     var sx1 = World.hash2d(tx * 3, ty * 5);
                     ctx.fillRect(px + sx1 * 20, py + sx1 * 12, 3, 1);
+                    ctx.fillStyle = 'rgba(120,100,75,0.18)';
+                    ctx.fillRect(px + World.hash2d(tx*2,ty*4) * 22, py + 6 + sx1 * 14, 2, 2);
                 } else if (tile.terrain === 'earth') {
                     ctx.fillStyle = colors.earth[tile.variant];
                     ctx.fillRect(px, py, t, t);
-                    ctx.fillStyle = 'rgba(100,80,60,0.2)';
                     var ex1 = World.hash2d(tx * 5, ty * 7);
-                    ctx.fillRect(px + ex1 * 18, py + 8, 4, 2);
+                    var ex2 = World.hash2d(tx * 2 + 3, ty * 9 + 5);
+                    ctx.fillStyle = 'rgba(125,98,72,0.28)';
+                    ctx.fillRect(px + ex1 * 18 + 3, py + 8, 4, 2);
+                    ctx.fillStyle = 'rgba(55,42,28,0.28)';
+                    ctx.fillRect(px + ex2 * 20 + 2, py + ex1 * 16 + 6, 3, 2);
                 } else {
                     ctx.fillStyle = colors.grass[tile.variant];
                     ctx.fillRect(px, py, t, t);
                     var gh = World.hash2d(tx, ty);
                     var gh2 = World.hash2d(tx + 100, ty + 100);
-                    ctx.fillStyle = 'rgba(80,140,60,0.25)';
-                    ctx.fillRect(px + gh * 20, py + gh2 * 20, 2, 3);
-                    ctx.fillRect(px + gh2 * 24 + 4, py + gh * 18 + 6, 2, 2);
+                    var gh3 = World.hash2d(tx * 3 + 7, ty * 5 + 1);
+                    // Briznas claras y oscuras
+                    ctx.fillStyle = 'rgba(125,180,85,0.28)';
+                    ctx.fillRect(px + gh * 20 + 2, py + gh2 * 20 + 2, 1.5, 4);
+                    ctx.fillRect(px + gh2 * 22 + 6, py + gh * 16 + 8, 1.5, 3);
+                    ctx.fillStyle = 'rgba(28,55,28,0.22)';
+                    ctx.fillRect(px + gh3 * 20 + 5, py + gh * 18 + 11, 2, 2);
+                    // Flor ocasional
+                    if (gh3 > 0.94) {
+                        ctx.fillStyle = gh2 > 0.5 ? '#e6cf4e' : '#e088c8';
+                        ctx.fillRect(px + gh * 22 + 5, py + gh2 * 18 + 5, 2, 2);
+                    }
+                }
+
+                // Mottling de luz de baja frecuencia: patrón de ~3 tiles continuo entre
+                // chunks (se basa en coords de mundo, no de chunk → sin rejilla visible)
+                if (tile.terrain !== 'water') {
+                    var lv = World.hash2d(Math.floor(tx / 3), Math.floor(ty / 3));
+                    if (lv > 0.6) {
+                        ctx.fillStyle = 'rgba(255,255,215,' + ((lv - 0.6) * 0.18).toFixed(3) + ')';
+                        ctx.fillRect(px, py, t, t);
+                    } else if (lv < 0.4) {
+                        ctx.fillStyle = 'rgba(0,8,20,' + ((0.4 - lv) * 0.20).toFixed(3) + ')';
+                        ctx.fillRect(px, py, t, t);
+                    }
+                }
+
+                // Decoración dispersa (árboles/rocas/arbustos) en hierba/tierra sin recurso.
+                // Horneada en el chunk → coste 0 por frame; determinista vía hash2d.
+                if (!tile.resource && (tile.terrain === 'grass' || tile.terrain === 'earth')) {
+                    var dh = World.hash2d(tx * 13 + 1, ty * 17 + 3);
+                    if (dh > 0.945) {
+                        // Árbol: sombra + tronco + copa con brillo
+                        var txc = px + t * 0.5, tyc = py + t * 0.58;
+                        ctx.fillStyle = 'rgba(0,0,0,0.18)';
+                        ctx.beginPath(); ctx.ellipse(txc, py + t - 4, 7, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = '#5a3a1e';
+                        ctx.fillRect(txc - 1.5, tyc, 3, t * 0.32);
+                        ctx.fillStyle = '#27521f';
+                        ctx.beginPath(); ctx.arc(txc, tyc, 6.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = '#367a2c';
+                        ctx.beginPath(); ctx.arc(txc - 2, tyc - 2.5, 4.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = 'rgba(140,200,100,0.55)';
+                        ctx.beginPath(); ctx.arc(txc - 3, tyc - 3.5, 2, 0, Math.PI * 2); ctx.fill();
+                    } else if (dh > 0.895) {
+                        // Roca
+                        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                        ctx.beginPath(); ctx.ellipse(px + t * 0.5, py + t * 0.68, 6, 2, 0, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = '#6b6b73';
+                        ctx.beginPath(); ctx.arc(px + t * 0.5, py + t * 0.55, 4.5, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = '#8c8c95';
+                        ctx.beginPath(); ctx.arc(px + t * 0.5 - 1.2, py + t * 0.55 - 1.2, 2, 0, Math.PI * 2); ctx.fill();
+                    } else if (dh > 0.84) {
+                        // Arbusto
+                        ctx.fillStyle = '#2c5526';
+                        ctx.beginPath();
+                        ctx.arc(px + t * 0.4, py + t * 0.6, 3, 0, Math.PI * 2);
+                        ctx.arc(px + t * 0.6, py + t * 0.62, 3.5, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillStyle = 'rgba(120,170,90,0.4)';
+                        ctx.beginPath(); ctx.arc(px + t * 0.55, py + t * 0.58, 1.5, 0, Math.PI * 2); ctx.fill();
+                    }
                 }
 
                 if (tile.resource && tile.resource.amount > 0) {
@@ -137,18 +325,27 @@ var Renderer = {
                         var level = Math.min(4, Math.floor(tile.resource.amount / 50));
                         var dots = 1 + level;
                         var ds = 2 + (level / 4) * 2.5;
-                        ctx.fillStyle = rc.fg;
                         for (var di = 0; di < dots; di++) {
                             var seed = World.hash2d(tx * 7 + di, ty * 13 + di);
                             var ox = (seed - 0.5) * (t - 16);
                             var oy = (World.hash2d(tx * 11 + di, ty * 3 + di) - 0.5) * (t - 16);
-                            ctx.beginPath();
-                            ctx.arc(px + t/2 + ox, py + t/2 + oy, ds, 0, Math.PI * 2);
-                            ctx.fill();
+                            var ccx = px + t/2 + ox, ccy = py + t/2 + oy;
+                            // Trozo de mineral con relieve: sombra + cuerpo + brillo
+                            ctx.fillStyle = 'rgba(0,0,0,0.28)';
+                            ctx.beginPath(); ctx.arc(ccx + 0.5, ccy + 0.9, ds, 0, Math.PI * 2); ctx.fill();
+                            ctx.fillStyle = rc.fg;
+                            ctx.beginPath(); ctx.arc(ccx, ccy, ds, 0, Math.PI * 2); ctx.fill();
+                            ctx.fillStyle = 'rgba(255,255,255,0.38)';
+                            ctx.beginPath(); ctx.arc(ccx - ds * 0.32, ccy - ds * 0.32, ds * 0.42, 0, Math.PI * 2); ctx.fill();
                         }
 
-                        ctx.fillStyle = 'rgba(255,255,255,0.12)';
+                        // Rim + brillo superior para definir la veta
+                        ctx.fillStyle = 'rgba(255,255,255,0.14)';
                         ctx.fillRect(px + m + 1, py + m + 1, t - m*2 - 2, 2);
+                        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+                        ctx.lineWidth = 1;
+                        this.roundRect(ctx, px + m + 0.5, py + m + 0.5, t - m*2 - 1, t - m*2 - 1, 4);
+                        ctx.stroke();
                     }
                 }
             }
@@ -343,34 +540,55 @@ var Renderer = {
                 ctx.translate(-(px + pw/2), -(py + ph/2));
             }
 
-            ctx.fillStyle = 'rgba(0,0,0,0.3)';
-            this.roundRect(ctx, px + 2, py + 2, pw - 1, ph - 1, 3);
+            // Sombra proyectada
+            ctx.fillStyle = 'rgba(0,0,0,0.38)';
+            this.roundRect(ctx, px + 2, py + 3, pw - 2, ph - 2, 4);
             ctx.fill();
 
-            ctx.fillStyle = bc.bg;
-            this.roundRect(ctx, px + 1, py + 1, pw - 2, ph - 2, 3);
+            // Cuerpo con gradiente vertical (da volumen top-down); plano a zoom bajo
+            if (Camera.zoom > 0.45) {
+                var grad = ctx.createLinearGradient(0, py, 0, py + ph);
+                grad.addColorStop(0, this.shade(bc.fg, 0.18));
+                grad.addColorStop(0.14, bc.bg);
+                grad.addColorStop(1, this.shade(bc.bg, -0.40));
+                ctx.fillStyle = grad;
+            } else {
+                ctx.fillStyle = bc.bg;
+            }
+            this.roundRect(ctx, px + 1, py + 1, pw - 2, ph - 2, 4);
             ctx.fill();
 
+            // Cara interior
             ctx.fillStyle = bc.fg;
-            this.roundRect(ctx, px + 3, py + 3, pw - 6, ph - 6, 2);
+            this.roundRect(ctx, px + 3, py + 3, pw - 6, ph - 6, 3);
             ctx.fill();
 
-            ctx.fillStyle = 'rgba(255,255,255,0.08)';
-            ctx.fillRect(px + 4, py + 3, pw - 8, Math.max(2, ph * 0.15));
+            // Bisel: brillo superior + línea de sombra inferior
+            ctx.fillStyle = 'rgba(255,255,255,0.16)';
+            ctx.fillRect(px + 4, py + 4, pw - 8, Math.max(2, ph * 0.13));
+            ctx.fillStyle = 'rgba(0,0,0,0.22)';
+            ctx.fillRect(px + 4, py + ph - 5, pw - 8, 2);
+
+            // Detalle estático por tipo (identidad: paneles, barras de carga, listones...)
+            this.drawStaticDetail(ctx, b, px, py, pw, ph);
 
             if (b.active) {
-                var glowPulse = 0.08 + Math.sin(this.time * 3 + b.id) * 0.04;
-                ctx.fillStyle = 'rgba(255,255,200,' + glowPulse + ')';
-                this.roundRect(ctx, px + 3, py + 3, pw - 6, ph - 6, 2);
+                var glowPulse = 0.10 + Math.sin(this.time * 3 + b.id) * 0.05;
+                ctx.fillStyle = 'rgba(255,248,200,' + glowPulse.toFixed(3) + ')';
+                this.roundRect(ctx, px + 3, py + 3, pw - 6, ph - 6, 3);
                 ctx.fill();
-
-                ctx.shadowColor = 'rgba(255,220,100,0.15)';
-                ctx.shadowBlur = 6;
-                ctx.strokeStyle = 'rgba(255,220,100,0.2)';
-                ctx.lineWidth = 1;
-                this.roundRect(ctx, px + 1, py + 1, pw - 2, ph - 2, 3);
+                // Marco cálido sin shadowBlur (mucho más barato por frame)
+                ctx.strokeStyle = 'rgba(255,220,120,0.28)';
+                ctx.lineWidth = 1.5;
+                this.roundRect(ctx, px + 1.5, py + 1.5, pw - 3, ph - 3, 4);
                 ctx.stroke();
-                ctx.shadowBlur = 0;
+
+                // Resplandor cálido de "ventanas" en edificios activos de noche
+                if (this.nightFactor > 0.15) {
+                    ctx.fillStyle = 'rgba(255,200,90,' + (this.nightFactor * 0.22).toFixed(3) + ')';
+                    this.roundRect(ctx, px + 4, py + 4, pw - 8, ph - 8, 2);
+                    ctx.fill();
+                }
             }
 
             if (def.powerDraw > 0 && Game.power.satisfaction < 1) {
@@ -452,7 +670,9 @@ var Renderer = {
                 this.drawWorkingAnimation(ctx, b, px, py, pw, ph);
             }
 
-            if (b.direction !== undefined && b.type !== 'inserter') {
+            // La flecha de dirección solo en edificios donde importa (salida/lógica).
+            // Energía/almacén/lab no tienen E/S direccional: la flecha sería ruido.
+            if (b.direction !== undefined && !this.NO_ARROW[b.type]) {
                 var d = CFG.DIRECTIONS[b.direction];
                 var cx = px + pw/2, cy = py + ph/2;
                 var arrowSize = Math.min(w, h) * t * 0.13;
@@ -564,6 +784,69 @@ var Renderer = {
             }
             if (Math.random() < 0.3) {
                 Particles.spawn(rx, ry + 24, 'spark');
+            }
+        }
+    },
+
+    // Detalle estático por tipo (siempre visible, da identidad a los edificios que
+    // de otro modo serían cajas planas). Solo con zoom suficiente.
+    drawStaticDetail: function(ctx, b, px, py, pw, ph) {
+        if (Camera.zoom <= 0.5) return;
+
+        if (b.type === 'solar_panel') {
+            // Rejilla de celdas fotovoltaicas + brillo de sol
+            ctx.strokeStyle = 'rgba(8,28,58,0.5)';
+            ctx.lineWidth = 1;
+            var n = 3, cw = (pw - 10) / n, chh = (ph - 10) / n;
+            for (var gx = 0; gx < n; gx++) {
+                for (var gy = 0; gy < n; gy++) {
+                    ctx.strokeRect(px + 5 + gx * cw, py + 5 + gy * chh, cw, chh);
+                }
+            }
+            ctx.fillStyle = 'rgba(255,255,255,0.16)';
+            ctx.beginPath();
+            ctx.moveTo(px + 6, py + 6);
+            ctx.lineTo(px + pw * 0.45, py + 6);
+            ctx.lineTo(px + 6, py + ph * 0.45);
+            ctx.closePath();
+            ctx.fill();
+        } else if (b.type === 'accumulator') {
+            // Barras de carga (refleja b.charge)
+            var cap = CFG.BUILDING_DEFS.accumulator.capacity;
+            var lvl = Math.max(0, Math.min(1, (b.charge || 0) / cap));
+            var bars = 4, bw = (pw - 12) / bars;
+            for (var ba = 0; ba < bars; ba++) {
+                var on = (ba + 1) / bars <= lvl + 0.001;
+                ctx.fillStyle = on ? 'rgba(130,255,210,0.9)' : 'rgba(0,0,0,0.32)';
+                ctx.fillRect(px + 6 + ba * bw, py + ph - 11, bw - 2, 7);
+            }
+        } else if (b.type === 'storage') {
+            // Listones de caja + nivel de llenado
+            ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(px + 4, py + ph * 0.42); ctx.lineTo(px + pw - 4, py + ph * 0.42); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(px + 4, py + ph * 0.66); ctx.lineTo(px + pw - 4, py + ph * 0.66); ctx.stroke();
+            var tot = Inventory.total(b.stored || {});
+            var fill = Math.min(1, tot / (b.capacity || 200));
+            if (fill > 0) {
+                ctx.fillStyle = 'rgba(120,210,130,0.55)';
+                ctx.fillRect(px + 4, py + ph - 6, (pw - 8) * fill, 3);
+            }
+        } else if (b.type === 'rocket_silo') {
+            // Plataforma de lanzamiento: foso circular + anillos + chevrons de aviso
+            var rcx = px + pw / 2, rcy = py + ph / 2;
+            ctx.fillStyle = 'rgba(16,18,26,0.55)';
+            ctx.beginPath(); ctx.arc(rcx, rcy, pw * 0.34, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = 'rgba(230,168,50,0.55)';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(rcx, rcy, pw * 0.34, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = 'rgba(230,168,50,0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(rcx, rcy, pw * 0.22, 0, Math.PI * 2); ctx.stroke();
+            // Chevrons de aviso amarillo/negro en la base
+            ctx.fillStyle = 'rgba(255,200,40,0.3)';
+            for (var s = 0; s < 5; s++) {
+                ctx.fillRect(px + 6 + s * (pw / 5), py + ph - 7, pw / 10, 4);
             }
         }
     },
@@ -739,6 +1022,8 @@ var Renderer = {
             var d = CFG.DIRECTIONS[b.direction];
             var margin = 3;
             var isFast = b.type === 'fast_belt';
+            // Chevrons de cinta rápida avanzan al doble: la velocidad se ve de un vistazo
+            var beltOff = isFast ? (off * 2 % 1) : off;
 
             ctx.fillStyle = isFast ? '#665522' : '#554418';
             ctx.fillRect(px, py, t, t);
@@ -820,7 +1105,7 @@ var Renderer = {
                     if (sweep < 0) sweep += PI * 2;
                 }
                 for (var a = 0; a < arrowCount; a++) {
-                    var frac = ((a / arrowCount) + off) % 1;
+                    var frac = ((a / arrowCount) + beltOff) % 1;
                     var af = acw ? sa - sweep * frac : sa + sweep * frac;
                     var ax = cx + Math.cos(af) * t * 0.5;
                     var ay = cy + Math.sin(af) * t * 0.5;
@@ -890,7 +1175,7 @@ var Renderer = {
                 var arrowCount2 = isFast ? 5 : 3;
                 ctx.fillStyle = isFast ? 'rgba(100,80,30,0.4)' : 'rgba(80,60,20,0.35)';
                 for (var a2 = 0; a2 < arrowCount2; a2++) {
-                    var frac2 = ((a2 / arrowCount2) + off) % 1;
+                    var frac2 = ((a2 / arrowCount2) + beltOff) % 1;
                     var ax2 = px + t * 0.5 + d.dx * (frac2 - 0.5) * t * 0.75;
                     var ay2 = py + t * 0.5 + d.dy * (frac2 - 0.5) * t * 0.75;
                     var as2 = 2.5;
@@ -933,21 +1218,30 @@ var Renderer = {
                 if (p.y < minPY || p.y > maxPY) continue;
 
                 var ic = Items.color(p.type);
+                var s = 4.6; // semi-lado del item (cuadro redondeado tipo Factorio)
 
-                ctx.fillStyle = 'rgba(0,0,0,0.35)';
-                ctx.beginPath();
-                ctx.arc(p.x + 0.7, p.y + 0.7, 4.5, 0, Math.PI * 2);
+                // Sombra proyectada
+                ctx.fillStyle = 'rgba(0,0,0,0.38)';
+                this.roundRect(ctx, p.x - s + 0.9, p.y - s + 1.2, s * 2, s * 2, 2);
                 ctx.fill();
 
+                // Cuerpo
                 ctx.fillStyle = ic;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                this.roundRect(ctx, p.x - s, p.y - s, s * 2, s * 2, 2);
                 ctx.fill();
 
-                ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                ctx.beginPath();
-                ctx.arc(p.x - 1.2, p.y - 1.2, 1.5, 0, Math.PI * 2);
+                // Brillo superior (bisel)
+                ctx.fillStyle = 'rgba(255,255,255,0.30)';
+                this.roundRect(ctx, p.x - s + 1, p.y - s + 1, s * 2 - 2, s - 0.5, 1.5);
                 ctx.fill();
+
+                // Sombra inferior + contorno
+                ctx.fillStyle = 'rgba(0,0,0,0.22)';
+                ctx.fillRect(p.x - s + 1, p.y + s - 1.6, s * 2 - 2, 1.4);
+                ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+                ctx.lineWidth = 0.75;
+                this.roundRect(ctx, p.x - s, p.y - s, s * 2, s * 2, 2);
+                ctx.stroke();
             }
         }
     },
@@ -959,10 +1253,31 @@ var Renderer = {
         if (Input.buildMode && !Input.isBeltMode()) {
             var def = CFG.BUILDING_DEFS[Input.buildMode];
             if (!def) return;
+
+            // Arrastre para colocar fila de 1×1: ghost en cada tile del camino
+            if (Input.isDragPlaceMode() && Input.ghostTiles.length > 0) {
+                var bcl = CFG.COLORS.buildings[Input.buildMode];
+                for (var gi = 0; gi < Input.ghostTiles.length; gi++) {
+                    var gg = Input.ghostTiles[gi];
+                    var canP = World.canPlace(gg.x, gg.y, 1, 1);
+                    ctx.globalAlpha = 0.55;
+                    ctx.fillStyle = canP ? 'rgba(0,220,80,0.25)' : 'rgba(220,0,40,0.3)';
+                    this.roundRect(ctx, gg.x * t + 1, gg.y * t + 1, t - 2, t - 2, 3);
+                    ctx.fill();
+                    if (canP && bcl) {
+                        ctx.fillStyle = bcl.fg;
+                        this.roundRect(ctx, gg.x * t + 4, gg.y * t + 4, t - 8, t - 8, 2);
+                        ctx.fill();
+                    }
+                }
+                ctx.globalAlpha = 1;
+                return;
+            }
+
             var tile = Input.mouse.tile;
             var w = def.size[0], h = def.size[1];
             var canPlace = World.canPlace(tile.x, tile.y, w, h);
-            if (Input.buildMode === 'miner') canPlace = canPlace && World.hasResource(tile.x, tile.y, w, h);
+            if (Input.buildMode === 'miner' || Input.buildMode === 'electric_miner') canPlace = canPlace && World.hasResource(tile.x, tile.y, w, h);
 
             ctx.globalAlpha = 0.5;
             ctx.fillStyle = canPlace ? 'rgba(0,220,80,0.2)' : 'rgba(220,0,40,0.2)';
@@ -1230,8 +1545,9 @@ var Renderer = {
             var minY = Math.min(Input.dragStart.y, Input.demolishEnd.y);
             var maxY = Math.max(Input.dragStart.y, Input.demolishEnd.y);
 
-            // Memoización: solo re-escanear el rect cuando cambia
-            var key = minX + ',' + minY + ',' + maxX + ',' + maxY;
+            // Memoización: re-escanear cuando cambia el rect O el array de edificios
+            // (la compactación remapea ids; sin esto el preview marcaría edificios erróneos)
+            var key = minX + ',' + minY + ',' + maxX + ',' + maxY + ',' + World.buildings.length;
             if (key !== this._demoKey) {
                 this._demoKey = key;
                 this._demoIds = Buildings.getIdsInRect(minX, minY, maxX, maxY);
@@ -1321,13 +1637,31 @@ var Renderer = {
         var mmX = 8, mmY = h - mmSize - 70;
         var mmScale = 0.5;
         var t = CFG.TILE;
+        var rad = 8;
         this.minimapRect = {x: mmX, y: mmY, size: mmSize, scale: mmScale};
 
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(mmX, mmY, mmSize, mmSize);
-        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(mmX, mmY, mmSize, mmSize);
+        // Panel con sombra + esquinas redondeadas
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 3;
+        ctx.fillStyle = 'rgba(14,20,16,0.88)';
+        this.roundRect(ctx, mmX, mmY, mmSize, mmSize, rad);
+        ctx.fill();
+        ctx.restore();
+
+        // Tinte de terreno (gradiente verde) dentro del panel
+        var mg = ctx.createLinearGradient(mmX, mmY, mmX, mmY + mmSize);
+        mg.addColorStop(0, 'rgba(45,78,46,0.55)');
+        mg.addColorStop(1, 'rgba(20,38,26,0.55)');
+        ctx.fillStyle = mg;
+        this.roundRect(ctx, mmX, mmY, mmSize, mmSize, rad);
+        ctx.fill();
+
+        // Recortar contenido a las esquinas redondeadas
+        ctx.save();
+        this.roundRect(ctx, mmX, mmY, mmSize, mmSize, rad);
+        ctx.clip();
 
         var centerTX = Math.floor((Camera.x + Camera.vw / Camera.zoom / 2) / t);
         var centerTY = Math.floor((Camera.y + Camera.vh / Camera.zoom / 2) / t);
@@ -1352,8 +1686,22 @@ var Renderer = {
 
         var vpW = (Camera.vw / Camera.zoom / t) * mmScale;
         var vpH = (Camera.vh / Camera.zoom / t) * mmScale;
-        ctx.strokeStyle = '#e6a832';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(230,168,50,0.9)';
+        ctx.lineWidth = 1.5;
         ctx.strokeRect(mmX + mmSize / 2 - vpW / 2, mmY + mmSize / 2 - vpH / 2, vpW, vpH);
+
+        // Punto central (jugador/cámara)
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath();
+        ctx.arc(mmX + mmSize / 2, mmY + mmSize / 2, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore(); // fin del clip
+
+        // Borde dorado del panel
+        ctx.strokeStyle = 'rgba(230,168,50,0.65)';
+        ctx.lineWidth = 1.5;
+        this.roundRect(ctx, mmX + 0.75, mmY + 0.75, mmSize - 1.5, mmSize - 1.5, rad);
+        ctx.stroke();
     }
 };

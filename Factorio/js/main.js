@@ -10,6 +10,7 @@ var Game = {
     powerCache: { consumptionBase: 0, solarOutput: 0, steamIds: [], accIds: [] },
     stats: null,
     milestones: {},
+    objectiveIndex: 0,
     prestige: null,
     rocketAnim: null,
 
@@ -66,6 +67,12 @@ var Game = {
     history: null,
 
     initHistory: function() {
+        // Sembrar _lastProduced con los totales actuales (tras cargar/reset): el primer
+        // muestreo da delta 0 en vez de un pico igual al acumulado de toda la partida.
+        var seed = {};
+        if (this.stats && this.stats.itemsProduced) {
+            for (var k in this.stats.itemsProduced) seed[k] = this.stats.itemsProduced[k];
+        }
         this.history = {
             max: 60,
             head: 0,
@@ -73,7 +80,7 @@ var Game = {
             items: {},
             powerProd: this.zeroArray(60),
             powerCons: this.zeroArray(60),
-            _lastProduced: {}
+            _lastProduced: seed
         };
     },
 
@@ -180,7 +187,8 @@ var Game = {
         document.addEventListener('keydown', firstInteraction);
 
         this.lastTime = performance.now();
-        requestAnimationFrame(this.loop.bind(this));
+        this._boundLoop = this.loop.bind(this); // bind una sola vez (no por frame)
+        requestAnimationFrame(this._boundLoop);
     },
 
     loop: function(timestamp) {
@@ -208,7 +216,7 @@ var Game = {
         }
 
         Renderer.render(dt);
-        requestAnimationFrame(this.loop.bind(this));
+        requestAnimationFrame(this._boundLoop);
     },
 
     update: function() {
@@ -280,6 +288,7 @@ var Game = {
 
         if (this.tick % 100 === 0) {
             this.checkMilestones();
+            this.checkObjectives();
             this.sampleHistory();
         }
     },
@@ -290,10 +299,61 @@ var Game = {
             if (this.milestones[m.id]) continue;
             if (m.check(this.stats)) {
                 this.milestones[m.id] = true;
-                UI.showToast('¡Logro: ' + m.name + '!', 'achievement');
+                UI.showToast('🏆 ¡Logro: ' + m.name + '!', 'achievement');
+                // Estallido celebratorio en el centro de pantalla (recompensa "jugosa")
+                Particles.spawn(window.innerWidth / 2, window.innerHeight / 2, 'achievement');
+                Audio.play('milestone');
                 Tutorial.onEvent('produce', m.id === 'first_smelt' ? 'iron_plate' : '');
             }
         }
+    },
+
+    // Cuenta edificios vivos de un tipo (para objetivos). O(n) pero se llama rara vez.
+    countBuildings: function(type) {
+        var n = 0;
+        for (var i = 0; i < World.buildings.length; i++) {
+            var b = World.buildings[i];
+            if (b && !b.removed && b.type === type) n++;
+        }
+        return n;
+    },
+
+    // Catch-up silencioso al cargar: salta objetivos ya cumplidos SIN toast/recompensa/
+    // estallido (un save viejo sin campo `objective` arranca en 0 y avanzaría con fanfarria
+    // por todos a la vez = spam). El siguiente objetivo real sí celebra en checkObjectives.
+    syncObjectivesSilently: function() {
+        while (this.objectiveIndex < CFG.OBJECTIVES.length) {
+            var obj = CFG.OBJECTIVES[this.objectiveIndex];
+            if (!obj.check || !obj.check()) break;
+            this.objectiveIndex++;
+        }
+    },
+
+    // Objetivos: avanza por la lista mientras el actual esté cumplido, da recompensas
+    checkObjectives: function() {
+        var advanced = false;
+        while (this.objectiveIndex < CFG.OBJECTIVES.length) {
+            var obj = CFG.OBJECTIVES[this.objectiveIndex];
+            if (!obj.check || !obj.check()) break;
+            // Cumplido: recompensa + avance
+            if (obj.reward) {
+                for (var r = 0; r < obj.reward.length; r++) {
+                    Inventory.add(this.player.inventory, obj.reward[r].item, obj.reward[r].qty);
+                }
+            }
+            this.objectiveIndex++;
+            advanced = true;
+            if (this.objectiveIndex < CFG.OBJECTIVES.length) {
+                var next = CFG.OBJECTIVES[this.objectiveIndex];
+                var rewMsg = obj.reward ? ' (+recompensa)' : '';
+                UI.showToast('✅ Objetivo cumplido' + rewMsg + ' → ' + next.text, 'achievement');
+            } else {
+                UI.showToast('✅ ¡Todos los objetivos completados! Eres un magnate industrial.', 'achievement');
+            }
+            Particles.spawn(window.innerWidth / 2, window.innerHeight / 2, 'achievement');
+            Audio.play('milestone');
+        }
+        if (advanced) { UI.updateResources(); UI.renderObjective(); }
     },
 
     launchRocket: function(siloId) {
@@ -311,10 +371,20 @@ var Game = {
             t: 0,
             dur: 3
         };
-        Camera.shake(6, 0.9);
+        // Clímax cinematográfico: sacudida fuerte + fogonazo + estallido + humo de ignición
+        Camera.shake(16, 1.5);
+        Renderer.flash = 0.85;
         Audio.play('rocket_launch');
 
-        UI.showToast('¡COHETE LANZADO! ¡Ya puedes Prestigiar!', 'achievement');
+        var scr = Camera.worldToScreen(this.rocketAnim.x, this.rocketAnim.y);
+        Particles.spawn(scr.x, scr.y, 'achievement');
+        var wx = this.rocketAnim.x, wy = this.rocketAnim.y;
+        for (var s = 0; s < 14; s++) {
+            Particles.spawn(wx + (s - 7) * 8, wy + 30, 'smoke');
+            Particles.spawn(wx + (s - 7) * 6, wy + 26, 'spark');
+        }
+
+        UI.showToast('🚀 ¡COHETE LANZADO! ¡Ya puedes Prestigiar!', 'achievement');
         UI.updateResources();
     },
 
@@ -323,11 +393,12 @@ var Game = {
         Belts.init();
         this.tick = 0;
         this.rocketAnim = null;
+        Renderer.flash = 0;
         this.player.inventory = {};
         this.stats = this.createStats();
         this.initHistory();
         this._powerEvent = false;
-        this.milestones = {};
+        // Logros y objetivos son de por vida (no re-disparar sus toasts cada prestigio)
         this.currentResearch = null;
         this.power = {production:0, consumption:0, satisfaction:1};
 
@@ -361,7 +432,9 @@ var Game = {
 
         UI.buildToolbar();
         UI.closePanels();
+        UI.resetRates();
         UI.updateResources();
+        UI.renderObjective();
         Save.save();
     }
 };

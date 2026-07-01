@@ -48,21 +48,23 @@ var CFG = {
             speed_module:'#4488ee', efficiency_module:'#55cc44'
         },
         buildings: {
-            miner:      {bg:'#336699', fg:'#4488cc', label:'MI'},
-            electric_miner:{bg:'#3377aa', fg:'#55aadd', label:'EM'},
-            belt:       {bg:'#aa8833', fg:'#ccaa44', label:''},
-            fast_belt:  {bg:'#bb9933', fg:'#ddcc55', label:''},
-            furnace:    {bg:'#993311', fg:'#cc4422', label:'FU'},
-            assembler:  {bg:'#338855', fg:'#44aa66', label:'AS'},
-            storage:    {bg:'#666655', fg:'#888877', label:'ST'},
-            steam_engine:{bg:'#555566', fg:'#777788', label:'SE'},
-            solar_panel:{bg:'#4477aa', fg:'#66aadd', label:'SO'},
-            lab:        {bg:'#774488', fg:'#9966bb', label:'LA'},
-            splitter:   {bg:'#887733', fg:'#bbaa44', label:'SP'},
-            inserter:   {bg:'#888844', fg:'#aaaa66', label:'IN'},
-            rocket_silo:{bg:'#556677', fg:'#99aabb', label:'RS'},
-            accumulator:{bg:'#445577', fg:'#7799cc', label:'AC'},
-            underground_belt:{bg:'#776622', fg:'#bbaa44', label:'SU'}
+            // Color por función: minería=azul, fundición=naranja, fabricación=verde/púrpura,
+            // logística=ámbar, energía=cian/ámbar-sol/teal distintos, almacén=tostado, cohete=acero claro
+            miner:      {bg:'#2f6690', fg:'#4f95c8', label:'MI'},
+            electric_miner:{bg:'#1f8fb0', fg:'#52d2ea', label:'EM'},
+            belt:       {bg:'#b8923a', fg:'#e6c456', label:''},
+            fast_belt:  {bg:'#c89a2e', fg:'#f2d65a', label:''},
+            furnace:    {bg:'#aa3a16', fg:'#ec5e2c', label:'FU'},
+            assembler:  {bg:'#2f9159', fg:'#52cf88', label:'AS'},
+            storage:    {bg:'#6e6450', fg:'#9c9176', label:'ST'},
+            steam_engine:{bg:'#5d5868', fg:'#928ca6', label:'SE'},
+            solar_panel:{bg:'#2c7fd4', fg:'#6fc2ff', label:'SO'},
+            lab:        {bg:'#7a3f9e', fg:'#b884e2', label:'LA'},
+            splitter:   {bg:'#a8842f', fg:'#d8bb4c', label:'SP'},
+            inserter:   {bg:'#9a9a36', fg:'#cccd5e', label:'IN'},
+            rocket_silo:{bg:'#8a93a8', fg:'#ccd8ef', label:'RS'},
+            accumulator:{bg:'#2a8f7a', fg:'#5fd9bb', label:'AC'},
+            underground_belt:{bg:'#8a7320', fg:'#cab24a', label:'SU'}
         }
     },
 
@@ -105,9 +107,9 @@ var CFG = {
         },
         assembler: {
             name:'Ensamblador', icon:'🔧', size:[3,3], category:'production',
-            cost:[{item:'iron_plate',qty:5},{item:'iron_gear',qty:3},{item:'green_circuit',qty:2}],
+            cost:[{item:'iron_plate',qty:5},{item:'iron_gear',qty:3}],
             craftSpeed:1, powerDraw:50, fuelBurner:false, moduleSlots:2,
-            outputSlots:1, inputSlots:4, unlocked:false, tech:'automation'
+            outputSlots:1, inputSlots:4, unlocked:true
         },
         storage: {
             name:'Almacén', icon:'📦', size:[1,1], category:'logistics',
@@ -190,7 +192,7 @@ var CFG = {
     ],
 
     TECH_TREE: {
-        automation:           {name:'Automatización',       cost:{red_science:10},                              prereqs:[], unlocks:['ensamblador']},
+        automation:           {name:'Automatización',       cost:{red_science:10},                              prereqs:[], unlocks:['Abre el árbol: logística, electrónica y minería']},
         logistics:            {name:'Logística',            cost:{red_science:20},                              prereqs:['automation'], unlocks:['Divisor','Cinta Rápida','Cinta Subterránea']},
         electric_mining:      {name:'Minería Eléctrica',    cost:{red_science:30, green_science:15},            prereqs:['automation'], unlocks:['Minero Eléctrico']},
         advanced_electronics: {name:'Electrónica Avanzada', cost:{red_science:40, green_science:40},            prereqs:['automation'], unlocks:['circuito avanzado']},
@@ -212,14 +214,49 @@ var CFG = {
         {id:'larger_patches', name:'Vetas Grandes +20%',   cost:25, max:5,  effect:'patchSize',   mult:0.2}
     ],
 
+    // Objetivos: guía persistente de "qué hacer ahora" que continúa MÁS ALLÁ del tutorial.
+    // check() devuelve true cuando está cumplido; reward (opcional) son items de empujón.
+    OBJECTIVES: [
+        {id:'mine',     text:'Toca una veta de mineral para extraer recursos',
+            check:function(){ var p=Game.stats.itemsProduced; return (p.iron_ore||0)+(p.copper_ore||0)+(p.coal||0)+(p.stone||0) >= 8; },
+            prog:function(){ var p=Game.stats.itemsProduced; return {cur:Math.min(8,(p.iron_ore||0)+(p.copper_ore||0)+(p.coal||0)+(p.stone||0)), max:8}; }},
+        {id:'smelt',    text:'Funde mineral en una Fundidora (10 placas de hierro)',
+            check:function(){ return (Game.stats.itemsProduced.iron_plate||0) >= 10; },
+            prog:function(){ return {cur:Math.min(10,Game.stats.itemsProduced.iron_plate||0), max:10}; }},
+        {id:'miner',    text:'Coloca un Minero sobre una veta para automatizar',
+            check:function(){ return Game.countBuildings('miner')+Game.countBuildings('electric_miner') >= 1; }},
+        {id:'power',    text:'Genera energía colocando un Motor de Vapor (con carbón)',
+            check:function(){ return Game.power.production > 0; }},
+        {id:'assembler',text:'Coloca un Ensamblador para fabricar componentes',
+            check:function(){ return Game.countBuildings('assembler') >= 1; }, reward:[{item:'iron_plate',qty:20}]},
+        {id:'circuit',  text:'Fabrica 5 Circuitos Verdes en un Ensamblador',
+            check:function(){ return (Game.stats.itemsProduced.green_circuit||0) >= 5; }, reward:[{item:'copper_plate',qty:15}],
+            prog:function(){ return {cur:Math.min(5,Game.stats.itemsProduced.green_circuit||0), max:5}; }},
+        {id:'lab',      text:'Coloca un Laboratorio e investiga',
+            check:function(){ return Game.countBuildings('lab') >= 1; }},
+        {id:'research', text:'Completa la investigación de Automatización',
+            check:function(){ return Tech.isCompleted('automation'); }, reward:[{item:'green_circuit',qty:5}]},
+        {id:'iron100',  text:'Produce 100 placas de hierro en cadena',
+            check:function(){ return (Game.stats.itemsProduced.iron_plate||0) >= 100; },
+            prog:function(){ return {cur:Math.min(100,Game.stats.itemsProduced.iron_plate||0), max:100}; }},
+        {id:'logistics',text:'Investiga Logística (cintas rápidas, divisores, túneles)',
+            check:function(){ return Tech.isCompleted('logistics'); }},
+        {id:'blue',     text:'Investiga Cohetería para desbloquear el Silo',
+            check:function(){ return Tech.isCompleted('rocketry'); }},
+        {id:'rocket',   text:'¡Construye un Silo y lanza tu primer cohete!',
+            check:function(){ return Game.stats.rocketsLaunched >= 1; }},
+        {id:'expand',   text:'¡Imperio en marcha! Lanza más cohetes y usa Prestigio para mejoras permanentes',
+            check:function(){ return false; }} // objetivo final abierto
+    ],
+
     MILESTONES: [
-        {id:'first_smelt',    name:'Primera Fundición',    check: s => s.itemsProduced.iron_plate >= 1},
-        {id:'iron_100',       name:'Edad de Hierro',       check: s => s.itemsProduced.iron_plate >= 100},
-        {id:'first_circuit',  name:'Electrificado',        check: s => s.itemsProduced.green_circuit >= 1},
-        {id:'buildings_50',   name:'Industrialista',       check: s => s.buildingsPlaced >= 50},
-        {id:'iron_1k',        name:'Imperio de Hierro',    check: s => s.itemsProduced.iron_plate >= 1000},
-        {id:'first_research', name:'Científico',           check: s => s.techsCompleted >= 1},
-        {id:'rocket_launch',  name:'¡A las Estrellas!',    check: s => s.rocketsLaunched >= 1}
+        {id:'first_smelt',    name:'Primera Fundición',    check: function(s){ return (s.itemsProduced.iron_plate||0) >= 1; }},
+        {id:'iron_100',       name:'Edad de Hierro',       check: function(s){ return (s.itemsProduced.iron_plate||0) >= 100; }},
+        {id:'first_circuit',  name:'Electrificado',        check: function(s){ return (s.itemsProduced.green_circuit||0) >= 1; }},
+        {id:'buildings_50',   name:'Industrialista',       check: function(s){ return (s.buildingsPlaced||0) >= 50; }},
+        {id:'iron_1k',        name:'Imperio de Hierro',    check: function(s){ return (s.itemsProduced.iron_plate||0) >= 1000; }},
+        {id:'first_research', name:'Científico',           check: function(s){ return (s.techsCompleted||0) >= 1; }},
+        {id:'rocket_launch',  name:'¡A las Estrellas!',    check: function(s){ return (s.rocketsLaunched||0) >= 1; }}
     ]
 };
 

@@ -32,15 +32,19 @@ var Particles = {
             p.wx = wx;
             p.wy = wy;
             p.type = type;
+            // 'achievement' es un estallido de UI fijo a pantalla; el resto se ancla al
+            // mundo y se reproyecta cada frame para no despegarse al mover/zoom la cámara
+            p.screen = (type === 'achievement');
 
             if (type === 'produce') {
-                p.vx = (Math.random() - 0.5) * 20;
-                p.vy = -40 - Math.random() * 20;
-                p.life = 1;
-                p.maxLife = 1;
+                // Punto del color del item ascendiendo (menos ruido que "+1" a gran escala)
+                p.vx = (Math.random() - 0.5) * 16;
+                p.vy = -32 - Math.random() * 16;
+                p.life = 0.8;
+                p.maxLife = 0.8;
                 p.color = Items.color(itemType) || '#fff';
-                p.size = 0;
-                p.text = '+1';
+                p.size = 2.6;
+                p.text = '';
                 p.alpha = 1;
             } else if (type === 'smoke') {
                 p.vx = (Math.random() - 0.5) * 10;
@@ -62,6 +66,15 @@ var Particles = {
                 p.size = 2 + Math.random() * 2;
                 p.text = '';
                 p.alpha = 1;
+            } else if (type === 'ring') {
+                p.vx = 0;
+                p.vy = 0;
+                p.life = 0.45;
+                p.maxLife = 0.45;
+                p.color = itemType || '#e6a832';
+                p.size = 4;
+                p.text = '';
+                p.alpha = 0.9;
             } else if (type === 'spark') {
                 p.vx = (Math.random() - 0.5) * 60;
                 p.vy = -30 - Math.random() * 40;
@@ -100,12 +113,20 @@ var Particles = {
                 continue;
             }
 
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
+            if (p.screen) {
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+            } else {
+                p.wx += p.vx * dt;
+                p.wy += p.vy * dt;
+            }
 
             if (p.type === 'smoke') {
                 p.size += dt * 3;
                 p.alpha = (p.life / p.maxLife) * 0.4;
+            } else if (p.type === 'ring') {
+                p.size += dt * 95;
+                p.alpha = (p.life / p.maxLife) * 0.9;
             } else if (p.type === 'produce') {
                 p.alpha = Math.min(1, p.life / p.maxLife * 2);
             } else {
@@ -116,23 +137,35 @@ var Particles = {
     },
 
     render: function(ctx) {
+        var zoom = Camera.zoom;
         for (var i = 0; i < this.active.length; i++) {
             var p = this.active[i];
 
-            var sx = p.x;
-            var sy = p.y;
+            var sx, sy, scale;
+            if (p.screen) {
+                sx = p.x; sy = p.y; scale = 1;
+            } else {
+                var s = Camera.worldToScreen(p.wx, p.wy);
+                sx = s.x; sy = s.y; scale = zoom;
+            }
 
             ctx.globalAlpha = p.alpha;
 
-            if (p.text) {
+            if (p.type === 'ring') {
+                ctx.strokeStyle = p.color;
+                ctx.lineWidth = Math.max(1, 2 * scale);
+                ctx.beginPath();
+                ctx.arc(sx, sy, Math.max(0.5, p.size * scale), 0, Math.PI * 2);
+                ctx.stroke();
+            } else if (p.text) {
                 ctx.fillStyle = p.color;
-                ctx.font = 'bold 12px monospace';
+                ctx.font = 'bold ' + Math.max(9, Math.round(12 * scale)) + 'px monospace';
                 ctx.textAlign = 'center';
                 ctx.fillText(p.text, sx, sy);
             } else {
                 ctx.fillStyle = p.color;
                 ctx.beginPath();
-                ctx.arc(sx, sy, p.size, 0, Math.PI * 2);
+                ctx.arc(sx, sy, Math.max(0.5, p.size * scale), 0, Math.PI * 2);
                 ctx.fill();
             }
         }

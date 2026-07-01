@@ -21,7 +21,7 @@ function FakeCtx() {}
 ['fillRect','strokeRect','clearRect','beginPath','moveTo','lineTo','stroke','fill',
  'arc','closePath','save','restore','translate','scale','rotate','fillText',
  'setTransform','drawImage','quadraticCurveTo','setLineDash','createRadialGradient',
- 'createLinearGradient','strokeText'].forEach(function(m) {
+ 'createLinearGradient','strokeText','clip','arcTo','rect','ellipse'].forEach(function(m) {
     FakeCtx.prototype[m] = function() {
         if (m === 'createRadialGradient' || m === 'createLinearGradient') {
             return {addColorStop: function() {}};
@@ -122,6 +122,7 @@ order.forEach(function(f) {
 // ===== Init =====
 console.log('\n-- Init --');
 Game.init();
+World.init(20240611); // semilla fija: el mundo es aleatorio en juego, pero el test debe ser determinista
 assert(World.buildings.length === 0, 'mundo nuevo sin edificios');
 Game.creativeModeOn = true; // colocar gratis para el resto del test
 
@@ -129,14 +130,19 @@ function tick(n) {
     for (var i = 0; i < n; i++) Game.update();
 }
 
-// Buscar tiles libres (sin agua, sin edificio) en una fila
-function findFreeRow(len) {
-    for (var ty = -50; ty < 50; ty++) {
+// Buscar tiles libres (sin agua, sin edificio) en un bloque len×h.
+// h por defecto 5 para que quepan edificios multi-tile (assembler 3×3, silo 5×5)
+// colocados en (x,y): el footprint baja varias filas, no solo la fila y.
+function findFreeRow(len, h) {
+    h = h || 5;
+    for (var ty = -50; ty < 50 - h; ty++) {
         for (var tx = -50; tx < 50 - len; tx++) {
             var ok = true;
-            for (var i = 0; i < len; i++) {
-                var t = World.getTile(tx + i, ty);
-                if (t.terrain === 'water' || t.buildingId !== null || t.resource) { ok = false; break; }
+            for (var j = 0; j < h && ok; j++) {
+                for (var i = 0; i < len; i++) {
+                    var t = World.getTile(tx + i, ty + j);
+                    if (t.terrain === 'water' || t.buildingId !== null || t.resource) { ok = false; break; }
+                }
             }
             if (ok) return {x: tx, y: ty};
         }
@@ -458,6 +464,98 @@ Input.demolishMode = false;
 // Edificio con módulos visible (puntitos)
 Input.mouse.tile = {x: r5.x, y: r5.y};
 renderOnce('puntitos de módulos');
+
+// ===== Regresiones nuevas: deadlock, lab, cintas retroactivas, refund, objetivos =====
+console.log('\n-- Regresiones (deadlock/lab/cintas/refund/objetivos) --');
+
+// 1) Sin deadlock: assembler desbloqueado de inicio
+assert(Tech.isUnlocked('assembler'), 'assembler desbloqueado de inicio (deadlock roto)');
+assert(CFG.BUILDING_DEFS.assembler.unlocked === true, 'assembler.unlocked = true');
+
+// 2) Velocidad de cinta retroactiva
+Game.creativeModeOn = true;
+var rb = findFreeRow(4);
+Belts.tryPlaceSingle(rb.x, rb.y, 1, 'belt');
+var bl = Belts.getLineAt(rb.x, rb.y);
+var baseSp = bl.speed;
+assert(bl.fast === false, 'línea de cinta normal marcada fast=false');
+Tech.completed.logistics_2 = true;
+Belts.recomputeSpeeds();
+assert(approx(bl.speed, baseSp * 1.5), 'logistics_2 acelera líneas YA colocadas (retroactivo)');
+Tech.completed.logistics_2 = false;
+Belts.recomputeSpeeds();
+assert(approx(bl.speed, baseSp), 'velocidad vuelve a base sin logistics_2');
+
+// 3) Lab no sobreconsume con costes desiguales (cantidades exactas completan)
+Tech.completed.electric_mining = false;
+delete Tech.progress.electric_mining;
+Game.currentResearch = 'electric_mining'; // {red_science:30, green_science:15}
+var rl = findFreeRow(3);
+Buildings.tryPlace(rl.x, rl.y, 'lab', 0);
+var theLab = World.getBuildingAt(rl.x, rl.y);
+Inventory.add(theLab.input, 'red_science', 30);
+Inventory.add(theLab.input, 'green_science', 15);
+Game.power.satisfaction = 1;
+for (var lc = 0; lc < 20000 && !Tech.isCompleted('electric_mining'); lc++) {
+    Buildings.updateLab(theLab, CFG.BUILDING_DEFS.lab, 1);
+}
+assert(Tech.isCompleted('electric_mining'), 'tech de coste desigual se completa con cantidades exactas');
+assert((theLab.input.red_science || 0) === 0 && (theLab.input.green_science || 0) === 0,
+    'lab consumió exactamente lo aportado (sin sobreconsumo)');
+Game.currentResearch = null;
+
+// 4) Cambiar receta de assembler DEVUELVE el input (no lo destruye)
+var ra = findFreeRow(6);
+Buildings.tryPlace(ra.x, ra.y, 'assembler', 0);
+var asm2 = World.getBuildingAt(ra.x, ra.y);
+asm2.recipeId = 'iron_gear';
+Inventory.add(asm2.input, 'iron_plate', 6);
+var platesBefore = Inventory.count(Game.player.inventory, 'iron_plate');
+UI.setRecipe(asm2.id, 'copper_wire');
+assert(Inventory.count(Game.player.inventory, 'iron_plate') === platesBefore + 6,
+    'cambiar receta devolvió las 6 placas del input (sin destruir)');
+assert(Object.keys(asm2.input).length === 0 || (asm2.input.iron_plate || 0) === 0,
+    'input vaciado tras cambiar receta');
+
+// 4b) Cinta rápida NO se fusiona con línea normal al colocar un puente normal entre ellas
+Tech.completed.logistics = true;
+var rmix = findFreeRow(7);
+Belts.tryPlaceSingle(rmix.x, rmix.y, 1, 'belt');
+Belts.tryPlaceSingle(rmix.x + 1, rmix.y, 1, 'belt');
+Belts.tryPlaceSingle(rmix.x + 3, rmix.y, 1, 'fast_belt');
+Belts.tryPlaceSingle(rmix.x + 2, rmix.y, 1, 'belt'); // puente
+var lnN = Belts.getLineAt(rmix.x, rmix.y);
+var lnF = Belts.getLineAt(rmix.x + 3, rmix.y);
+assert(lnN !== lnF && approx(lnF.speed, CFG.FAST_BELT_SPEED) && approx(lnN.speed, CFG.BELT_SPEED),
+    'cintas de distinta velocidad NO se fusionan (fast conserva 0.1, normal 0.05)');
+
+// 4c) MILESTONES usan funciones ES5 (no arrow)
+assert(typeof CFG.MILESTONES[0].check === 'function' &&
+    CFG.MILESTONES[0].check({itemsProduced:{iron_plate:5}, buildingsPlaced:0, techsCompleted:0, rocketsLaunched:0}) === true,
+    'MILESTONES.check son funciones ES5 y evalúan');
+
+// 4d) Drag-to-place: fila de edificios 1×1 por arrastre (móvil)
+Game.creativeModeOn = true;
+var rdp = findFreeRow(6);
+Input.buildMode = 'inserter'; Input.buildDirection = 1;
+assert(Input.isDragPlaceMode() === true, 'inserter 1×1 es drag-place');
+Input.buildMode = 'miner';
+assert(Input.isDragPlaceMode() === false, 'miner 2×2 NO es drag-place');
+Input.buildMode = 'inserter';
+Input.dragStart = {x: rdp.x, y: rdp.y};
+Input.updateBuildPath({x: rdp.x + 4, y: rdp.y});
+assert(Input.ghostTiles.length === 5, 'drag genera 5 ghosts');
+Input.placeBuildPath();
+var dpCnt = 0;
+for (var dpi = 0; dpi < 5; dpi++) { var dpb = World.getBuildingAt(rdp.x + dpi, rdp.y); if (dpb && dpb.type === 'inserter') dpCnt++; }
+assert(dpCnt === 5, 'arrastre colocó 5 insertadores con dirección respetada');
+Input.buildMode = null; Input.dragStart = null; Input.ghostTiles = [];
+
+// 5) Objetivos avanzan y dan recompensa
+Game.objectiveIndex = 0;
+Game.stats.itemsProduced.iron_ore = (Game.stats.itemsProduced.iron_ore || 0) + 50;
+Game.checkObjectives();
+assert(Game.objectiveIndex >= 1, 'objetivo avanza al cumplir el primero');
 
 console.log('\n========================================');
 if (failures > 0) {
