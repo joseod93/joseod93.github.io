@@ -2,10 +2,43 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="refresh" content="0; url=http://141.95.0.231/dashboard.html">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Redireccionando...</title>
 </head>
 <body>
-    <p>Si no te redirige automáticamente, haz <a href="http://141.95.0.231/dashboard.html">clic aquí</a>.</p>
+    <p>Redireccionando...</p>
+    <p id="manual" hidden>
+        Si no te redirige automaticamente, haz
+        <a id="enlace" href="http://217.154.188.26/dashboard.html">clic aqui</a>.
+    </p>
+    <noscript>
+        <p>Activa JavaScript o haz
+        <a href="http://217.154.188.26/dashboard.html">clic aqui</a>.</p>
+    </noscript>
+    <script> 
+        var RESERVA = '217.154.188.26';
+
+        function esIPv4(t) {
+            var p = t.split('.');
+            return p.length === 4 && p.every(function (o) {
+                return /^\d{1,3}$/.test(o) && +o <= 255;
+            });
+        }
+
+        function ir(ip) {
+            var url = 'http://' + ip + '/dashboard.html';
+            document.getElementById('enlace').href = url;
+            document.getElementById('manual').hidden = false;
+            location.replace(url);
+        }
+
+        fetch('../Vs/PI.txt', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.text() : Promise.reject(); })
+            .then(function (t) {
+                var ip = t.trim();
+                ir(esIPv4(ip) ? ip : RESERVA);
+            })
+            .catch(function () { ir(RESERVA); });
+    </script>
 </body>
 </html>
