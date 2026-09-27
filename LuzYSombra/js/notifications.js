@@ -11,7 +11,17 @@ class NotificationSystem {
         this.init();
     }
 
+    // App Android: el WebView no tiene la API Notification; el puente nativo (LysAndroid)
+    // programa recordatorios locales al salir de la app (ver scheduleReminders en game.js)
+    get native() {
+        return !!(window.LysAndroid && window.LysAndroid.requestNotifications);
+    }
+
     async init() {
+        if (this.native) {
+            this.enabled = localStorage.getItem('lys_notifications') === 'enabled' && window.LysAndroid.notificationsEnabled();
+            return;
+        }
         // Verificar soporte
         if (!('Notification' in window)) {
             console.log('Notifications not supported');
@@ -26,6 +36,16 @@ class NotificationSystem {
     }
 
     async requestPermission() {
+        if (this.native) {
+            // El resultado del diálogo de permiso llega como evento desde MainActivity
+            const granted = window.LysAndroid.notificationsEnabled() || await new Promise(resolve => {
+                window.addEventListener('lys-android-notif', e => resolve(!!e.detail), { once: true });
+                window.LysAndroid.requestNotifications();
+            });
+            this.enabled = granted;
+            localStorage.setItem('lys_notifications', granted ? 'enabled' : 'disabled');
+            return granted;
+        }
         if (!('Notification' in window)) return false;
 
         try {
@@ -40,7 +60,7 @@ class NotificationSystem {
     }
 
     async show(title, options = {}) {
-        if (!this.enabled) {
+        if (!this.enabled || this.native) {   // con la app abierta, el aviso va dentro del juego
             this.showInApp(title, options.body, options.type || options.tag || 'default');
             return;
         }
@@ -72,30 +92,42 @@ class NotificationSystem {
             expedition: '🧭', trader: '🪵', starving: '⚠️', default: '📣'
         };
         const icon = icons[type] || icons.default;
+        const dismiss = (n) => {
+            if (n._gone) return;
+            n._gone = true;
+            clearTimeout(n._timer);
+            n.classList.add('fade-out');
+            setTimeout(() => n.remove(), 300);
+        };
+        const arm = (n) => { clearTimeout(n._timer); n._timer = setTimeout(() => dismiss(n), 5000); };
+
+        // Mismo aviso ya visible: agrupar con contador en vez de apilar otro
+        const key = `${type}|${title}|${message || ''}`;
+        const live = [...container.children].filter(n => !n._gone);
+        const same = live.find(n => n._key === key);
+        if (same) {
+            same._count = (same._count || 1) + 1;
+            same.querySelector('.notif-count').textContent = `×${same._count}`;
+            arm(same);
+            return;
+        }
+        // Máximo 3 a la vez: retirar las más antiguas
+        live.slice(0, Math.max(0, live.length - 2)).forEach(dismiss);
 
         const notif = document.createElement('div');
         notif.className = `in-app-notification type-${type}`;
+        notif._key = key;
         notif.innerHTML = `
             <div class="notif-header">
-                <strong><span class="notif-icon">${icon}</span>${title}</strong>
-                <button class="notif-close">×</button>
+                <strong><span class="notif-icon">${icon}</span>${title}<span class="notif-count"></span></strong>
+                <button class="notif-close" aria-label="Cerrar aviso">×</button>
             </div>
             ${message ? `<div class="notif-body">${message}</div>` : ''}
         `;
 
         container.appendChild(notif);
-
-        // Auto-remove después de 5 segundos
-        setTimeout(() => {
-            notif.classList.add('fade-out');
-            setTimeout(() => notif.remove(), 300);
-        }, 5000);
-
-        // Close button
-        notif.querySelector('.notif-close').addEventListener('click', () => {
-            notif.classList.add('fade-out');
-            setTimeout(() => notif.remove(), 300);
-        });
+        arm(notif);
+        notif.querySelector('.notif-close').addEventListener('click', () => dismiss(notif));
     }
 
     createContainer() {
@@ -134,7 +166,7 @@ class NotificationSystem {
     }
 
     achievementUnlocked(name) {
-        this.show('🏅 ¡Logro Desbloqueado!', {
+        this.show('¡Logro desbloqueado!', {
             body: name,
             tag: 'achievement', type: 'achievement'
         });
@@ -148,7 +180,7 @@ class NotificationSystem {
     }
 
     villagerStarving() {
-        this.show('⚠️ Hambruna', {
+        this.show('Hambruna', {
             body: 'Tus aldeanos se están muriendo de hambre. ¡Consigue comida urgentemente!',
             tag: 'starving', type: 'starving',
             requireInteraction: true

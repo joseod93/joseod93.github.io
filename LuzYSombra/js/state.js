@@ -39,7 +39,13 @@ export const blank = () => ({
     buildings: { molino: 0, acequia: 0, forge: 0 },  // nivel de cada edificio (0 = sin construir)
     alignment: null,    // null | 'luz' | 'sombra' (rama del árbol de habilidades)
     legacy: 0,          // moneda permanente de prestigio (Reliquias)
-    legacyUpgrades: {}  // mejoras de Legado compradas: key -> nivel
+    legacyUpgrades: {}, // mejoras de Legado compradas: key -> nivel
+    bestiary: {},       // victorias por criatura: boss.key | enemy.name -> nº (persiste al ascender)
+    contracts: { day: 0, offers: [], active: null, done: 0 },   // encargos del mercader
+    seasonEvent: null,  // { season, key, day } evento de estación del día
+    history: [],        // [{ t, r: {recurso: n}, rn }] muestra por minuto real (últimas 2 h) para la gráfica
+    chronicle: [],      // [{ t, day, p, icon, text }] hitos de la partida (persiste al ascender)
+    chronicleKeys: {}   // hitos "una sola vez" ya apuntados
 });
 
 export let S = blank();
@@ -48,15 +54,32 @@ export function xpForLevel(lvl) {
     return Math.floor(80 * Math.pow(1.35, lvl - 1));
 }
 
+const SAVE_KEY = 'lys_save_v2';
+const BACKUP_KEY = 'lys_save_backup';    // { at, data } — copia del guardado bueno más reciente
+const CORRUPT_KEY = 'lys_save_corrupt';  // guardado ilegible apartado (no se machaca)
+
+// true si loadState tuvo que recuperar la partida desde la copia de seguridad
+export let restoredFromBackup = false;
+
 export function loadState() {
     try {
-        let raw = localStorage.getItem('lys_save_v2');
+        let raw = localStorage.getItem(SAVE_KEY);
+        // Guardado corrupto: apartarlo y recuperar la copia (si no, el autoguardado lo machacaría)
+        if (raw) {
+            try { JSON.parse(raw); } catch (e) {
+                localStorage.setItem(CORRUPT_KEY, raw);
+                const backup = getBackup();
+                raw = backup ? backup.data : null;
+                if (raw) { localStorage.setItem(SAVE_KEY, raw); restoredFromBackup = true; }
+                else localStorage.removeItem(SAVE_KEY);
+            }
+        }
 
         if (!raw) {
             const v1 = localStorage.getItem('lys_save_v1');
             if (v1) {
                 raw = v1;
-                localStorage.setItem('lys_save_v2', v1);
+                localStorage.setItem(SAVE_KEY, v1);
             }
         }
 
@@ -90,6 +113,13 @@ export function loadState() {
             if (S.enemiesDefeated === undefined) S.enemiesDefeated = 0;
             if (!S.theme) S.theme = 'dark';
             if (S.currentLocation === undefined) S.currentLocation = null;
+            if (!S.bestiary || typeof S.bestiary !== 'object') S.bestiary = {};
+            if (!S.contracts || typeof S.contracts !== 'object') S.contracts = blank().contracts;
+            else S.contracts = { ...blank().contracts, ...S.contracts, offers: Array.isArray(S.contracts.offers) ? S.contracts.offers : [] };
+            if (S.seasonEvent === undefined) S.seasonEvent = null;
+            if (!Array.isArray(S.history)) S.history = [];
+            if (!Array.isArray(S.chronicle)) S.chronicle = [];
+            if (!S.chronicleKeys || typeof S.chronicleKeys !== 'object') S.chronicleKeys = {};
         }
     } catch (e) {
         console.error('Error al cargar estado:', e);
@@ -100,9 +130,46 @@ export function loadState() {
 
 export function saveState() {
     try {
-        localStorage.setItem('lys_save_v2', JSON.stringify(S));
+        localStorage.setItem(SAVE_KEY, JSON.stringify(S));
         return true;
     } catch (e) { return false; }
+}
+
+// ===== Copias de seguridad =====
+function getBackup() {
+    try {
+        const b = JSON.parse(localStorage.getItem(BACKUP_KEY));
+        if (b && typeof b.data === 'string') { JSON.parse(b.data); return b; }
+    } catch (e) { }
+    return null;
+}
+
+// Copia el guardado actual (ya escrito y válido) como copia de seguridad
+export function backupSave() {
+    try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.started) return false;
+        localStorage.setItem(BACKUP_KEY, JSON.stringify({ at: now(), data: raw }));
+        return true;
+    } catch (e) { return false; }
+}
+
+export function backupInfo() {
+    const b = getBackup();
+    if (!b) return null;
+    try {
+        const d = JSON.parse(b.data);
+        return { at: b.at, level: d.player?.level || 1, prestige: d.prestige || 0 };
+    } catch (e) { return null; }
+}
+
+// Sustituye el guardado por la copia. El llamante debe recargar la página.
+export function restoreBackup() {
+    const b = getBackup();
+    if (!b) return false;
+    try { localStorage.setItem(SAVE_KEY, b.data); return true; } catch (e) { return false; }
 }
 
 export function resetState() {

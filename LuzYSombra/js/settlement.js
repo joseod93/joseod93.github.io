@@ -186,12 +186,14 @@ export function refreshOpenLocation() {
         S.unlocked.molino, S.unlocked.acequia, S.unlocked.forge,
         S.discoveries.piedra, S.discoveries.agua, S.discoveries.hierro,
         S.people.villagers, (S.consumables?.pan || 0) > 0,
+        S.people.jobs ? `${S.people.jobs.farmer}/${S.people.jobs.lumber}/${S.people.jobs.miner}` : '',
         // cantidades que cambian la disponibilidad/etiquetas de botones de coste (Taller/Aldea/Fogata)
         Math.floor(r.lenia || 0), Math.floor(r.agua || 0), Math.floor(r.piedra || 0), Math.floor(r.hierro || 0),
         Math.floor(r.aceitunas || 0), Math.floor(r.trigo || 0), Math.floor(r.hierbas || 0), Math.floor(S.stats.renown || 0),
         S.expedition ? (S.expedition.endsAt - now() <= 0 ? 'ready' : 'run') : 'none',
         S.trader ? Math.ceil((S.trader.endsAt - now()) / 5000) : 0,   // refresca el contador cada ~5s
         !!S.threat,
+        S.time.day, S.seasonEvent ? S.seasonEvent.key : '',   // eventos de estación (p. ej. nevada cierra Caminos)
         (S.streak && S.streak.lastSpinDate !== getTodayStr()) ? 'spin' : ''
     ].join('|');
 

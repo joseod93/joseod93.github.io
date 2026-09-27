@@ -1,13 +1,17 @@
 
 import { $, now, fmtMs, formatNumber, vibrate, setVibrate, vibrateEnabled } from './utils.js';
-import { S, loadState, saveState, resetState, blank } from './state.js';
-import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics, initTabs, addXP, xpFlash, screenFlash, fireConfetti, updateStreakDisplay, updateWeatherVisuals, showPassiveGain, showEventBanner, getActiveTab } from './ui.js';
+import { S, loadState, saveState, resetState, blank, backupSave, backupInfo, restoreBackup, restoredFromBackup } from './state.js';
+import { log, updateCooldownVisuals, updateTags, renderResources, renderNotes, renderAchievements, toast, setTip, renderQuests, showStatistics, initTabs, addXP, xpFlash, screenFlash, fireConfetti, updateStreakDisplay, updateWeatherVisuals, showPassiveGain, showEventBanner, getActiveTab, renderBestiary, setProductionRates, switchTab } from './ui.js';
 import { tryUnlocks, checkAchievements } from './actions.js';
 import { renderMap } from './map.js';
 import { renderSettlement, refreshOpenLocation } from './settlement.js';
 import { showEncounterPrompt, startEnemyEncounter, isCombatOpen } from './combat.js';
-import { BOSSES, ENEMIES, LEGACY_UPGRADES, BUILDING_UPGRADES } from './constants.js';
+import { BOSSES, ENEMIES, LEGACY_UPGRADES, BUILDING_UPGRADES, SEASONS, seasonOf, SEASON_EVENTS, SEASON_EVENT_CHANCE, RES_META } from './constants.js';
+import { updateContracts, renderContracts } from './contracts.js';
+import { renderScene, bindScene } from './scene.js';
+import { addChronicle, renderChronicle } from './chronicle.js';
 import integrator from './integrator.js';
+import { notifications } from './notifications.js';
 
 // Efectos acumulados del árbol de Legado (Reliquias) — permanentes entre prestigios
 function legacyEffects() {
@@ -60,11 +64,20 @@ function gameTick() {
 
     S.time.minutes += 1;
     if (S.time.minutes >= (24 * 60)) {
+        const prevSeason = seasonOf(S.time.day);
         S.time.minutes = 0;
         S.time.day++;
         log('Amanece un nuevo día en Andalucía.', 'dim');
         addXP(5);
+        const season = seasonOf(S.time.day);
+        if (season !== prevSeason) {
+            log(`${season.icon} Llega ${season.art} ${season.name}: ${season.desc}.`, '');
+            showEventBanner(`${season.icon} ¡Llega ${season.art} ${season.name}! ${season.desc}`, 'weather');
+        } else if (Math.random() < SEASON_EVENT_CHANCE) {
+            triggerSeasonEvent(season);   // el día del cambio de estación ya tiene su banner
+        }
     }
+    const sm = seasonOf(S.time.day).mods;
 
     if (Math.random() < 0.002) {
         const weathers = ['clear', 'clear', 'clear', 'rain', 'wind'];
@@ -80,7 +93,7 @@ function gameTick() {
 
     if (S.fire.lit) {
         const fuelReduction = (S.skills?.efficientFire || 0) * 0.15;
-        let fuelCons = 0.05 * (1 - fuelReduction);
+        let fuelCons = 0.05 * (1 - fuelReduction) * sm.fuel;
         let heatGain = 0.2 + (S.unlocked.molino ? 0.05 : 0);
 
         if (S.weather === 'rain') heatGain -= 0.1;
@@ -115,7 +128,7 @@ function gameTick() {
     const levelBonus = (1 + (S.player.level - 1) * 0.02) * (1 + (legacy.prodMult || 0));
     const doubleProd = (S._doubleProd && nowTs < S._doubleProd) ? 2 : 1;
 
-    if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus) * levelBonus * buildMul('acequia')) { addRes('agua', 1 * doubleProd); gains.push(['agua', 1 * doubleProd]); }
+    if (S.unlocked.acequia && Math.random() < (0.05 + heatBonus) * levelBonus * buildMul('acequia') * sm.water) { addRes('agua', 1 * doubleProd); gains.push(['agua', 1 * doubleProd]); }
     if (S.unlocked.molino && Math.random() < (0.05 + heatBonus) * levelBonus * buildMul('molino') && S.resources.trigo > 0) {
         S.resources.trigo--;
         const gained = (1 * prestigeMult);
@@ -150,11 +163,11 @@ function gameTick() {
         }
 
         if (S.people.jobs) {
-            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus * leaderBonus) { addRes('lenia', 1 * doubleProd); gains.push(['lenia', 1 * doubleProd]); }
+            if (S.people.jobs.lumber > 0 && Math.random() < 0.1 * S.people.jobs.lumber * levelBonus * leaderBonus * sm.wood) { addRes('lenia', 1 * doubleProd); gains.push(['lenia', 1 * doubleProd]); }
             if (S.people.jobs.farmer > 0) {
                 let farmChance = 0.08 + (heatBonus * 2);
                 if (S.weather === 'rain') farmChance += 0.05;
-                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus * leaderBonus) { addRes('trigo', 1 * doubleProd); gains.push(['trigo', 1 * doubleProd]); }
+                if (Math.random() < farmChance * S.people.jobs.farmer * levelBonus * leaderBonus * sm.farm) { addRes('trigo', 1 * doubleProd); gains.push(['trigo', 1 * doubleProd]); }
             }
             if (S.people.jobs.miner > 0) {
                 const mineChance = 0.05 * S.people.jobs.miner * levelBonus * leaderBonus;
@@ -199,14 +212,20 @@ function gameTick() {
         renderSettlement(); refreshOpenLocation(); window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
     }
 
+    if (nowTs - (S.history[S.history.length - 1]?.t || 0) >= HISTORY_EVERY) recordHistory(nowTs);
+    updateContracts();
+    renderContracts();
+
     tryUnlocks();   // la producción pasiva también puede cruzar umbrales de desbloqueo
     updateTags();
+    setProductionRates(productionRates());
     renderResources();
     // Pintar flotantes "+N" después de reconstruir las fichas (si no, se borran al instante)
     gains.forEach(([k, n]) => showPassiveGain(k, n));
     checkAchievements();
     if (getActiveTab() === 'tabMapa') renderMap();
     renderSettlement();
+    renderScene($('#villageScene'));
     refreshOpenLocation();
     renderNotes();
     updateSectionVisibility();
@@ -258,6 +277,124 @@ function getStreakRewards(streak) {
     return rewards;
 }
 
+// ===== EVENTOS DE ESTACIÓN =====
+// Uno al amanecer (prob. SEASON_EVENT_CHANCE). Efectos por datos en constants.SEASON_EVENTS.
+function triggerSeasonEvent(season, forcedKey) {
+    const list = SEASON_EVENTS[season.key] || [];
+    const ev = forcedKey ? list.find(e => e.key === forcedKey) : list[Math.floor(Math.random() * list.length)];
+    if (!ev) return;
+    S.seasonEvent = { season: season.key, key: ev.key, day: S.time.day };
+    const scale = 1 + (S.player.level - 1) * 0.1;
+    const parts = [];
+    for (const [k, base] of Object.entries(ev.res || {})) {
+        const n = Math.round(base * scale);
+        if (n > 0) { addRes(k, n); parts.push(`+${n} ${RES_META[k]?.icon || k}`); }
+        else {
+            const lost = Math.min(Math.floor(S.resources[k] || 0), -n);
+            if (lost > 0) { S.resources[k] -= lost; parts.push(`−${lost} ${RES_META[k]?.icon || k}`); }
+        }
+    }
+    if (ev.heat) {
+        if (ev.heat > 0) { S.fire.lit = true; S.fire.fuel = Math.max(S.fire.fuel, 3); }
+        S.fire.heat = Math.max(0, Math.min(30, S.fire.heat + ev.heat));
+        if (S.fire.heat <= 0) S.fire.lit = false;
+        parts.push(`${ev.heat > 0 ? '+' : '−'}${Math.abs(ev.heat)}° 🔥`);
+    }
+    if (ev.weather && ev.weather !== S.weather) { S.weather = ev.weather; updateWeatherVisuals(ev.weather); }
+    if (ev.trader && !S.trader) {
+        S.trader = { endsAt: now() + 120000, wants: Math.random() < 0.5 ? 'lenia' : 'trigo', gives: 'renown', rate: 20 };
+        integrator.onTraderArrived(S);
+    }
+    if (ev.xp) addXP(ev.xp);
+    log(`${ev.icon} ${ev.name}: ${ev.desc}${parts.length ? ` (${parts.join(', ')})` : ''}`, ev.res && Object.values(ev.res).some(v => v < 0) || ev.heat < 0 || ev.blockExpeditions ? 'warn' : 'good');
+    showEventBanner(`${ev.icon} ${ev.name}: ${ev.desc}`, ev.blockExpeditions || ev.heat < 0 ? 'danger' : 'opportunity');
+    try { AudioSystem.playTone('event'); } catch (e) { }
+    renderSettlement(); refreshOpenLocation(); renderMap();
+    window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
+    saveState();
+}
+window.lysSeasonEvent = (key) => triggerSeasonEvent(seasonOf(S.time.day), key);   // depuración desde consola
+
+// ===== HISTORIAL PARA LA GRÁFICA =====
+const HISTORY_EVERY = 60 * 1000;   // una muestra por minuto real
+const HISTORY_MAX = 120;           // últimas 2 h
+function recordHistory(t) {
+    const r = {};
+    for (const [k, v] of Object.entries(S.resources)) if (v > 0) r[k] = Math.floor(v);
+    S.history.push({ t, r, rn: Math.floor(S.stats.renown || 0) });
+    if (S.history.length > HISTORY_MAX) S.history.splice(0, S.history.length - HISTORY_MAX);
+}
+
+// ===== RITMO DE PRODUCCIÓN (/min) =====
+// Valor esperado por minuto con las MISMAS probabilidades que gameTick (cada tick = 1 s).
+// Si cambias una fórmula del tick, cámbiala también aquí.
+function productionRates() {
+    const legacy = legacyEffects();
+    const sm = seasonOf(S.time.day).mods;
+    const heat = S.fire.heat;
+    const heatBonus = heat > 20 ? 0.02 : heat > 10 ? 0.01 : 0;
+    const levelBonus = (1 + (S.player.level - 1) * 0.02) * (1 + (legacy.prodMult || 0));
+    const leaderBonus = 1 + ((S.skills?.leadership || 0) * 0.15);
+    const doubleProd = (S._doubleProd && now() < S._doubleProd) ? 2 : 1;
+    const jobs = S.people.jobs || {};
+    const p = (x) => Math.min(1, Math.max(0, x)) * 60;   // probabilidad por tick -> unidades/min
+    const r = {};
+    const add = (k, v) => { if (v) r[k] = (r[k] || 0) + v; };
+
+    if (S.unlocked.acequia) add('agua', p((0.05 + heatBonus) * levelBonus * buildMul('acequia') * sm.water) * doubleProd);
+    if (S.unlocked.forge) add('hierro', p(0.02 * levelBonus * buildMul('forge')) * doubleProd);
+    if (S.unlocked.molino && S.resources.trigo > 0) add('trigo', -p((0.05 + heatBonus) * levelBonus * buildMul('molino')));
+    if ((S.people.villagers || 0) > 0) {
+        if (jobs.lumber > 0) add('lenia', p(0.1 * jobs.lumber * levelBonus * leaderBonus * sm.wood) * doubleProd);
+        if (jobs.farmer > 0) {
+            const farmChance = 0.08 + heatBonus * 2 + (S.weather === 'rain' ? 0.05 : 0);
+            add('trigo', p(farmChance * jobs.farmer * levelBonus * leaderBonus * sm.farm) * doubleProd);
+        }
+        if (jobs.miner > 0) {
+            const m = p(0.05 * jobs.miner * levelBonus * leaderBonus);
+            add('piedra', m * 0.4); add('hierro', m * 0.2);
+        }
+        // Comida: primero trigo y, si no hay, aceitunas
+        const food = S.people.villagers * 0.06 * 60;
+        add(S.resources.trigo > 0 || !(S.resources.aceitunas > 0) ? 'trigo' : 'aceitunas', -food);
+    }
+    return r;
+}
+
+// ===== DESPENSA Y REPARTO DE ALDEANOS =====
+// Granjeros justos para cubrir el consumo (+10 % de margen); el resto, leña y mina a partes iguales
+function autoAssignJobs() {
+    const V = S.people.villagers || 0;
+    if (V <= 0) return;
+    const legacy = legacyEffects();
+    const sm = seasonOf(S.time.day).mods;
+    const heat = S.fire.heat;
+    const heatBonus = heat > 20 ? 0.02 : heat > 10 ? 0.01 : 0;
+    const levelBonus = (1 + (S.player.level - 1) * 0.02) * (1 + (legacy.prodMult || 0));
+    const leaderBonus = 1 + ((S.skills?.leadership || 0) * 0.15);
+    const perFarmer = (0.08 + heatBonus * 2 + (S.weather === 'rain' ? 0.05 : 0)) * levelBonus * leaderBonus * sm.farm;
+    const mill = S.unlocked.molino ? Math.min(1, (0.05 + heatBonus) * levelBonus * buildMul('molino')) : 0;
+    const need = V * 0.06 + mill;
+    const farmers = Math.min(V, Math.ceil((need * 1.1) / perFarmer));
+    const rest = V - farmers;
+    const canMine = !!S.discoveries?.piedra;
+    S.people.jobs = { farmer: farmers, lumber: canMine ? Math.ceil(rest / 2) : rest, miner: canMine ? Math.floor(rest / 2) : 0 };
+    const j = S.people.jobs;
+    const txt = `${j.farmer} 🌾 · ${j.lumber} 🪵${canMine ? ` · ${j.miner} ⛏️` : ''}`;
+    if (farmers * perFarmer < need) {
+        log(`⚖️ Reparto: ${txt}. Ni con todos en el campo llega la comida: consigue trigo o aceitunas.`, 'warn');
+        toast('⚠️ No hay granjeros suficientes para tantas bocas');
+    } else {
+        log(`⚖️ Reparto: ${txt}.`, '');
+        toast(`⚖️ ${txt}`);
+    }
+    vibrate(30);
+    setProductionRates(productionRates());
+    renderResources(); saveState();
+    window.dispatchEvent(new CustomEvent('lys-actions-refresh'));
+}
+window.addEventListener('lys-auto-jobs', autoAssignJobs);   // lo pide el panel de la Aldea (actions.js)
+
 // ===== WELCOME BACK SCREEN =====
 // Calcula la producción offline con las MISMAS tasas del gameTick (eficiencia reducida + tope 8h)
 function computeIdleGains(elapsed) {
@@ -270,16 +407,17 @@ function computeIdleGains(elapsed) {
     const leaderBonus = 1 + ((S.skills?.leadership || 0) * 0.15);
     const prestigeMult = (1 + ((S.prestige || 0) * 0.25)) * (1 + (legacy.renownMult || 0));
     const jobs = S.people.jobs || {};
+    const sm = seasonOf(S.time.day).mods;
 
     const res = {};
     const add = (k, v) => { v = Math.floor(v); if (v > 0) res[k] = (res[k] || 0) + v; };
 
-    add('lenia', sec * 0.1 * (jobs.lumber || 0) * levelBonus * leaderBonus * eff);
-    add('trigo', sec * 0.08 * (jobs.farmer || 0) * levelBonus * leaderBonus * eff);
+    add('lenia', sec * 0.1 * (jobs.lumber || 0) * levelBonus * leaderBonus * sm.wood * eff);
+    add('trigo', sec * 0.08 * (jobs.farmer || 0) * levelBonus * leaderBonus * sm.farm * eff);
     const miner = sec * 0.05 * (jobs.miner || 0) * levelBonus * leaderBonus * eff;
     add('piedra', miner * 0.4);
     add('hierro', miner * 0.2);
-    if (S.unlocked.acequia) add('agua', sec * 0.05 * levelBonus * buildMul('acequia') * eff);
+    if (S.unlocked.acequia) add('agua', sec * 0.05 * levelBonus * buildMul('acequia') * sm.water * eff);
     if (S.unlocked.forge) add('hierro', sec * 0.02 * levelBonus * buildMul('forge') * eff);
 
     let renown = S.unlocked.molino ? Math.floor(sec * 0.05 * prestigeMult * buildMul('molino') * eff) : 0;
@@ -401,6 +539,7 @@ function startGame() {
     } catch (e) { }
     startOverlay.classList.add('hidden');
     log('Despiertas en una habitación fría. Una fogata apagada te acompaña.', '');
+    addChronicle('🌘', 'Despiertas en una habitación fría de Andalucía.', 'start');
 
     checkStreak();
     integrator.initializeSystems(S);
@@ -408,6 +547,16 @@ function startGame() {
     import('./tutorial.js').then(m => {
         if (!m.default.completed) m.default.start();
     });
+}
+
+// ===== TAMAÑO DE TEXTO (Ajustes) =====
+// 1 = normal, 2 = grande, 3 = muy grande. Escala el font-size raíz: casi todo el CSS va en rem.
+function readFontScale() {
+    try { const v = parseInt(localStorage.getItem('lys_font_scale'), 10); return v >= 1 && v <= 3 ? v : 1; } catch (e) { return 1; }
+}
+function applyFontScale(v) {
+    if (v > 1) document.documentElement.setAttribute('data-font', String(v));
+    else document.documentElement.removeAttribute('data-font');
 }
 
 // ===== THEME TOGGLE =====
@@ -435,6 +584,7 @@ function renderSkills() {
               </div>`;
             body.querySelectorAll('.align-btn').forEach(btn => btn.onclick = () => {
                 S.alignment = btn.dataset.align;
+                addChronicle(S.alignment === 'luz' ? '☀️' : '🌙', `Elegiste la senda de ${S.alignment === 'luz' ? 'la Luz' : 'la Sombra'}.`);
                 log(`Has elegido la senda de ${S.alignment === 'luz' ? 'la Luz ☀️' : 'la Sombra 🌙'}.`, 'good');
                 toast(S.alignment === 'luz' ? '☀️ Senda de la Luz' : '🌙 Senda de la Sombra');
                 AudioSystem.playTone('levelup'); screenFlash('gold');
@@ -735,6 +885,7 @@ function updateSectionVisibility() {
     const notesOn = craftOn || S.player.level >= 2;
     const achOn = Object.keys(S.achievements || {}).length >= 1;
     const waveOn = (S.stats.bossesDefeated || 0) >= 5;
+    const bestiaryOn = Object.keys(S.bestiary || {}).length > 0;
     const legacyOn = (S.stats.renown || 0) >= 50 || (S.prestige || 0) > 0 || (S.legacy || 0) > 0;
 
     if (!S.revealed) S.revealed = {};
@@ -746,6 +897,7 @@ function updateSectionVisibility() {
         ['legacySection', legacyOn, '🏛️ Prestigio y Legado', true],
         ['notesSection', notesOn, 'Notas', false],
         ['achievementsSection', achOn, 'Logros', false],
+        ['bestiarySection', bestiaryOn, '📖 Bestiario', true],
     ];
     let changed = false;
     sections.forEach(([sel, show, label, announce]) => {
@@ -766,17 +918,25 @@ function updateSectionVisibility() {
 
 function init() {
     loadState();
+    // Partidas anteriores a la Crónica: apuntar desde dónde se empieza a escribir
+    if (S.started && !S.chronicle.length) addChronicle('📜', `La crónica empieza a escribirse: día ${S.time.day}, nivel ${S.player.level}.`, 'start');
+    backupSave();   // copia de seguridad del guardado con el que empieza la sesión
     applyTheme(S.theme || 'dark');
     if (localStorage.getItem('lys_reduce_motion') === '1') document.documentElement.setAttribute('data-reduce-motion', '1');
+    applyFontScale(readFontScale());
     integrator.initializeSystems(S);
     initTabs();
     checkStreak();
     resumeIdleProgress();
 
+    setProductionRates(productionRates());
     renderResources();
     tryUnlocks();
     renderSettlement();
+    bindScene($('#villageScene'));
+    renderScene($('#villageScene'));
     renderAchievements();
+    renderBestiary();
     updateTags();
     renderNotes();
     renderMap();
@@ -784,6 +944,8 @@ function init() {
     renderMarket();
     renderCrafting();
     renderLegacy();
+    updateContracts();
+    renderContracts(true);
     initWaveMode();
     updateWeatherVisuals(S.weather);
     updateSectionVisibility();
@@ -791,11 +953,14 @@ function init() {
 
     setInterval(gameTick, 1000);
     setInterval(saveState, 10000);
+    setInterval(() => { if (saveState()) backupSave(); }, 30 * 60 * 1000);
     setInterval(updateCooldownVisuals, 100);
     setInterval(() => { renderMarket(); renderCrafting(); renderSkills(); renderLegacy(); }, 30000);
 
     window.addEventListener('lys-actions-refresh', () => { renderSettlement(); refreshOpenLocation(); renderCrafting(); renderSkills(); renderLegacy(); updateSectionVisibility(); });
     window.addEventListener('lys-show-map', renderMap);
+    renderChronicle($('#chronicle'), $('#chronicleCount'));
+    window.addEventListener('lys-chronicle', () => renderChronicle($('#chronicle'), $('#chronicleCount')));
     window.addEventListener('lys-skills-refresh', () => { renderSkills(); updateSectionVisibility(); });
     document.body.addEventListener('click', (e) => {
         if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
@@ -806,6 +971,11 @@ function init() {
     if (S.started) {
         startOverlay.classList.add('hidden');
     }
+    if (restoredFromBackup) {
+        log('⚠️ Tu guardado estaba dañado: se ha recuperado la última copia de seguridad.', 'bad');
+        toast('💾 Partida recuperada de la copia de seguridad');
+    }
+    renderBackupInfo();
 
     // Check contextual tips periodically
     setInterval(checkContextualTips, 5000);
@@ -865,27 +1035,52 @@ const btnImport = $('#btnImport');
 const btnWipe = $('#btnWipe');
 const sysFooter = $('#sysFooter');
 
+// Código de guardado: base64 de UTF-8 (btoa a secas falla con emojis, p. ej. con un boss activo)
+function encodeSave(obj) {
+    const bytes = new TextEncoder().encode(JSON.stringify(obj));
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+}
+function decodeSave(str) {
+    const bin = atob(str.replace(/\s+/g, ''));
+    try {
+        return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+    } catch (e) {
+        return JSON.parse(bin);   // códigos antiguos: btoa directo sobre texto latin-1
+    }
+}
+
 if (btnExport) {
-    btnExport.onclick = () => {
-        try {
-            const str = btoa(JSON.stringify(S));
-            navigator.clipboard.writeText(str).then(() => {
-                log('Partida copiada al portapapeles.', 'good');
-                toast('📋 Copiado');
-            });
-        } catch (e) { log('Error exportando.', 'bad'); }
+    btnExport.onclick = async () => {
+        let str;
+        try { saveState(); str = encodeSave(S); } catch (e) { log('Error exportando.', 'bad'); return; }
+        let copied = false;
+        try { await navigator.clipboard.writeText(str); copied = true; } catch (e) { }
+        if (copied) { log('Partida copiada al portapapeles.', 'good'); toast('📋 Copiado'); }
+        // Menú nativo de compartir: app Android (puente) o navegador móvil (Web Share)
+        const text = `Luz y Sombra — código de guardado (Nv ${S.player.level}):\n${str}`;
+        if (window.LysAndroid && window.LysAndroid.share) {
+            window.LysAndroid.share(text);
+        } else if (navigator.share) {
+            navigator.share({ title: 'Luz y Sombra', text }).catch(() => { });
+        } else if (!copied) {
+            prompt('Copia tu código de guardado:', str);
+        }
     };
 }
 
 if (btnImport) {
     btnImport.onclick = () => {
-        const str = prompt('Pega aquí tu código de guardado:');
+        let str = prompt('Pega aquí tu código de guardado:');
         if (str) {
+            str = str.includes(':') ? str.slice(str.lastIndexOf(':') + 1) : str;   // admite el texto compartido completo
             try {
-                const json = JSON.parse(atob(str));
+                const json = decodeSave(str);
                 if (json && json.resources) {
+                    backupSave();   // por si el código importado no era el bueno
                     localStorage.setItem('lys_save_v2', JSON.stringify(json));
-                    location.reload();
+                    reloadWithoutSaving();
                 } else {
                     alert('Código inválido.');
                 }
@@ -911,6 +1106,10 @@ function ascend() {
     ns.legacy = (S.legacy || 0) + gained;
     ns.legacyUpgrades = S.legacyUpgrades || {};
     ns.achievements = S.achievements;
+    ns.bestiary = S.bestiary || {};
+    addChronicle('🏛️', `Ascendiste al Prestigio ${(S.prestige || 0) + 1} y ganaste ${gained} ✦ Reliquias.`);
+    ns.chronicle = S.chronicle || [];
+    ns.chronicleKeys = S.chronicleKeys || {};
     ns.streak = S.streak;
     ns.revealed = S.revealed;
     ns.alignment = null;                 // re-elegir senda
@@ -980,8 +1179,27 @@ if (btnWipe) {
         if (confirm('¿Borrar TODO el progreso? No hay vuelta atrás.')) {
             localStorage.removeItem('lys_save_v2');
             localStorage.removeItem('lys_save_v1');
-            location.reload();
+            reloadWithoutSaving();
         }
+    };
+}
+
+// ===== COPIA DE SEGURIDAD =====
+const btnRestore = $('#btnRestore');
+function renderBackupInfo() {
+    if (!btnRestore) return;
+    const info = backupInfo();
+    btnRestore.style.display = info ? '' : 'none';
+    if (info) btnRestore.title = `Copia de hace ${fmtMs(now() - info.at)} (Nv ${info.level}${info.prestige ? `, Prestigio ${info.prestige}` : ''})`;
+}
+if (btnRestore) {
+    btnRestore.onclick = () => {
+        const info = backupInfo();
+        if (!info) { toast('No hay copia de seguridad'); return; }
+        const extra = info.prestige ? `, Prestigio ${info.prestige}` : '';
+        if (!confirm(`¿Restaurar la copia de seguridad de hace ${fmtMs(now() - info.at)} (Nivel ${info.level}${extra})?\n\nPerderás el progreso posterior a esa copia.`)) return;
+        if (restoreBackup()) reloadWithoutSaving();
+        else toast('No se pudo restaurar la copia');
     };
 }
 
@@ -989,6 +1207,83 @@ const btnStats = $('#btnStats');
 if (btnStats) {
     btnStats.addEventListener('click', showStatistics);
 }
+
+// ===== FILTROS DEL DIARIO =====
+const logFilters = $('#logFilters');
+if (logFilters) {
+    logFilters.addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        logFilters.querySelectorAll('.chip').forEach(c => {
+            const on = c === chip;
+            c.classList.toggle('active', on);
+            c.setAttribute('aria-pressed', String(on));
+        });
+        const logEl = $('#log');
+        if (logEl) { logEl.dataset.filter = chip.dataset.filter; logEl.scrollTop = logEl.scrollHeight; }
+    });
+}
+
+// ===== COMPARTIR PROGRESO =====
+function progressSummary() {
+    const season = seasonOf(S.time.day);
+    const lines = [
+        '🌘 Luz y Sombra: El Alba de Hispania',
+        `⭐ Nivel ${S.player.level}${S.prestige ? ` · 🏛️ Prestigio ${S.prestige}` : ''}`,
+        `📅 Día ${S.time.day} · ${season.icon} ${season.name}`,
+        `🏅 ${formatNumber(Math.floor(S.stats.renown || 0))} de renombre · 👥 ${S.people.villagers || 0} aldeanos`,
+        `⚔️ ${S.stats.bossesDefeated || 0} bosses derrotados · 📖 ${Object.keys(S.bestiary || {}).length} criaturas en el bestiario`,
+    ];
+    if ((S.waveMode?.wave || 0) > 0) lines.push(`🌊 Oleada máxima: ${S.waveMode.wave}`);
+    if ((S.streak?.current || 0) > 0) lines.push(`🔥 Racha de ${S.streak.current} ${S.streak.current === 1 ? 'día' : 'días'}`);
+    lines.push('¿Te atreves a superarlo?');
+    return lines.join('\n');
+}
+const btnShare = $('#btnShare');
+if (btnShare) {
+    btnShare.onclick = async () => {
+        const text = progressSummary();
+        if (window.LysAndroid && window.LysAndroid.share) { window.LysAndroid.share(text); return; }
+        if (navigator.share) {
+            try { await navigator.share({ title: 'Luz y Sombra', text }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+        }
+        try { await navigator.clipboard.writeText(text); toast('📋 Resumen copiado'); }
+        catch (e) { prompt('Copia tu resumen:', text); }
+    };
+}
+
+// ===== ATAJOS DE TECLADO (escritorio) =====
+const TAB_KEYS = { '1': 'tabAldea', '2': 'tabDiario', '3': 'tabMapa', '4': 'tabMas' };
+const COMBAT_KEYS = { a: '#btnAttack', d: '#btnDefend', c: '#btnHeal', e: '#btnDodge', p: '#btnPotion', h: '#btnBomb' };
+const isOpen = (sel) => { const el = $(sel); return !!el && !el.classList.contains('hidden'); };
+document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    const k = e.key.toLowerCase();
+
+    if (k === 'escape') {
+        // Modales creados al vuelo (Estadísticas, fichas): el más reciente primero
+        const dyn = [...document.querySelectorAll('.overlay:not(.hidden)')].reverse().find(o => o.querySelector('#closeStatsBtn, [data-close]'));
+        const btn = dyn ? dyn.querySelector('#closeStatsBtn, [data-close]')
+            : isOpen('#settingsOverlay') ? $('#settingsCloseBtn')
+            : isOpen('#levelUpOverlay') ? $('#levelUpCloseBtn')
+            : isOpen('#fightOverlay') ? $('#fightCloseBtn')
+            : isOpen('#locationOverlay') ? $('#locationCloseBtn')
+            : null;
+        if (btn) { e.preventDefault(); btn.click(); }
+        return;
+    }
+    if (isOpen('#fightOverlay')) {
+        const b = COMBAT_KEYS[k] && $(COMBAT_KEYS[k]);
+        if (b && !b.disabled) { e.preventDefault(); b.click(); }
+        return;
+    }
+    if (TAB_KEYS[k] && !document.querySelector('.overlay:not(.hidden)')) {
+        e.preventDefault();
+        switchTab(TAB_KEYS[k]);
+    }
+});
 
 // ===== AJUSTES =====
 const btnSettings = $('#btnSettings');
@@ -1005,6 +1300,19 @@ if (btnSettings && settingsOverlay) {
         if (motionToggle) motionToggle.textContent = onoff(document.documentElement.getAttribute('data-reduce-motion') === '1');
         if (themeToggle2) themeToggle2.textContent = S.theme === 'dark' ? '🌙 Oscuro' : '☀️ Claro';
         if (notifToggle2) notifToggle2.textContent = (notifsRef && notifsRef.enabled) ? 'Activados' : 'Desactivados';
+        const fs = readFontScale();
+        document.querySelectorAll('#fontSeg .seg-btn').forEach(b => {
+            const on = parseInt(b.dataset.font, 10) === fs;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-checked', String(on));
+        });
+    };
+    const fontSeg = $('#fontSeg');
+    if (fontSeg) fontSeg.onclick = (e) => {
+        const b = e.target.closest('.seg-btn'); if (!b) return;
+        const v = parseInt(b.dataset.font, 10);
+        try { localStorage.setItem('lys_font_scale', String(v)); } catch (err) { }
+        applyFontScale(v); vibrate(15); syncSettings();
     };
     btnSettings.onclick = () => { syncSettings(); settingsOverlay.classList.remove('hidden'); };
     const closeS = () => settingsOverlay.classList.add('hidden');
@@ -1052,10 +1360,55 @@ if (btnNotif) {
 
 setInterval(renderQuests, 5000);
 
+// Recarga tras reemplazar/borrar el guardado en localStorage: el guardado de `beforeunload`
+// (y el autoguardado) escribirían la S en memoria encima y desharían el cambio.
+let _skipUnloadSave = false;
+function reloadWithoutSaving() {
+    _skipUnloadSave = true;
+    location.reload();
+}
+
 window.addEventListener('beforeunload', () => {
+    if (_skipUnloadSave) return;
     S.lastSessionEnd = now();
     integrator.endSession(S);
     saveState();
+});
+
+// ===== RECORDATORIOS (app Android) =====
+// Al salir de la app se programan avisos locales nativos; al volver se cancelan.
+function buildReminders() {
+    const list = [];
+    const t = now();
+    const streak = S.streak?.current || 0;
+    if (streak >= 1) {
+        // La racha se pierde si no se entra mañana: avisar mañana por la tarde
+        const at = new Date(); at.setDate(at.getDate() + 1); at.setHours(19, 0, 0, 0);
+        list.push({
+            id: 1, at: at.getTime(),
+            title: `🔥 Tu racha de ${streak} ${streak === 1 ? 'día' : 'días'} peligra`,
+            body: 'Vuelve hoy para mantenerla y reclamar tu recompensa diaria.'
+        });
+    }
+    const producing = (S.people?.villagers || 0) > 0 || Object.values(S.buildings || {}).some(l => l > 0);
+    if (producing) {
+        const capHours = 8 + (legacyEffects().idleHours || 0);   // mismo tope que computeIdleGains
+        list.push({
+            id: 2, at: t + capHours * 3600 * 1000,
+            title: '🏚️ Los almacenes de tu aldea están llenos',
+            body: `Tu aldea lleva ${capHours} h trabajando sin ti. Vuelve a recoger lo producido.`
+        });
+    }
+    return list.filter(r => r.at > t + 60 * 1000);
+}
+document.addEventListener('visibilitychange', () => {
+    const bridge = window.LysAndroid;
+    if (!bridge || !bridge.scheduleReminders) return;
+    if (document.visibilityState === 'hidden') {
+        if (notifications.enabled && S.started) bridge.scheduleReminders(JSON.stringify(buildReminders()));
+    } else {
+        bridge.cancelReminders();
+    }
 });
 
 init();

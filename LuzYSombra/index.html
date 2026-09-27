@@ -9,6 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Luz y Sombra: El Alba de Hispania</title>
   <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon-192.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="stylesheet" href="css/animations.css" />
 </head>
@@ -33,6 +34,7 @@
     <div class="header-stats" id="headerStats">
       <span class="stat-pill" id="fireTag">🔥 Apagada</span>
       <span class="stat-pill" id="timeOfDay">🌙 Noche</span>
+      <span class="stat-pill season-pill" id="seasonPill">🌸 Primavera</span>
       <span class="stat-pill" id="streakPill">🔥 Racha: 0</span>
     </div>
   </header>
@@ -45,18 +47,9 @@
     <div class="wrap-single">
       <div id="unlockBeacon" class="unlock-beacon hidden"></div>
       <button id="nextObjective" class="next-objective hidden" aria-live="polite"></button>
-      <section class="card resources-card">
-        <h2>Recursos</h2>
-        <div class="body resources" id="resources"></div>
-      </section>
-
-      <section class="card daily-goals-card" id="dailyGoalsCard" style="display:none">
-        <h2>🎯 Objetivos de hoy <span class="dg-count" id="dailyGoalsCount"></span></h2>
-        <div class="body" id="dailyGoals"></div>
-      </section>
-
       <section class="card settlement-card" id="settlementSection">
         <h2>Tu Asentamiento</h2>
+        <div class="village-scene" id="villageScene"></div>
         <div class="body" id="settlementBody"></div>
         <div class="footer desktop-only">
           <div class="inline">
@@ -66,6 +59,22 @@
           </div>
         </div>
       </section>
+
+      <section class="card resources-card">
+        <h2>Recursos</h2>
+        <div class="body resources" id="resources"></div>
+      </section>
+
+      <section class="card contracts-card" id="contractsCard" style="display:none">
+        <h2>📜 Encargos del mercader <span class="dg-count" id="contractsCount"></span></h2>
+        <div class="body" id="contractsBody"></div>
+      </section>
+
+      <section class="card daily-goals-card" id="dailyGoalsCard" style="display:none">
+        <h2>🎯 Objetivos de hoy <span class="dg-count" id="dailyGoalsCount"></span></h2>
+        <div class="body" id="dailyGoals"></div>
+      </section>
+
     </div>
   </main>
 
@@ -75,7 +84,13 @@
       <section class="card results-card" id="resultsSection">
         <h2>Diario</h2>
         <div class="body">
-          <div id="log"></div>
+          <div class="log-filters" id="logFilters" role="group" aria-label="Filtrar el diario">
+            <button class="chip active" data-filter="all" aria-pressed="true">Todo</button>
+            <button class="chip" data-filter="good" aria-pressed="false">✨ Logros</button>
+            <button class="chip" data-filter="bad" aria-pressed="false">⚠️ Peligros</button>
+            <button class="chip" data-filter="event" aria-pressed="false">📜 Eventos</button>
+          </div>
+          <div id="log" data-filter="all" aria-live="polite"></div>
         </div>
         <div class="footer" id="tipFooter"></div>
       </section>
@@ -84,6 +99,11 @@
         <h2>📋 Misiones</h2>
         <div class="body" id="quests"></div>
         <div class="footer">Cumple objetivos para ganar recompensas.</div>
+      </section>
+
+      <section class="card chronicle-card">
+        <h2>🏛️ Crónica de la aldea <span class="dg-count" id="chronicleCount"></span></h2>
+        <div class="body" id="chronicle"></div>
       </section>
     </div>
   </main>
@@ -116,7 +136,7 @@
       <section class="card market-card" id="marketSection" style="display:none">
         <h2>Mercado</h2>
         <div class="body" id="marketBody">
-          <p style="color:#666;text-align:center;padding:8px;font-size:0.85rem">Compra y vende recursos a precios dinámicos.</p>
+          <p class="empty-hint">Compra y vende recursos a precios dinámicos.</p>
         </div>
       </section>
 
@@ -141,8 +161,15 @@
       </section>
 
       <section class="card achs-card" id="achievementsSection" style="display:none">
-        <h2>Logros</h2>
+        <h2>🏅 Logros <span class="bestiary-count" id="achCount">0/0</span></h2>
+        <div class="bestiary-progress" aria-hidden="true"><div class="bestiary-bar" id="achBar"></div></div>
         <div class="body achs" id="achievements"></div>
+      </section>
+
+      <section class="card achs-card bestiary-card" id="bestiarySection" style="display:none">
+        <h2>📖 Bestiario <span class="bestiary-count" id="bestiaryCount">0/0</span></h2>
+        <div class="bestiary-progress" aria-hidden="true"><div class="bestiary-bar" id="bestiaryBar"></div></div>
+        <div class="body achs" id="bestiary"></div>
       </section>
 
       <section class="card legacy-card" id="legacySection" style="display:none">
@@ -155,11 +182,13 @@
         <div class="body sys-buttons">
           <button id="btnSettings" class="action">⚙️ Ajustes</button>
           <button id="btnStats" class="action">📊 Estadísticas</button>
+          <button id="btnShare" class="action">📣 Compartir progreso</button>
           <button id="btnInstall" class="action" style="display:none">📲 Instalar app</button>
           <button id="btnNotif" class="action">🔕 Activar avisos</button>
           <button id="btnTheme" class="action" aria-label="Cambiar tema">🌗 Cambiar Tema</button>
           <button id="btnExport" class="action">📤 Exportar</button>
           <button id="btnImport" class="action">📥 Importar</button>
+          <button id="btnRestore" class="action" style="display:none">♻️ Restaurar copia</button>
           <button id="btnWipe" class="action danger">🗑️ Borrar Datos</button>
         </div>
         <div class="footer" id="sysFooter">
@@ -213,6 +242,7 @@
   <!-- Location Overlay -->
   <div id="locationOverlay" class="overlay hidden">
     <div class="panel location-panel">
+      <div class="sheet-handle" aria-hidden="true"></div>
       <div class="location-header">
         <span id="locationIcon" style="font-size:2rem"></span>
         <div>
@@ -289,6 +319,7 @@
   <!-- Settings Overlay -->
   <div id="settingsOverlay" class="overlay hidden">
     <div class="panel settings-panel">
+      <div class="sheet-handle" aria-hidden="true"></div>
       <div class="settings-header">
         <h2>⚙️ Ajustes</h2>
         <button id="settingsCloseBtn" class="icon-btn" aria-label="Cerrar">&#10005;</button>
@@ -298,9 +329,20 @@
         <input type="range" id="volRange" min="0" max="0.6" step="0.02" />
       </div>
       <div class="settings-row"><span>📳 Vibración</span><button id="vibToggle" class="action toggle-btn"></button></div>
+      <div class="settings-row"><span>🔠 Tamaño de texto</span>
+        <div class="seg" id="fontSeg" role="radiogroup" aria-label="Tamaño de texto">
+          <button class="seg-btn" data-font="1" role="radio">A</button>
+          <button class="seg-btn" data-font="2" role="radio">A+</button>
+          <button class="seg-btn" data-font="3" role="radio">A++</button>
+        </div>
+      </div>
       <div class="settings-row"><span>🌀 Menos animaciones</span><button id="motionToggle" class="action toggle-btn"></button></div>
       <div class="settings-row"><span>🌗 Tema</span><button id="themeToggle2" class="action toggle-btn"></button></div>
       <div class="settings-row"><span>🔔 Avisos</span><button id="notifToggle2" class="action toggle-btn"></button></div>
+      <div class="settings-row kbd-help desktop-only">
+        <span>⌨️ Atajos</span>
+        <span class="kbd-list"><kbd>1</kbd>–<kbd>4</kbd> pestañas · <kbd>Esc</kbd> cerrar<br>Combate: <kbd>A</kbd> atacar · <kbd>D</kbd> defender · <kbd>C</kbd> curar · <kbd>E</kbd> esquivar · <kbd>P</kbd> poción · <kbd>H</kbd> huir</span>
+      </div>
       <div class="footer" style="text-align:center">Datos (exportar/importar/borrar) en la sección Sistema.</div>
     </div>
   </div>
@@ -324,7 +366,8 @@
 
   <script type="module" src="js/game.js"></script>
   <script>
-    if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    // En la app Android el juego va empaquetado (appassets.androidplatform.net): no hace falta SW
+    if ('serviceWorker' in navigator && window.location.hostname !== 'appassets.androidplatform.net' && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js').catch(e => console.log('SW Registration failed (expected on file://):', e));
       });

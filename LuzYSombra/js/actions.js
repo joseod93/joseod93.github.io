@@ -1,14 +1,15 @@
 
 import { S, saveState } from './state.js';
-import { REGIONS, BOSSES, RES_META, ENEMIES, LOCAL_LOCATIONS, BUILDING_UPGRADES } from './constants.js';
+import { REGIONS, BOSSES, RES_META, ENEMIES, LOCAL_LOCATIONS, BUILDING_UPGRADES, expeditionsBlocked } from './constants.js';
 import { now, fmtMs, $, randomRange, randomChoice, vibrate } from './utils.js';
-import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash, incrementCombo, fireConfetti, getComboCount } from './ui.js';
+import { log, setCooldown, renderResources, renderAchievements, toast, updateTags, setTip, BUTTON_REFS, addXP, xpFlash, screenFlash, incrementCombo, fireConfetti, getComboCount, foodMinutes } from './ui.js';
 import { openCombat, showEncounterPrompt, startEnemyEncounter } from './combat.js';
 import { renderMap, getRandomRegion } from './map.js';
 import { AudioSystem } from './audio.js';
 import { spawnBoss } from './game.js';
 import integrator from './integrator.js';
 import { triggerRegionEvent } from './events.js';
+import { addChronicle } from './chronicle.js';
 
 const ACTION_LOCKS = {
     crafting: () => S.unlocked.crafting,
@@ -45,12 +46,12 @@ function refreshAll() {
 }
 
 export function tryUnlocks() {
-    if (!S.unlocked.water && S.resources.lenia >= 3) { S.unlocked.water = true; log('Puedes buscar agua en un arroyo cercano.', 'dim'); }
-    if (!S.unlocked.herbs && S.resources.agua >= 2) { S.unlocked.herbs = true; log('Detectas aroma a romero y tomillo.', 'dim'); }
+    if (!S.unlocked.water && S.resources.lenia >= 3) { S.unlocked.water = true; log('Puedes buscar agua en un arroyo cercano.', 'dim'); addChronicle('💧', 'Encontraste un arroyo: se abre el Río.', 'u_water'); }
+    if (!S.unlocked.herbs && S.resources.agua >= 2) { S.unlocked.herbs = true; log('Detectas aroma a romero y tomillo.', 'dim'); addChronicle('🌿', 'Descubriste los Campos de romero y tomillo.', 'u_herbs'); }
     if (!S.unlocked.olives && S.resources.hierbas >= 1) { S.unlocked.olives = true; log('Al sureste hay olivares.', 'dim'); }
-    if (!S.unlocked.crafting && (S.resources.aceitunas >= 1 && S.resources.lenia >= 1)) { S.unlocked.crafting = true; log('Has aprendido a fabricar objetos.', 'good'); addXP(15); }
-    if (!S.unlocked.village && S.stats.renown >= 5) { S.unlocked.village = true; log('Viajantes se unen. Nace una aldea.', 'good'); addXP(25); }
-    if (!S.unlocked.expedition && S.stats.explore >= 8) { S.unlocked.expedition = true; log('Puedes organizar expediciones.', 'good'); addXP(30); }
+    if (!S.unlocked.crafting && (S.resources.aceitunas >= 1 && S.resources.lenia >= 1)) { S.unlocked.crafting = true; log('Has aprendido a fabricar objetos.', 'good'); addXP(15); addChronicle('🔨', 'Abriste el Taller: ya sabes fabricar objetos.', 'u_crafting'); }
+    if (!S.unlocked.village && S.stats.renown >= 5) { S.unlocked.village = true; log('Viajantes se unen. Nace una aldea.', 'good'); addXP(25); addChronicle('🏘️', 'Unos viajantes se quedan: nace la aldea.', 'u_village'); }
+    if (!S.unlocked.expedition && S.stats.explore >= 8) { S.unlocked.expedition = true; log('Puedes organizar expediciones.', 'good'); addXP(30); addChronicle('🛤️', 'Se abren los Caminos: primeras expediciones.', 'u_expedition'); }
 }
 const checkUnlocks = tryUnlocks;
 
@@ -87,8 +88,8 @@ function buildOrUpgrade(key) {
     AudioSystem.playTone('build');
     screenFlash('gold');
     vibrate(40);
-    if (lvl === 0) { log(`Has construido: ${up.name}.`, 'good'); integrator.onBuildingConstructed(S, key, log); addXP(20); }
-    else { log(`${up.name} mejorado a nivel ${lvl + 1}.`, 'good'); addXP(10); }
+    if (lvl === 0) { log(`Has construido: ${up.name}.`, 'good'); integrator.onBuildingConstructed(S, key, log); addXP(20); addChronicle(up.icon, `Construiste ${up.name === 'Fragua' ? 'la' : up.name === 'Acequia' ? 'la' : 'el'} ${up.name}.`); }
+    else { log(`${up.name} mejorado a nivel ${lvl + 1}.`, 'good'); addXP(10); addChronicle(up.icon, `${up.name} mejorado a nivel ${lvl + 1}.`); }
     refreshAll();
 }
 
@@ -219,6 +220,7 @@ export function renderLocationActions(locationId, container) {
                     if (S.resources.lenia <= 0) return;
                     S.resources.lenia--; S.fire.fuel += 3; S.fire.lit = true;
                     log('Has encendido la fogata.', 'good');
+                    addChronicle('🔥', 'Encendiste la primera fogata en la habitación fría.', 'fire');
                     addXP(2);
                 } else {
                     if (S.resources.lenia <= 0) { log('No tienes leña.', 'warn'); return; }
@@ -424,7 +426,7 @@ export function renderLocationActions(locationId, container) {
             // Show message if nothing available
             if (container.children.length === baseCount) {
                 const p = document.createElement('p');
-                p.style.cssText = 'color:var(--muted);font-size:0.85rem;text-align:center;padding:12px';
+                p.className = 'empty-hint';
                 p.textContent = 'Descubre más recursos para desbloquear construcciones.';
                 container.appendChild(p);
             }
@@ -447,6 +449,9 @@ export function renderLocationActions(locationId, container) {
                     if (need > 0) S.resources.aceitunas -= need;
                     S.people.villagers = (S.people.villagers || 0) + 1;
                     log('Nuevo aldeano se une a tu poblado.', 'good');
+                    const v = S.people.villagers;
+                    if (v === 1) addChronicle('👤', 'El primer aldeano se une a tu poblado.', 'v1');
+                    else if ([5, 10, 25, 50].includes(v)) addChronicle('👥', `Tu aldea alcanza los ${v} aldeanos.`, `v${v}`);
                     integrator.onVillagerRecruited(S, log);
                     addXP(10);
                     xpFlash();
@@ -458,37 +463,44 @@ export function renderLocationActions(locationId, container) {
 
                 if (S.people.villagers > 0) {
                     const jobPanel = document.createElement('div');
-                    jobPanel.style.cssText = 'margin-top:8px;padding:12px;background:#0c132088;border:1px solid #1b263688;border-radius:12px';
+                    jobPanel.className = 'job-panel';
                     const assigned = (S.people.jobs.lumber || 0) + (S.people.jobs.farmer || 0) + (S.people.jobs.miner || 0);
                     const free = S.people.villagers - assigned;
-                    jobPanel.innerHTML = `<div style="margin-bottom:10px;font-weight:700;font-size:0.88rem">👥 Aldea (Libres: ${free})</div>`;
+                    const food = foodMinutes();
+                    const foodTxt = food === Infinity ? 'La comida no se agota' : food < 1 ? '¡Sin comida ya!' : `Comida para ${food >= 60 ? `${Math.floor(food / 60)} h ${Math.floor(food % 60)} min` : `${Math.floor(food)} min`}`;
+                    const foodCls = food === Infinity ? 'ok' : food < 3 ? 'bad' : food < 10 ? 'warn' : 'ok';
+                    jobPanel.innerHTML = `
+                        <div class="job-head">
+                            <span class="job-title">👥 ${S.people.villagers} aldeanos <small>(${free} libres)</small></span>
+                            <span class="food-pill ${foodCls}" title="Trigo + aceitunas al ritmo actual">🍞 ${foodTxt}</span>
+                        </div>`;
 
                     const jobs = [
-                        { key: 'lumber', label: 'Leñadores', icon: '🪵' },
                         { key: 'farmer', label: 'Granjeros', icon: '🌾' },
+                        { key: 'lumber', label: 'Leñadores', icon: '🪵' },
                         { key: 'miner', label: 'Mineros', icon: '⛏️' }
                     ];
 
                     jobs.forEach(j => {
                         if (j.key === 'miner' && !S.discoveries?.piedra) return;
                         const row = document.createElement('div');
-                        row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1b263633';
-                        row.innerHTML = `<span style="font-size:0.85rem">${j.icon} ${j.label}: <b>${S.people.jobs[j.key] || 0}</b></span>`;
+                        row.className = 'job-row';
+                        row.innerHTML = `<span class="job-name">${j.icon} ${j.label}</span><b class="job-count">${S.people.jobs[j.key] || 0}</b>`;
 
                         const ctrls = document.createElement('div');
-                        ctrls.style.cssText = 'display:flex;gap:6px';
+                        ctrls.className = 'job-ctrls';
 
                         const btnSub = document.createElement('button');
-                        btnSub.textContent = '\u2212';
-                        btnSub.className = 'action';
-                        btnSub.style.cssText = 'width:36px;height:36px;padding:0;font-size:1.1rem;min-height:36px';
+                        btnSub.textContent = '−';
+                        btnSub.className = 'job-btn';
+                        btnSub.setAttribute('aria-label', `Quitar ${j.label.toLowerCase()}`);
                         btnSub.disabled = !S.people.jobs[j.key];
                         btnSub.onclick = () => { S.people.jobs[j.key]--; vibrate(20); refreshAll(); saveState(); renderLocationActions(locationId, container); };
 
                         const btnAdd = document.createElement('button');
                         btnAdd.textContent = '+';
-                        btnAdd.className = 'action';
-                        btnAdd.style.cssText = 'width:36px;height:36px;padding:0;font-size:1.1rem;min-height:36px';
+                        btnAdd.className = 'job-btn';
+                        btnAdd.setAttribute('aria-label', `Añadir ${j.label.toLowerCase()}`);
                         btnAdd.disabled = free <= 0;
                         btnAdd.onclick = () => { S.people.jobs[j.key] = (S.people.jobs[j.key] || 0) + 1; vibrate(20); refreshAll(); saveState(); renderLocationActions(locationId, container); };
 
@@ -497,6 +509,13 @@ export function renderLocationActions(locationId, container) {
                         row.appendChild(ctrls);
                         jobPanel.appendChild(row);
                     });
+
+                    const auto = document.createElement('button');
+                    auto.className = 'action job-auto' + (foodCls === 'bad' ? ' glow-btn' : '');
+                    auto.textContent = '⚖️ Repartir según la comida';
+                    auto.title = 'Pone los granjeros justos para alimentar a todos y reparte el resto';
+                    auto.onclick = () => window.dispatchEvent(new CustomEvent('lys-auto-jobs'));
+                    jobPanel.appendChild(auto);
                     container.appendChild(jobPanel);
                 }
             }
@@ -504,13 +523,13 @@ export function renderLocationActions(locationId, container) {
             // Trader
             if (S.trader) {
                 const div = document.createElement('div');
-                div.style.cssText = 'margin:8px 0;padding:12px;background:#151b2688;border:1px solid #1b263688;border-radius:12px';
+                div.className = 'trader-box';
                 div.innerHTML = `
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                        <b>🪵 Mercader</b>
-                        <small style="color:var(--muted)">${fmtMs(S.trader.endsAt - now())}</small>
+                    <div class="trader-head">
+                        <b>🧳 Mercader ambulante</b>
+                        <small>⏳ ${fmtMs(S.trader.endsAt - now())}</small>
                     </div>
-                    <p style="margin:0 0 8px;font-size:0.82rem;color:#aaa">"Cambio ${S.trader.rate} ${RES_META[S.trader.wants]?.label || S.trader.wants} por renombre."</p>
+                    <p class="trader-quote">«Cambio ${S.trader.rate} ${RES_META[S.trader.wants]?.icon || ''} ${RES_META[S.trader.wants]?.label || S.trader.wants} por renombre.»</p>
                 `;
                 const btnTrade = document.createElement('button');
                 btnTrade.className = 'action' + (S.resources[S.trader.wants] >= S.trader.rate ? ' glow-btn' : '');
@@ -535,7 +554,7 @@ export function renderLocationActions(locationId, container) {
 
             if (container.children.length === baseCount) {
                 const p = document.createElement('p');
-                p.style.cssText = 'color:var(--muted);font-size:0.85rem;text-align:center;padding:12px';
+                p.className = 'empty-hint';
                 p.textContent = 'Gana renombre para atraer aldeanos.';
                 container.appendChild(p);
             }
@@ -545,11 +564,18 @@ export function renderLocationActions(locationId, container) {
         case 'caminos': {
             // Expeditions
             if (S.unlocked.expedition) {
-                if (!S.expedition) {
+                if (!S.expedition && expeditionsBlocked(S)) {
+                    const bx = document.createElement('button');
+                    bx.className = 'action';
+                    bx.textContent = '🌨️ Caminos cerrados por la nevada';
+                    bx.disabled = true;
+                    container.appendChild(bx);
+                } else if (!S.expedition) {
                     const bx = document.createElement('button');
                     bx.className = 'action';
                     bx.textContent = '🗺️ Organizar expedición (3-8 min)';
                     bx.onclick = () => {
+                        if (S.expedition || expeditionsBlocked(S)) return;
                         const region = getRandomRegion();
                         const dur = (3 + Math.floor(Math.random() * 6)) * 60 * 1000;
                         S.expedition = { endsAt: now() + dur, startedAt: now(), region: region.name };
@@ -630,7 +656,7 @@ export function renderLocationActions(locationId, container) {
 
             if (container.children.length === baseCount) {
                 const p = document.createElement('p');
-                p.style.cssText = 'color:var(--muted);font-size:0.85rem;text-align:center;padding:12px';
+                p.className = 'empty-hint';
                 p.textContent = 'Explora más para desbloquear expediciones.';
                 container.appendChild(p);
             }
@@ -639,7 +665,7 @@ export function renderLocationActions(locationId, container) {
 
         default: {
             const p = document.createElement('p');
-            p.style.cssText = 'color:var(--muted);font-size:0.85rem;text-align:center;padding:12px';
+            p.className = 'empty-hint';
             p.textContent = 'Nada que hacer aquí... por ahora.';
             container.appendChild(p);
         }

@@ -2,10 +2,11 @@
 import { $, sleep, vibrate, formatNumber, prefersReducedMotion } from './utils.js';
 import { AudioSystem } from './audio.js';
 import { S, saveState } from './state.js';
-import { log, toast, updateTags, renderResources, addXP, xpFlash, screenFlash, fireConfetti } from './ui.js';
+import { log, toast, updateTags, renderResources, addXP, xpFlash, screenFlash, fireConfetti, renderBestiary } from './ui.js';
 import integrator from './integrator.js';
 import { quests } from './quests.js';
 import { ENEMIES } from './constants.js';
+import { addChronicle } from './chronicle.js';
 
 const fightOverlay = $('#fightOverlay');
 const fightTitle = $('#fightTitle');
@@ -69,13 +70,13 @@ function renderCombatUI() {
         const ppct = Math.max(0, (S.player.hp / S.player.maxHp) * 100);
         playerBar.style.width = ppct + '%';
         playerBar.className = 'hp-fill player' + hpClass(ppct);
-        fightUI.querySelector('#warrior div:last-child').textContent = `Tú (${formatNumber(Math.max(0, S.player.hp))}/${formatNumber(S.player.maxHp)})`;
+        fightUI.querySelector('#warrior .hp-label').textContent = `Tú (${formatNumber(Math.max(0, S.player.hp))}/${formatNumber(S.player.maxHp)})`;
     }
 
     const enemyBar = fightUI.querySelector('#enemy .hp-fill');
     if (enemyBar) {
         enemyBar.style.width = Math.max(0, (combatState.boss.hp / combatState.boss.max) * 100) + '%';
-        fightUI.querySelector('#enemy div:last-child').textContent = `${boss.name} (${formatNumber(Math.max(0, combatState.boss.hp))}/${formatNumber(combatState.boss.max)})`;
+        fightUI.querySelector('#enemy .hp-label').textContent = `${boss.name} (${formatNumber(Math.max(0, combatState.boss.hp))}/${formatNumber(combatState.boss.max)})`;
     }
 }
 
@@ -349,6 +350,17 @@ function resolveVictory() {
     if (!combatState) return;
     const t = combatState.boss;
     const isRegular = combatState.isRegularEnemy;
+
+    // Bestiario: bosses por key, enemigos por nombre; las oleadas son procedurales y no cuentan
+    const bestiaryId = isRegular ? (t.isWave ? null : t.name) : t.key;
+    if (bestiaryId) {
+        if (!S.bestiary) S.bestiary = {};
+        const first = !S.bestiary[bestiaryId];
+        S.bestiary[bestiaryId] = (S.bestiary[bestiaryId] || 0) + 1;
+        if (first) log(`📖 Nueva entrada en el Bestiario: ${t.icon || ''} ${t.name}.`, 'good');
+        if (first && !isRegular) addChronicle(t.icon || '⚔️', `Derrotaste por primera vez a ${t.name}.`, `boss_${bestiaryId}`);
+        renderBestiary();
+    }
 
     if (isRegular) {
         log(`${t.name} ha sido derrotado.`, 'good');

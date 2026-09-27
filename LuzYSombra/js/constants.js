@@ -71,6 +71,68 @@ export const ENEMIES = [
     { name: 'Mercenario', icon: '⚔️', hp: 16, atk: 8, level: 8, loot: [{ k: 'sal', n: [2, 3] }, { k: 'hierro', n: [1, 2] }] },
 ];
 
+// Estaciones: cambian cada SEASON_DAYS días de juego. Multiplicadores sobre la producción pasiva
+// (farm = trigo de granjeros, wood = leña de leñadores, water = acequia) y el consumo de la fogata (fuel).
+// El renombre no se toca (ver "Balance" en CLAUDE.md).
+export const SEASON_DAYS = 7;
+export const SEASONS = [
+    { key: 'primavera', name: 'Primavera', art: 'la', icon: '🌸', desc: 'Cosechas +25%, agua +10%', mods: { farm: 1.25, wood: 1, water: 1.1, fuel: 1 } },
+    { key: 'verano', name: 'Verano', art: 'el', icon: '☀️', desc: 'La fogata gasta -20%, agua -20%', mods: { farm: 1.1, wood: 1, water: 0.8, fuel: 0.8 } },
+    { key: 'otono', name: 'Otoño', art: 'el', icon: '🍂', desc: 'Leña +20%, cosechas -10%', mods: { farm: 0.9, wood: 1.2, water: 1, fuel: 1 } },
+    { key: 'invierno', name: 'Invierno', art: 'el', icon: '❄️', desc: 'Cosechas -40%, la fogata gasta +30%', mods: { farm: 0.6, wood: 1.1, water: 1, fuel: 1.3 } },
+];
+export function seasonOf(day) {
+    return SEASONS[Math.floor(Math.max(0, (day || 1) - 1) / SEASON_DAYS) % SEASONS.length];
+}
+
+// Eventos de estación: al amanecer, prob. SEASON_EVENT_CHANCE de uno de la estación actual (máx. 1/día).
+// Efectos por datos (los aplica game.js triggerSeasonEvent): res (se escala con el nivel, negativos = pérdida),
+// xp, heat (fogata), weather, trader (llega un mercader), blockExpeditions (dura el día de juego).
+export const SEASON_EVENT_CHANCE = 0.4;
+export const SEASON_EVENTS = {
+    primavera: [
+        { key: 'feria', name: 'Feria de Primavera', icon: '🎪', desc: 'Llegan comerciantes: un mercader acampa en la aldea.', trader: true, xp: 15 },
+        { key: 'lluvias', name: 'Lluvias de abril', icon: '🌧️', desc: 'Llueve todo el día: más agua y mejores cosechas.', weather: 'rain', res: { agua: 6 } },
+    ],
+    verano: [
+        { key: 'sanjuan', name: 'Noche de San Juan', icon: '🔥', desc: 'La hoguera arde con fuerza: la fogata se aviva.', heat: 10, xp: 10 },
+        { key: 'calor', name: 'Ola de calor', icon: '🥵', desc: 'El calor seca los pozos: pierdes algo de agua.', res: { agua: -5 } },
+    ],
+    otono: [
+        { key: 'aceituna', name: 'Recogida de la aceituna', icon: '🫒', desc: 'Los olivos rebosan: ganas aceitunas.', res: { aceitunas: 8 } },
+        { key: 'vendaval', name: 'Vendaval', icon: '🍂', desc: 'El viento tumba ramas: más leña, pero la fogata gasta más.', weather: 'wind', res: { lenia: 6 } },
+    ],
+    invierno: [
+        { key: 'nevada', name: 'Nevada', icon: '🌨️', desc: 'La nieve cierra los caminos: hoy no salen expediciones.', blockExpeditions: true },
+        { key: 'helada', name: 'Helada', icon: '🧊', desc: 'El frío muerde: la fogata pierde calor.', heat: -8 },
+        { key: 'velada', name: 'Velada de invierno', icon: '🕯️', desc: 'La aldea se reúne junto al fuego y comparte su trigo.', res: { trigo: 5 }, xp: 10 },
+    ],
+};
+// Evento de estación activo HOY (null si no hay)
+export function activeSeasonEvent(S) {
+    const e = S.seasonEvent;
+    if (!e || e.day !== S.time.day) return null;
+    return (SEASON_EVENTS[e.season] || []).find(x => x.key === e.key) || null;
+}
+export function expeditionsBlocked(S) {
+    return !!activeSeasonEvent(S)?.blockExpeditions;
+}
+
+// Encargos del mercader: contratos de entrega a plazo.
+// Recompensa en renombre POR DEBAJO de la venta en mercado (0.5 del precio) para no abrir otro grifo:
+// lo que compensa es la XP y el objeto extra. Ofertas nuevas cada día de juego.
+export const CONTRACTS = {
+    offers: 3,
+    renownRate: 0.3,           // renombre = floor(n * basePrice * renownRate)
+    minutes: [30, 60],         // plazo real para entregar (min)
+    bonus: [                   // uno al azar como premio extra
+        { k: 'pocion', n: 1, consumable: true, label: 'Poción de Fuerza', icon: '🧪' },
+        { k: 'bomba', n: 1, consumable: true, label: 'Bomba de Humo', icon: '💣' },
+        { k: 'medicina', n: 2, label: 'Medicina', icon: '💊' },
+        { k: 'antorchas', n: 3, label: 'Antorchas', icon: '🔥' },
+    ],
+};
+
 // Wave system for infinite mode
 export const WAVE_CONFIG = {
     baseHp: 8,

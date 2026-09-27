@@ -2,9 +2,11 @@
 import { $, fmtMs, now, formatNumber, prefersReducedMotion } from './utils.js';
 import { AudioSystem } from './audio.js';
 import { S, saveState, xpForLevel } from './state.js';
-import { RES_META, BOSSES } from './constants.js';
-import { ACHIEVEMENTS } from './achievements.js';
+import { RES_META, BOSSES, ENEMIES, seasonOf, activeSeasonEvent } from './constants.js';
+import { ACHIEVEMENTS, getAchievementProgress } from './achievements.js';
 import integrator from './integrator.js';
+import { renderHistoryCharts } from './chart.js';
+import { addChronicle } from './chronicle.js';
 
 const resEl = $('#resources');
 const logEl = $('#log');
@@ -26,6 +28,7 @@ const xpLabel = $('#xpLabel');
 const levelNum = $('#levelNum');
 const levelBadge = $('#levelBadge');
 const streakPill = $('#streakPill');
+const seasonPill = $('#seasonPill');
 const logBadge = $('#logBadge');
 const mapaBadge = $('#mapaBadge');
 const aldeaBadge = $('#aldeaBadge');
@@ -103,11 +106,17 @@ export function toast(text) {
 }
 
 // ===== LOG =====
+const LOG_MAX = 200;   // tope de entradas en el DOM del Diario
 export function log(text, cls) {
     const p = document.createElement('p');
     if (cls) p.className = cls;
-    p.textContent = text;
+    const m = (S.time?.minutes || 0) % 1440;
+    const t = document.createElement('span');
+    t.className = 'log-time';
+    t.textContent = `D${S.time?.day || 1} ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    p.append(t, document.createTextNode(text));
     logEl.appendChild(p);
+    while (logEl.childElementCount > LOG_MAX) logEl.firstElementChild.remove();
     logEl.scrollTop = logEl.scrollHeight;
 
     if (activeTab !== 'tabDiario' && logBadge) {
@@ -200,6 +209,7 @@ function updateXPBar() {
 
 function onLevelUp(level) {
     log(`¡Has alcanzado el nivel ${level}! Tu aldea prospera.`, 'good');
+    addChronicle('⭐', `Alcanzaste el nivel ${level}.`, `lvl${level}_p${S.prestige || 0}`);
     toast(`🎉 ¡Nivel ${level}!`);
     AudioSystem.playTone('levelup');
     screenFlash('gold');
@@ -264,17 +274,18 @@ export function screenFlash(color = 'gold') {
 }
 
 // ===== CONFETTI =====
+// Un único bucle compartido: cada lanzamiento añade partículas (antes cada llamada tenía su propio
+// bucle, que borraba el lienzo de los demás y podía dejar restos pintados)
+const _confetti = [];
+let _confettiRunning = false;
 export function fireConfetti() {
     if (!confettiCanvas || prefersReducedMotion()) return;
     const ctx = confettiCanvas.getContext('2d');
-    confettiCanvas.width = window.innerWidth;
-    confettiCanvas.height = window.innerHeight;
-
-    const particles = [];
+    if (confettiCanvas.width !== window.innerWidth) confettiCanvas.width = window.innerWidth;
+    if (confettiCanvas.height !== window.innerHeight) confettiCanvas.height = window.innerHeight;
     const colors = ['#f2a65a', '#ffe08a', '#9ad06e', '#ff6b6b', '#4dabf7', '#fff'];
-
     for (let i = 0; i < 60; i++) {
-        particles.push({
+        _confetti.push({
             x: window.innerWidth / 2 + (Math.random() - 0.5) * 200,
             y: window.innerHeight / 2,
             vx: (Math.random() - 0.5) * 12,
@@ -286,22 +297,20 @@ export function fireConfetti() {
             life: 1
         });
     }
+    if (_confettiRunning) return;
+    _confettiRunning = true;
 
-    let frame;
-    function draw() {
+    // Avance por tiempo (no por fotograma): dura ~1,4 s también en móviles lentos
+    let last = performance.now();
+    function draw(ts) {
+        const k = Math.min(30, Math.max(0.25, ((ts || performance.now()) - last) / 16.67));
+        last = ts || performance.now();
         ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
-        let alive = false;
-
-        particles.forEach(p => {
-            if (p.life <= 0) return;
-            alive = true;
-            p.x += p.vx;
-            p.y += p.vy;
-            p.vy += 0.3;
-            p.rotation += p.rotSpeed;
-            p.life -= 0.012;
-            p.vx *= 0.99;
-
+        for (let i = _confetti.length - 1; i >= 0; i--) {
+            const p = _confetti[i];
+            p.x += p.vx * k; p.y += p.vy * k; p.vy += 0.3 * k; p.vx *= Math.pow(0.99, k);
+            p.rotation += p.rotSpeed * k; p.life -= 0.012 * k;
+            if (p.life <= 0 || p.y > confettiCanvas.height + 20) { _confetti.splice(i, 1); continue; }
             ctx.save();
             ctx.translate(p.x, p.y);
             ctx.rotate(p.rotation * Math.PI / 180);
@@ -309,13 +318,11 @@ export function fireConfetti() {
             ctx.fillStyle = p.color;
             ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
             ctx.restore();
-        });
-
-        if (alive) frame = requestAnimationFrame(draw);
-        else ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+        }
+        if (_confetti.length) requestAnimationFrame(draw);
+        else { ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height); _confettiRunning = false; }
     }
-
-    draw();
+    requestAnimationFrame(draw);
 }
 
 // ===== STREAK =====
@@ -356,6 +363,16 @@ export function updateTags() {
     if (expeditionTag) expeditionTag.textContent = S.expedition ? '🧭 En curso' : '🧭 Sin expedición';
     if (bossTag) bossTag.textContent = S.threat ? `👁️ ${S.threat.name}` : '👁️ Sin amenaza';
     if (timeOfDay) timeOfDay.textContent = `${timeLabel()} ${wIcon}`;
+    const season = seasonOf(S.time.day);
+    const sev = activeSeasonEvent(S);
+    const sKey = season.key + '|' + (sev ? sev.key : '');
+    if (seasonPill && seasonPill.dataset.key !== sKey) {
+        seasonPill.dataset.key = sKey;
+        seasonPill.textContent = `${season.icon} ${season.name}${sev ? ` · ${sev.icon} ${sev.name}` : ''}`;
+        seasonPill.title = `${season.name}: ${season.desc}` + (sev ? `
+Hoy: ${sev.name}. ${sev.desc}` : '');
+        seasonPill.className = `stat-pill season-pill season-${season.key}${sev ? ' has-event' : ''}`;
+    }
     if (hpTag) hpTag.textContent = `❤️ ${S.player.hp}/${S.player.maxHp}`;
 
     if (hpMobile) hpMobile.textContent = `❤️ ${S.player.hp}`;
@@ -382,6 +399,7 @@ export function updateTags() {
     updateTimeClass();
     updateBossBar();
     maybeRefreshAchievements();
+    renderAchievements();   // tiene su propio dirty-check (progreso)
     renderNextObjective();
     // updateStarfield();
 }
@@ -393,7 +411,6 @@ function maybeRefreshAchievements() {
     if (n !== _achCount) {
         const grew = _achCount >= 0 && n > _achCount;   // no celebrar el conteo inicial al cargar
         _achCount = n;
-        renderAchievements();
         if (grew) { screenFlash('gold'); fireConfetti(); if (navigator.vibrate) navigator.vibrate([30, 40, 60]); }
     }
 }
@@ -481,6 +498,21 @@ function updateTabBadges() {
 }
 
 // ===== RENDER RESOURCES =====
+// Ritmo esperado por minuto (lo calcula game.js con las fórmulas del tick)
+let _rates = {};
+export function setProductionRates(r) { _rates = r || {}; }
+// Minutos de comida (trigo + aceitunas) al ritmo actual; Infinity si no se agota
+export function foodMinutes() {
+    const net = (_rates.trigo || 0) + (_rates.aceitunas || 0);
+    if (net >= 0 || !(S.people.villagers > 0)) return Infinity;
+    return ((S.resources.trigo || 0) + (S.resources.aceitunas || 0)) / -net;
+}
+function fmtRate(v) {
+    const a = Math.abs(v);
+    const n = a >= 10 ? Math.round(a) : a >= 1 ? a.toFixed(1) : a.toFixed(2);
+    return `${v > 0 ? '+' : '−'}${String(n).replace('.', ',')}/min`;
+}
+
 export function renderResources() {
     if (!resEl) return;
     const prev = {};
@@ -499,7 +531,10 @@ export function renderResources() {
 
         const rounded = Math.floor(v);
         d.dataset.val = String(rounded);
-        d.innerHTML = `<b>${meta.icon} ${formatNumber(rounded)}</b><small>${meta.label}</small>`;
+        const rate = _rates[k] || 0;
+        const rateHtml = Math.abs(rate) >= 0.05 ? `<em class="res-rate ${rate > 0 ? 'up' : 'down'}">${fmtRate(rate)}</em>` : '';
+        d.innerHTML = `<b>${meta.icon} ${formatNumber(rounded)}</b><small>${meta.label}</small>${rateHtml}`;
+        d.title = `${meta.label}: ${rounded}` + (rateHtml ? ` (${fmtRate(rate)})` : '');
 
         const prevText = prev[k];
         if (prevText !== undefined) {
@@ -544,23 +579,149 @@ export function renderNotes() {
     if (S.unlocked.acequia) lines.push(`💧 Acequia Nv ${S.buildings?.acequia || 1}: genera agua pasiva.`);
     if (S.unlocked.forge) lines.push(`⚒️ Fragua Nv ${S.buildings?.forge || 1}: hierro pasivo y +1 daño.`);
     lines.push(`📊 Nivel: ${S.player.level} | Renombre: ${formatNumber(S.stats.renown)}`);
-    notesBody.innerHTML = '<ul style="margin:0;padding-left:18px;list-style:none">' + lines.map(t => `<li style="padding:4px 0;border-bottom:1px solid #1b263633">${t}</li>`).join('') + '</ul>';
+    notesBody.innerHTML = '<ul class="notes-list">' + lines.map(t => `<li>${t}</li>`).join('') + '</ul>';
 }
 
 // ===== RENDER ACHIEVEMENTS =====
+// Logros: anillo de progreso en los bloqueados, ocultos como ❔, ficha al tocar
+function achProgress(a) {
+    try { return getAchievementProgress(a.id, S)?.progress || 0; } catch (e) { return 0; }
+}
 export function renderAchievements() {
     if (!achEl) return;
-    achEl.innerHTML = '';
+    const all = Object.values(ACHIEVEMENTS);
+    const got = all.filter(a => S.achievements[a.id]).length;
+    const key = all.map(a => S.achievements[a.id] ? 'x' : achProgress(a)).join(',');
+    if (achEl.dataset.key === key) return;
+    achEl.dataset.key = key;
+    const cnt = $('#achCount'); if (cnt) cnt.textContent = `${got}/${all.length}`;
+    const bar = $('#achBar'); if (bar) bar.style.width = `${Math.round(got / all.length * 100)}%`;
 
-    const allAchs = Object.values(ACHIEVEMENTS);
-    allAchs.forEach(a => {
-        const d = document.createElement('div');
+    achEl.innerHTML = '';
+    all.forEach(a => {
         const has = !!S.achievements[a.id];
-        d.className = 'ach' + (has ? ' unlocked' : ' locked');
-        d.title = `${a.name}: ${a.description}`;
-        d.textContent = a.icon;
-        d.onclick = () => toast(`${a.name}: ${a.description}`);
+        const secret = a.hidden && !has;
+        const p = has ? 100 : achProgress(a);
+        const d = document.createElement('button');
+        d.type = 'button';
+        d.className = 'ach' + (has ? ' unlocked' : ' locked') + (p > 0 && !has ? ' in-progress' : '');
+        d.style.setProperty('--p', p);
+        d.textContent = secret ? '❔' : a.icon;
+        const label = secret ? 'Logro oculto' : `${a.name}${has ? ' (conseguido)' : p ? ` (${p} %)` : ''}`;
+        d.title = label;
+        d.setAttribute('aria-label', label);
+        d.onclick = () => showAchievementSheet(a);
         achEl.appendChild(d);
+    });
+}
+
+// Deslizar el asa hacia abajo cierra la hoja (lugares, ajustes, fichas). Delegado: vale para las creadas luego.
+(function enableSheetSwipe() {
+    let drag = null;
+    document.addEventListener('pointerdown', (e) => {
+        const handle = e.target.closest('.sheet-handle');
+        if (!handle) return;
+        const panel = handle.closest('.panel');
+        if (!panel) return;
+        drag = { panel, y0: e.clientY, dy: 0, id: e.pointerId };
+        panel.classList.add('dragging');
+        panel.style.transition = 'none';
+        try { handle.setPointerCapture(e.pointerId); } catch (err) { }
+    });
+    document.addEventListener('pointermove', (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        drag.dy = Math.max(0, e.clientY - drag.y0);
+        drag.panel.style.transform = `translateY(${drag.dy}px)`;
+    });
+    const end = (e) => {
+        if (!drag || (e && e.pointerId !== drag.id)) return;
+        const { panel, dy } = drag;
+        drag = null;
+        panel.classList.remove('dragging');
+        panel.style.transition = 'transform .2s ease';
+        const overlay = panel.closest('.overlay');
+        const closeBtn = overlay && overlay.querySelector('[data-close], #locationCloseBtn, #settingsCloseBtn');
+        if (dy > 70 && closeBtn) {
+            panel.style.transform = 'translateY(100%)';
+            setTimeout(() => {
+                panel.classList.add('swiped');   // sin animación de salida: ya está abajo
+                closeBtn.click();
+                setTimeout(() => { panel.classList.remove('swiped'); panel.style.transform = ''; panel.style.transition = ''; }, 320);
+            }, 180);
+        } else {
+            panel.style.transform = '';
+            setTimeout(() => { panel.style.transition = ''; }, 220);
+        }
+    };
+    document.addEventListener('pointerup', end);
+    document.addEventListener('pointercancel', end);
+})();
+
+// Hoja inferior genérica (móvil) / ventana (escritorio). El botón [data-close] la cierra (y Esc).
+export function showSheet(html, cls = '') {
+    const modal = document.createElement('div');
+    modal.className = 'overlay sheet-overlay';
+    modal.innerHTML = `<div class="panel sheet ${cls}" role="dialog" aria-modal="true"><div class="sheet-handle" aria-hidden="true"></div>${html}</div>`;
+    const close = () => { modal.classList.add('hidden'); setTimeout(() => modal.remove(), 250); };
+    modal.addEventListener('click', (e) => { if (e.target === modal || e.target.closest('[data-close]')) close(); });
+    document.body.appendChild(modal);
+    const btn = modal.querySelector('[data-close]'); if (btn) btn.focus({ preventScroll: true });
+    return modal;
+}
+
+function showAchievementSheet(a) {
+    const has = !!S.achievements[a.id];
+    const secret = a.hidden && !has;
+    const p = has ? 100 : achProgress(a);
+    const reward = a.reward ? Object.entries(a.reward).map(([k, n]) => `+${n} ${k === 'renown' ? '⭐ renombre' : (RES_META[k]?.icon || '') + ' ' + (RES_META[k]?.label || k)}`).join(' · ') : '';
+    const when = has && typeof S.achievements[a.id] === 'number' ? ` · ${new Date(S.achievements[a.id]).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}` : '';
+    showSheet(`
+        <div class="ach-sheet-icon${has ? '' : ' locked'}">${secret ? '❔' : a.icon}</div>
+        <h2 class="ach-sheet-name">${secret ? 'Logro oculto' : a.name}</h2>
+        <p class="ach-sheet-desc">${secret ? 'Sigue jugando para descubrir qué esconde.' : a.description}</p>
+        ${has ? `<div class="ach-sheet-state ok">🏅 Conseguido${when}</div>`
+            : secret ? '' : `<div class="ach-sheet-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"><div style="width:${p}%"></div></div><div class="ach-sheet-state">${p ? `${p} % completado` : 'Aún sin empezar'}</div>`}
+        ${reward && !secret ? `<div class="ach-sheet-reward">Recompensa: ${reward}</div>` : ''}
+        <button class="action" data-close>Cerrar</button>`, 'ach-sheet');
+}
+
+// ===== BESTIARIO =====
+// Colección de criaturas: bosses por key, enemigos por nombre (las oleadas no cuentan)
+export function renderBestiary() {
+    const body = $('#bestiary');
+    if (!body) return;
+    const seen = S.bestiary || {};
+    const entries = [
+        ...ENEMIES.map(e => ({ id: e.name, name: e.name, icon: e.icon, level: e.level, boss: false })),
+        ...BOSSES.map(b => ({ id: b.key, name: b.name, icon: b.icon, level: b.level, boss: true, region: b.region })),
+    ].sort((a, b) => a.level - b.level || a.boss - b.boss);
+    const found = entries.filter(e => seen[e.id] > 0).length;
+    const key = `${found}|${Object.values(seen).reduce((a, n) => a + n, 0)}`;
+    if (body.dataset.key === key) return;   // dirty-check: solo re-render si cambió
+    body.dataset.key = key;
+
+    const count = $('#bestiaryCount');
+    if (count) count.textContent = `${found}/${entries.length}`;
+    const bar = $('#bestiaryBar');
+    if (bar) bar.style.width = `${Math.round(found / entries.length * 100)}%`;
+
+    body.innerHTML = '';
+    entries.forEach(e => {
+        const n = seen[e.id] || 0;
+        const d = document.createElement('div');
+        d.className = 'ach bestiary-entry' + (n ? ' unlocked' : ' locked') + (e.boss ? ' boss' : '');
+        d.textContent = n ? e.icon : '❔';
+        if (n) {
+            const where = e.boss ? ` · ${e.region}` : '';
+            d.title = `${e.name} (Nv ${e.level}${where}) · ${n} ${n === 1 ? 'victoria' : 'victorias'}`;
+            d.setAttribute('aria-label', d.title);
+            d.onclick = () => toast(`${e.icon} ${d.title}`);
+        } else {
+            d.title = e.boss ? 'Boss por descubrir' : 'Criatura por descubrir';
+            d.setAttribute('aria-label', d.title);
+            d.onclick = () => toast(`❔ ${d.title} (Nv ${e.level})`);
+        }
+        body.appendChild(d);
     });
 }
 
@@ -579,8 +740,10 @@ export function renderNextObjective() {
     const el = $('#nextObjective'); if (!el) return;
     const openLoc = (id) => window.dispatchEvent(new CustomEvent('lys-open-location', { detail: id }));
     let o = null;
-    if (S.expedition && (S.expedition.endsAt - now()) <= 0) o = { icon: '🎁', text: 'Expedición lista para reclamar', cta: 'Mapa', act: () => switchTab('tabMapa') };
-    else if (S.threat) o = { icon: '⚔️', text: `Amenaza: ${S.threat.name}`, cta: 'Luchar', act: () => window.dispatchEvent(new CustomEvent('lys-open-combat')) };
+    const food = foodMinutes();
+    if (food < 3) o = { icon: '🍞', text: food < 1 ? '¡La comida se acaba ya! Los aldeanos pasarán hambre' : `La comida se acaba en ${Math.floor(food)} min`, cta: 'Aldea', act: () => openLoc('aldea') };
+    else if (S.expedition && (S.expedition.endsAt - now()) <= 0) o = { icon: '🎁', text: 'Expedición lista para reclamar', cta: 'Mapa', act: () => switchTab('tabMapa') };
+    // (la amenaza activa ya tiene su barra de boss fija: no duplicarla aquí)
     else if (questClaimable()) o = { icon: '🎁', text: 'Misión lista para reclamar', cta: 'Diario', act: () => switchTab('tabDiario') };
     else if ((S.skillPoints || 0) > 0 && S.player.level >= 3) o = { icon: '⭐', text: `${S.skillPoints} punto(s) de habilidad sin usar`, cta: 'Mejorar', act: () => switchTab('tabMas') };
     else if (spinAvailable()) o = { icon: '🎰', text: 'Ruleta de la suerte disponible', cta: 'Girar', act: () => openLoc('campamento') };
@@ -620,20 +783,18 @@ export function renderQuests() {
     const activeQuests = integrator.getActiveQuests();
 
     if (activeQuests.length === 0) {
-        questsContainer.innerHTML = '<p style="color:#666;text-align:center;padding:16px;font-size:0.85rem">No hay misiones activas. ¡Explora más!</p>';
+        questsContainer.innerHTML = '<p class="empty-hint">No hay misiones activas. ¡Explora más!</p>';
         return;
     }
 
     questsContainer.innerHTML = activeQuests.map(q => `
-        <div style="margin-bottom:10px;padding:12px;background:#0c132088;border:1px solid #1b263688;border-radius:12px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                <span style="font-weight:700;color:#e9f0ff;font-size:0.88rem">${q.icon} ${q.name}</span>
-                <span style="font-variant-numeric:tabular-nums;color:#94a3b8;font-size:0.8rem">${q.progress}/${q.target.amount}</span>
+        <div class="quest-item${q.completed ? ' done' : ''}">
+            <div class="quest-top">
+                <span class="quest-name">${q.icon} ${q.name}</span>
+                <span class="quest-num">${Math.min(q.progress, q.target.amount)}/${q.target.amount}</span>
             </div>
-            <div style="width:100%;height:5px;background:#0d1422;border-radius:99px;overflow:hidden">
-                <div style="width:${Math.min(100, (q.progress / q.target.amount) * 100)}%;height:100%;background:linear-gradient(90deg,#f59e0b,#fbbf24);transition:width .4s;border-radius:99px"></div>
-            </div>
-            ${q.completed ? '<button class="action glow-btn claim-btn" data-id="' + q.id + '" style="margin-top:8px;padding:10px 0!important;font-size:0.85rem!important">🎁 Reclamar</button>' : ''}
+            <div class="quest-bar"><div style="width:${Math.min(100, (q.progress / q.target.amount) * 100)}%"></div></div>
+            ${q.completed ? '<button class="action glow-btn claim-btn" data-id="' + q.id + '">🎁 Reclamar</button>' : ''}
         </div>
     `).join('');
 
@@ -804,18 +965,28 @@ export function showEventBanner(text, type = 'neutral') {
 }
 
 // ===== STATISTICS MODAL =====
+const STAT_LABELS = {
+    playTime: 'Tiempo de juego', sessions: 'Sesiones', totalResources: 'Recursos reunidos',
+    totalActions: 'Acciones totales', actions: 'Acciones', combatWinRate: 'Victorias en combate',
+    bossesDefeated: 'Bosses derrotados', avgDamagePerCombat: 'Daño medio por combate',
+    expeditions: 'Expediciones', regionsExplored: 'Regiones exploradas', favoriteRegion: 'Región favorita',
+    renownEarned: 'Renombre ganado', renownSpent: 'Renombre gastado', netRenown: 'Renombre neto',
+    maxVillagers: 'Máx. aldeanos', villagersRecruited: 'Aldeanos reclutados', achievements: 'Logros',
+    explore: 'explorar', craft: 'fabricar', build: 'construir', combat: 'combatir', recruit: 'reclutar',
+    records: 'Récords', longestFireStreak: 'Fuego más largo', fastestBoss: 'Boss más rápido', highestRenown: 'Renombre máximo',
+};
 export function showStatistics() {
     const stats = integrator.getStatistics();
 
     const formatStatValue = (key, value) => {
         if (Array.isArray(value)) {
             if (value.length === 0) return 'Ninguno';
-            if (key === 'totalResources') return value.map(i => `${i.resource}: ${i.amount}`).join(', ');
+            if (key === 'totalResources') return value.map(i => `${RES_META[i.resource]?.icon || ''} ${i.amount}`).join(' · ');
             return value.join(', ');
         }
         if (typeof value === 'object' && value !== null) {
             if (Object.keys(value).length === 0) return 'Ninguno';
-            return Object.entries(value).map(([k, v]) => `${k}: ${v}`).join(', ');
+            return Object.entries(value).map(([k, v]) => `${STAT_LABELS[k] || RES_META[k]?.label || k}: ${v}`).join(', ');
         }
         return value;
     };
@@ -825,29 +996,32 @@ export function showStatistics() {
     modal.style.zIndex = '10000';
 
     modal.innerHTML = `
-        <div class="panel" style="max-width:440px;width:90%;max-height:90vh;overflow-y:auto">
-            <h2 style="color:#f59e0b;margin-bottom:16px">📊 Estadísticas</h2>
-            <div style="display:grid;gap:8px">
-                <div style="background:#0c132088;padding:10px;border-radius:10px;border:1px solid #1b263644">
-                    <div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Nivel</div>
-                    <div style="font-size:1.2rem;color:var(--accent);font-weight:800">${S.player.level}</div>
-                </div>
-                <div style="background:#0c132088;padding:10px;border-radius:10px;border:1px solid #1b263644">
-                    <div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Racha de días</div>
-                    <div style="font-size:1.2rem;color:var(--accent);font-weight:800">${S.streak?.current || 0} 🔥</div>
-                </div>
+        <div class="panel stats-panel">
+            <h2>📊 Estadísticas</h2>
+            <div class="stats-hero">
+                <div class="stat-box hero"><div class="stat-k">Nivel</div><div class="stat-v">${S.player.level}</div></div>
+                <div class="stat-box hero"><div class="stat-k">Racha</div><div class="stat-v">${S.streak?.current || 0} 🔥</div></div>
+                <div class="stat-box hero"><div class="stat-k">Día</div><div class="stat-v">${S.time.day}</div></div>
+            </div>
+            <section class="stats-section">
+                <h3 class="stats-sub">📈 Evolución de recursos</h3>
+                <div id="statsChart"></div>
+            </section>
+            <h3 class="stats-sub">📋 Resumen</h3>
+            <div class="stats-grid">
                 ${Object.entries(stats).map(([key, value]) => `
-                    <div style="background:#0c132088;padding:10px;border-radius:10px;border:1px solid #1b263644">
-                        <div style="font-size:0.7rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">${key.replace(/([A-Z])/g, ' $1').trim()}</div>
-                        <div style="font-size:0.88rem;color:#e7edf7;margin-top:2px;word-break:break-word">${formatStatValue(key, value)}</div>
+                    <div class="stat-box">
+                        <div class="stat-k">${STAT_LABELS[key] || key.replace(/([A-Z])/g, ' $1').trim()}</div>
+                        <div class="stat-v small">${formatStatValue(key, value)}</div>
                     </div>
                 `).join('')}
             </div>
-            <button class="action" style="margin-top:16px;width:100%" id="closeStatsBtn">Cerrar</button>
+            <button class="action" id="closeStatsBtn">Cerrar</button>
         </div>
     `;
 
     document.body.appendChild(modal);
+    renderHistoryCharts(modal.querySelector('#statsChart'), S.history);
 
     const close = () => {
         modal.classList.add('hidden');

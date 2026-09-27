@@ -1,6 +1,6 @@
 
 import { S, saveState } from './state.js';
-import { REGIONS, REGION_POS, RES_META } from './constants.js';
+import { REGIONS, REGION_POS, RES_META, expeditionsBlocked } from './constants.js';
 import { getRandomPos, now, fmtMs, $ } from './utils.js';
 import { log, updateTags, renderResources, renderNotes, addXP, xpFlash } from './ui.js';
 import { vibrate } from './utils.js';
@@ -30,6 +30,8 @@ export function renderMap() {
     const locked = REGIONS.filter(r => (r.unlockDay || 1) > S.time.day);
 
     // --- SVG Map ---
+    // Etiqueta centrada sobre el nodo, sin salirse del lienzo (Lisboa / Constantinopla están en el borde)
+    const labelX = (x, name, px) => Math.round(Math.min(w - name.length * px / 2 - 3, Math.max(name.length * px / 2 + 3, x)));
     const nodes = unlocked.map(r => {
         const p = REGION_POS[r.name] || { x: 150, y: 110 };
         const active = (!S.expedition && S.unlocked.expedition);
@@ -42,7 +44,8 @@ export function renderMap() {
         const pulseAnim = active && !isExpTarget ? `<animate attributeName="r" values="${radius};${radius+3};${radius}" dur="2s" repeatCount="indefinite"/>` : '';
         return `<g data-region="${r.name}" cursor="pointer">
             <circle cx="${p.x}" cy="${p.y}" r="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="2.5" opacity="0.95"${glow}>${pulseAnim}</circle>
-            <text x="${p.x}" y="${p.y - radius - 5}" fill="#dbe4f7" font-size="11" font-weight="600" font-family="system-ui, sans-serif" text-anchor="middle" style="paint-order:stroke" stroke="#070a14" stroke-width="0.6">${r.emoji} ${r.name}</text>
+            <text x="${p.x}" y="${p.y + 3.5}" font-size="${radius > 11 ? 12 : 10}" text-anchor="middle" pointer-events="none">${r.emoji}</text>
+            <text x="${labelX(p.x, r.name, 5.2)}" y="${p.y - radius - 4}" fill="#dbe4f7" font-size="9.5" font-weight="700" font-family="system-ui, sans-serif" text-anchor="middle" style="paint-order:stroke" stroke="#070a14" stroke-width="2" stroke-linejoin="round">${r.name}</text>
         </g>`;
     }).join('');
 
@@ -50,7 +53,7 @@ export function renderMap() {
         const p = REGION_POS[r.name] || { x: 150, y: 110 };
         return `<g>
             <circle cx="${p.x}" cy="${p.y}" r="7" fill="#2a3040" stroke="#1b2636" stroke-width="1" opacity="0.4"/>
-            <text x="${p.x}" y="${p.y - 12}" fill="#4a5568" font-size="8" font-family="system-ui, sans-serif" text-anchor="middle">🔒 ${r.name}</text>
+            <text x="${labelX(p.x, r.name + '🔒 ', 4.4)}" y="${p.y - 11}" fill="#5b6679" font-size="8" font-family="system-ui, sans-serif" text-anchor="middle">🔒 ${r.name}</text>
         </g>`;
     }).join('');
 
@@ -110,7 +113,7 @@ export function renderMap() {
     unlocked.forEach(r => {
         const focused = (S.regionFocus === r.name);
         const isExpTarget = S.expedition && S.expedition.region === r.name;
-        const canSend = S.unlocked.expedition && !S.expedition;
+        const canSend = S.unlocked.expedition && !S.expedition && !expeditionsBlocked(S);
         const remain = isExpTarget ? Math.max(0, S.expedition.endsAt - now()) : 0;
         const ready = isExpTarget && remain <= 0;
 
@@ -170,7 +173,9 @@ export function renderMap() {
 
     // --- Footer ---
     if (mapFooter) {
-        if (S.unlocked.expedition && !S.expedition && S.regionFocus) {
+        if (S.unlocked.expedition && !S.expedition && expeditionsBlocked(S)) {
+            mapFooter.textContent = '🌨️ La nevada cierra los caminos: hoy no salen expediciones.';
+        } else if (S.unlocked.expedition && !S.expedition && S.regionFocus) {
             updateBodyBg(S.regionFocus);
             mapFooter.innerHTML = `<button id="mapExpBtn" class="action glow-btn" style="width:100%">🗺️ Expedición a ${S.regionFocus}</button>`;
             const btn = document.querySelector('#mapExpBtn');
@@ -201,6 +206,7 @@ function handleRegionClick(regionName) {
 }
 
 function sendExpedition(regionName) {
+    if (S.expedition || expeditionsBlocked(S)) return;
     const region = REGIONS.find(r => r.name === regionName) || regionPicker();
     const dur = (3 + Math.floor(Math.random() * 6)) * 60 * 1000;
     S.expedition = { endsAt: now() + dur, startedAt: now(), region: region.name };

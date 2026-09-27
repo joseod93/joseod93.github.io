@@ -1,7 +1,7 @@
 // Service Worker - Mejorado con estrategia de caché inteligente
 // Luz y Sombra: El Alba de Hispania
 
-const CACHE_NAME = 'lys-cache-v7';
+const CACHE_NAME = 'lys-cache-v10';
 const ASSETS = [
   './',
   './index.html',
@@ -24,6 +24,11 @@ const ASSETS = [
   './js/achievements.js',
   './js/quests.js',
   './js/statistics.js',
+  './js/settlement.js',
+  './js/contracts.js',
+  './js/chart.js',
+  './js/scene.js',
+  './js/chronicle.js',
   './audio1.mp3',
   './audioFight1.mp3',
   './audioFight2.mp3',

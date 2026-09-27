@@ -2,6 +2,7 @@
 // Luz y Sombra: El Alba de Hispania
 
 import { notifications } from './notifications.js';
+import { addChronicle } from './chronicle.js';
 
 // Definición de logros
 export const ACHIEVEMENTS = {
@@ -252,7 +253,7 @@ export function checkAchievements(S, log) {
 
         // Verificar condición
         if (achievement.condition(S)) {
-            S.achievements[key] = true;
+            S.achievements[key] = Date.now();   // fecha (truthy): la ficha del logro la muestra
             unlocked.push(achievement);
 
             // Aplicar recompensa
@@ -268,11 +269,12 @@ export function checkAchievements(S, log) {
 
             // Log y notificación
             if (log) {
-                log(`🏅 Logro desbloqueado: ${achievement.name}`, 'warn');
+                log(`🏅 Logro desbloqueado: ${achievement.name}`, 'good');
             }
 
             import('./statistics.js').then(m => m.default.trackAchievement());
             notifications.achievementUnlocked(achievement.name);
+            addChronicle(achievement.icon || '🏅', `Logro conseguido: ${achievement.name}.`, `ach_${key}`);
         }
     }
 
