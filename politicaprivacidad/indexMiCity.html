@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Política de privacidad · MiCity</title>
+    <meta name="description" content="Política de privacidad de MiCity, un pueblo en pixel art cuyos vecinos viven solos, para Android.">
+    <meta name="theme-color" content="#07130d">
+    <style>
+        :root {
+            --bg: #f4f1e8;
+            --card: #ffffff;
+            --ink: #16231b;
+            --muted: #56685c;
+            --line: #e1dccd;
+            --accent: #a8700f;
+            --accent-soft: #fff4dc;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #07130d;
+                --card: #0f2016;
+                --ink: #f1ebdd;
+                --muted: #93a89a;
+                --line: #24402f;
+                --accent: #f2b33d;
+                --accent-soft: #2a2410;
+            }
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+        header {
+            background: radial-gradient(circle at 50% 30%, #17321f, #07130d);
+            color: #f1ebdd;
+            padding: 40px 16px 32px;
+            text-align: center;
+        }
+        header .logo { font-size: 44px; line-height: 1; }
+        header h1 { margin: 10px 0 4px; font-size: clamp(26px, 6vw, 36px); font-weight: 900; letter-spacing: -0.01em; }
+        header h1 span { color: #f2b33d; font-family: Georgia, "Times New Roman", serif; font-style: italic; font-weight: 400; }
+        header p { margin: 0; color: #93a89a; font-size: 15px; }
+        main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+        .summary {
+            background: var(--accent-soft);
+            border: 1px solid var(--accent);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 28px;
+        }
+        .summary strong { color: var(--accent); }
+        .summary ul { margin: 8px 0 0; padding-left: 20px; }
+        section {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-bottom: 16px;
+        }
+        h2 { margin: 0 0 8px; font-size: 19px; color: var(--accent); }
+        p { margin: 8px 0; }
+        ul { margin: 8px 0; padding-left: 22px; }
+        li { margin: 4px 0; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 15px; }
+        th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        th { color: var(--muted); font-weight: 600; font-size: 14px; }
+        code { font-size: 0.9em; background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+        .pending { background: #f2b33d; color: #16231b; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+        footer { text-align: center; color: var(--muted); font-size: 14px; padding: 0 16px 32px; }
+        @media (max-width: 520px) {
+            section { padding: 16px; }
+            th, td { padding: 6px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo" aria-hidden="true">🏘️</div>
+        <h1>Mi<span>City</span></h1>
+        <p>Política de privacidad</p>
+    </header>
+
+    <main>
+        <p><strong>Última actualización:</strong> 7 de octubre de 2026</p>
+
+        <div class="summary">
+            <strong>En resumen:</strong>
+            <ul>
+                <li>MiCity <strong>no tiene cuentas, anuncios ni analíticas</strong>, y no guarda ningún dato tuyo en servidores propios.</li>
+                <li>Tu pueblo, sus vecinos y tus ajustes se guardan <strong>solo en tu dispositivo</strong>.</li>
+                <li>Si lo permites, la app usa tu <strong>ubicación aproximada una sola vez</strong>, al empezar, para proponerte el nombre de tu ciudad. No la guarda.</li>
+                <li>Para traer la prensa y los datos de tu ciudad se conecta a servicios públicos (prensa, OpenStreetMap y Wikipedia).</li>
+            </ul>
+        </div>
+
+        <section>
+            <h2>1. Quién es el responsable</h2>
+            <p>Esta política se aplica a la aplicación <strong>MiCity</strong> para Android (identificador <code>com.micity</code>), un pueblo en pixel art cuyos vecinos viven su propia vida.</p>
+            <p>Para cualquier consulta sobre privacidad puedes escribir a: <span class="pending">[correo de contacto del desarrollador]</span></p>
+        </section>
+
+        <section>
+            <h2>2. Datos que recogemos</h2>
+            <p>No recogemos datos personales: no hay registro, ni identificadores de publicidad, ni analíticas, ni informes de errores, ni servicios de anuncios.</p>
+            <p>La única información sobre ti que sale de tu dispositivo es la que se describe en el apartado 4 (la ubicación aproximada y el nombre de tu ciudad), y solo para que funcione la app.</p>
+        </section>
+
+        <section>
+            <h2>3. Información guardada en tu dispositivo</h2>
+            <p>Para que el pueblo siga donde lo dejaste, MiCity guarda lo siguiente <strong>únicamente en el almacenamiento interno de la aplicación</strong>:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Qué se guarda</th><th>Para qué</th></tr></thead>
+                <tbody>
+                    <tr><td>Nombre de tu ciudad y los datos públicos de esa ciudad (región, país, coordenadas del municipio y pueblos cercanos)</td><td>Mostrar tu ciudad y sus noticias</td></tr>
+                    <tr><td>Estado del pueblo: hora, vecinos, relaciones, recuerdos, planes y diario</td><td>Continuar la partida</td></tr>
+                    <tr><td>Noticias que escribes en el periódico local y vecinos que creas</td><td>Que formen parte del pueblo</td></tr>
+                    <tr><td>Preferencias (velocidad del tiempo, aviso diario, presentación ya vista)</td><td>Recordar tus ajustes</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Esta información no sale de tu dispositivo y nosotros no tenemos acceso a ella. Se elimina al <strong>borrar los datos</strong> de la aplicación desde los ajustes de Android o al <strong>desinstalarla</strong>.</p>
+        </section>
+
+        <section>
+            <h2>4. Servicios externos</h2>
+            <p>MiCity se conecta por HTTPS, sin cuentas ni claves, a estos servicios públicos:</p>
+            <div class="table-wrap">
+            <table>
+                <thead><tr><th>Servicio</th><th>Qué se envía</th><th>Para qué</th></tr></thead>
+                <tbody>
+                    <tr><td>RTVE, El País y El Mundo</td><td>Nada</td><td>Titulares del día</td></tr>
+                    <tr><td>Google News</td><td>El nombre de tu ciudad</td><td>Noticias de tu ciudad</td></tr>
+                    <tr><td>OpenStreetMap (Nominatim)</td><td>El nombre de tu ciudad y, al empezar y solo si das permiso, tu ubicación aproximada</td><td>Encontrar tu ciudad y proponerte su nombre</td></tr>
+                    <tr><td>Photon de komoot y OpenStreetMap (Overpass)</td><td>Las coordenadas del centro de tu ciudad</td><td>Pueblos reales cercanos</td></tr>
+                    <tr><td>Wikipedia</td><td>Las coordenadas del centro de tu ciudad</td><td>Lugares reales para los planes de los vecinos</td></tr>
+                </tbody>
+            </table>
+            </div>
+            <p>Como en cualquier conexión a Internet, estos servicios reciben también la dirección IP de tu dispositivo. Cada uno trata esa información según su propia política de privacidad. MiCity no les envía ningún otro dato.</p>
+        </section>
+
+        <section>
+            <h2>5. Ubicación</h2>
+            <p>La primera vez que abres MiCity, la app te pide permiso de <strong>ubicación aproximada</strong> para proponerte el nombre del municipio donde estás. Esa ubicación se envía una vez a OpenStreetMap para saber el nombre del municipio y <strong>no se guarda</strong>: solo se guarda el nombre que aceptes.</p>
+            <p>El permiso es opcional. Si lo deniegas, escribes tú el nombre y la app funciona igual. MiCity no usa la ubicación precisa ni la ubicación en segundo plano.</p>
+        </section>
+
+        <section>
+            <h2>6. Compartir el día</h2>
+            <p>Desde el diario puedes compartir un resumen del día como texto. Esto solo ocurre cuando tú lo pides: MiCity abre el menú «Compartir» de Android y tú eliges la aplicación de destino. A partir de ese momento, el texto queda sujeto a la política de privacidad de esa aplicación.</p>
+        </section>
+
+        <section>
+            <h2>7. Permisos de Android</h2>
+            <ul>
+                <li><strong>Internet</strong> (<code>INTERNET</code>, <code>ACCESS_NETWORK_STATE</code>): para la prensa y los datos de tu ciudad.</li>
+                <li><strong>Ubicación aproximada</strong> (<code>ACCESS_COARSE_LOCATION</code>): opcional, para proponerte el nombre de tu ciudad al empezar.</li>
+                <li><strong>Notificaciones</strong> (<code>POST_NOTIFICATIONS</code>): para el aviso diario «Hoy en tu pueblo», que está desactivado hasta que lo actives en Ajustes.</li>
+                <li><code>WAKE_LOCK</code>, <code>RECEIVE_BOOT_COMPLETED</code> y <code>FOREGROUND_SERVICE</code>: los usa el sistema de tareas de Android (WorkManager) para programar ese aviso diario.</li>
+            </ul>
+            <p>MiCity no solicita cámara, micrófono, contactos, fotos ni almacenamiento externo.</p>
+        </section>
+
+        <section>
+            <h2>8. Menores de edad</h2>
+            <p>MiCity no está dirigida a niños menores de 13 años y no recoge datos personales de nadie, tampoco de menores. La app muestra titulares reales de prensa tal como los publican los medios.</p>
+        </section>
+
+        <section>
+            <h2>9. Tus derechos</h2>
+            <p>Como no guardamos datos tuyos en ningún servidor, no hay datos que podamos consultar, corregir o borrar en nuestros sistemas. Tienes el control total de la información guardada en tu dispositivo y puedes eliminarla en cualquier momento como se explica en el apartado 3. Puedes retirar el permiso de ubicación desde los ajustes de Android.</p>
+        </section>
+
+        <section>
+            <h2>10. Cambios en esta política</h2>
+            <p>Si una versión futura de MiCity cambiara la forma de tratar la información, actualizaremos esta página y la fecha de «Última actualización» antes de publicar esa versión.</p>
+        </section>
+    </main>
+
+    <footer>MiCity · Un pueblo que vive solo, sin guion.</footer>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Política de privacidad · Mi Granja</title>
+    <meta name="description" content="Política de privacidad de Mi Granja (My Farm), app para gestionar cultivos, ganado y agua de una granja en Android.">
+    <meta name="theme-color" content="#2F6B45">
+    <style>
+        :root {
+            --bg: #f6f3ea;
+            --card: #ffffff;
+            --ink: #1f2a22;
+            --muted: #5d6a60;
+            --line: #e2ddcf;
+            --accent: #2f6b45;
+            --accent-soft: #e6f0e4;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #111813;
+                --card: #19221b;
+                --ink: #e9ede6;
+                --muted: #a4b0a6;
+                --line: #2b382e;
+                --accent: #7fc896;
+                --accent-soft: #1e2d22;
+            }
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+        header {
+            background: linear-gradient(160deg, #3e8a57, #1f4d33);
+            color: #fff;
+            padding: 40px 16px 32px;
+            text-align: center;
+        }
+        header .logo { font-size: 44px; line-height: 1; }
+        header h1 { margin: 10px 0 4px; font-size: clamp(24px, 5vw, 32px); letter-spacing: 0.02em; }
+        header p { margin: 0; color: #e3efd9; font-size: 15px; }
+        main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+        .summary {
+            background: var(--accent-soft);
+            border: 1px solid var(--accent);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 28px;
+        }
+        .summary strong { color: var(--accent); }
+        .summary ul { margin: 8px 0 0; padding-left: 20px; }
+        section {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-bottom: 16px;
+        }
+        h2 { margin: 0 0 8px; font-size: 19px; color: var(--accent); }
+        p { margin: 8px 0; }
+        ul { margin: 8px 0; padding-left: 22px; }
+        li { margin: 4px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 15px; }
+        th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+        th { color: var(--muted); font-weight: 600; font-size: 14px; }
+        code { font-size: 0.9em; background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+        a { color: var(--accent); }
+        .pending { background: #ffd24d; color: #1d1f2e; padding: 1px 6px; border-radius: 4px; font-weight: 600; }
+        footer { text-align: center; color: var(--muted); font-size: 14px; padding: 0 16px 32px; }
+        @media (max-width: 520px) {
+            section { padding: 16px; }
+            th, td { padding: 6px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo" aria-hidden="true">🏡</div>
+        <h1>Mi Granja · My Farm</h1>
+        <p>Política de privacidad</p>
+    </header>
+
+    <main>
+        <p><strong>Última actualización:</strong> 7 de octubre de 2026</p>
+
+        <div class="summary">
+            <strong>En resumen:</strong>
+            <ul>
+                <li>Mi Granja <strong>no recoge, no vende y no comparte</strong> ningún dato personal.</li>
+                <li>Los datos de tu granja se guardan <strong>solo en tu dispositivo</strong>.</li>
+                <li>La única conexión a Internet es para consultar el <strong>tiempo</strong> en Open-Meteo, sin enviar datos tuyos.</li>
+                <li>No hay anuncios, analíticas, cuentas de usuario ni compras dentro de la aplicación.</li>
+            </ul>
+        </div>
+
+        <section>
+            <h2>1. Quién es el responsable</h2>
+            <p>Esta política se aplica a la aplicación <strong>Mi Granja</strong> (<em>My Farm</em> en inglés) para Android, con identificador <code>com.joseod.mifarm</code>. Es una aplicación para gestionar los cultivos, el ganado, el agua y las cosechas de una granja.</p>
+            <p>Para cualquier consulta sobre privacidad puedes escribir a: <span class="pending">[correo de contacto del desarrollador]</span></p>
+        </section>
+
+        <section>
+            <h2>2. Datos que recogemos</h2>
+            <p><strong>Ninguno.</strong> Mi Granja no recoge datos personales, identificadores del dispositivo, ubicación, contactos, fotos, datos de uso ni información de diagnóstico. Tampoco utiliza servicios de terceros de anuncios, analíticas, informes de errores o inicio de sesión.</p>
+        </section>
+
+        <section>
+            <h2>3. Información guardada en tu dispositivo</h2>
+            <p>Para que la app funcione, Mi Granja guarda esta información <strong>únicamente en el almacenamiento interno de la aplicación</strong>, en tu propio dispositivo:</p>
+            <table>
+                <thead><tr><th>Qué se guarda</th><th>Para qué</th></tr></thead>
+                <tbody>
+                    <tr><td>Estado de la granja: agua, cultivos y cosechas, tareas, tomas, pienso y producción diaria</td><td>Llevar el día a día de la granja</td></tr>
+                    <tr><td>Animales que das de alta o de baja, revisiones veterinarias y favoritos</td><td>Mantener la ficha y el historial de cada animal</td></tr>
+                    <tr><td>Último tiempo descargado</td><td>Mostrarlo sin conexión</td></tr>
+                    <tr><td>Preferencias (notificaciones, riego automático, unidades y tema)</td><td>Recordar tus ajustes</td></tr>
+                </tbody>
+            </table>
+            <p>Esta información no sale de tu dispositivo y nosotros no tenemos acceso a ella. Se elimina al <strong>borrar los datos</strong> de la aplicación desde los ajustes de Android o al <strong>desinstalarla</strong>.</p>
+            <p>Si tienes activada la copia de seguridad de Android, el sistema puede incluir estos datos en la copia de tu cuenta de Google. Esa copia la gestiona Google según su propia política, y nosotros no tenemos acceso a ella.</p>
+        </section>
+
+        <section>
+            <h2>4. Tiempo meteorológico (Open-Meteo)</h2>
+            <p>Para mostrar el tiempo, la app consulta el servicio gratuito <a href="https://open-meteo.com/" rel="noopener">Open-Meteo</a>. La petición solo contiene unas coordenadas geográficas de ejemplo y los datos del tiempo que se piden. No incluye tu nombre, ningún identificador ni los datos de tu granja.</p>
+            <p>Como ocurre con cualquier conexión a Internet, Open-Meteo recibe la dirección IP desde la que se hace la petición. Puedes consultar su tratamiento en la <a href="https://open-meteo.com/en/terms" rel="noopener">política de Open-Meteo</a>.</p>
+        </section>
+
+        <section>
+            <h2>5. Compartir informes</h2>
+            <p>Desde <em>Perfil → Exportar informe</em> puedes enviar un resumen de la granja y un archivo CSV con tu rebaño. Esto solo ocurre cuando tú lo pides: la app abre el menú «Compartir» de Android y tú eliges la aplicación de destino (correo, Drive, mensajería…).</p>
+            <p>A partir de ese momento, el informe queda sujeto a la política de privacidad de la aplicación que hayas elegido. Mi Granja no lo envía a ningún sitio por su cuenta.</p>
+        </section>
+
+        <section>
+            <h2>6. Permisos de Android</h2>
+            <ul>
+                <li><strong>Internet</strong> (<code>INTERNET</code>, <code>ACCESS_NETWORK_STATE</code>): para consultar el tiempo, como se explica en el apartado 4.</li>
+                <li><strong>Notificaciones</strong> (<code>POST_NOTIFICATIONS</code>): para avisarte del riego automático, de las tomas pendientes y de las alertas de la mañana. Puedes desactivarlas en <em>Perfil</em> o en los ajustes de Android.</li>
+                <li><strong>Tareas programadas</strong> (<code>WAKE_LOCK</code>, <code>RECEIVE_BOOT_COMPLETED</code>, <code>FOREGROUND_SERVICE</code>): las usa la biblioteca WorkManager de Android para ejecutar el riego automático y los avisos a su hora, también después de reiniciar el teléfono.</li>
+            </ul>
+            <p>Mi Granja no solicita ningún otro permiso: ni ubicación, ni cámara, ni micrófono, ni contactos, ni almacenamiento externo.</p>
+        </section>
+
+        <section>
+            <h2>7. Menores de edad</h2>
+            <p>Mi Granja no está dirigida a menores de 13 años. En cualquier caso, como no recoge ningún dato personal, tampoco recoge datos de menores.</p>
+        </section>
+
+        <section>
+            <h2>8. Tus derechos</h2>
+            <p>Como no tratamos datos personales, no hay datos tuyos que podamos consultar, corregir o borrar en nuestros sistemas. Tienes el control total de la información guardada en tu dispositivo y puedes eliminarla en cualquier momento, como se explica en el apartado 3.</p>
+        </section>
+
+        <section>
+            <h2>9. Cambios en esta política</h2>
+            <p>Si una versión futura de Mi Granja cambiara la forma de tratar la información (por ejemplo, para usar la ubicación de tu granja al consultar el tiempo), actualizaremos esta página y la fecha de «Última actualización» antes de publicar esa versión.</p>
+        </section>
+    </main>
+
+    <footer>Mi Granja · Cultivos, ganado y agua en un solo lugar</footer>
+</body>
+</html>
