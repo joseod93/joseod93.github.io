@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Política de privacidad · DespensApp</title>
+<style>
+  :root { --bg: #FBF8F1; --ink: #1D1C17; --soft: #4A473D; --brand: #2F6B4F; --line: #E5E1D6; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #15140F; --ink: #E7E2D7; --soft: #CCC6B6; --brand: #9BD3B5; --line: #37352F; } }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { color: var(--brand); line-height: 1.2; }
+  h2 { color: var(--brand); margin-top: 2em; }
+  a { color: var(--brand); word-break: break-word; }
+  blockquote { margin: 1em 0; padding: 12px 16px; border-left: 4px solid var(--brand); background: color-mix(in srgb, var(--brand) 8%, transparent); }
+  table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; }
+  th, td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+  th { color: var(--soft); }
+</style>
+</head>
+<body><main>
+<h1>Política de privacidad de DespensApp</h1>
+<p><strong>Última actualización:</strong> 13 de octubre de 2026</p>
+<p>DespensApp («la app») es una aplicación para llevar el inventario de la despensa, controlar fechas de caducidad, proponer recetas y gestionar la lista de la compra. Esta política explica qué datos maneja la app y cómo.</p>
+<blockquote>
+<p><strong>Responsable:</strong> [NOMBRE DEL DESARROLLADOR / EMPRESA] · Contacto: [CORREO DE CONTACTO]
+<em>(Rellena estos datos antes de publicarla.)</em></p>
+</blockquote>
+<h2>1. Resumen</h2>
+<ul>
+<li><strong>No hay registro ni cuentas.</strong> No te pedimos nombre, correo ni ningún dato personal.</li>
+<li><strong>Tus datos se guardan solo en tu dispositivo:</strong> productos, fechas de caducidad, lista de la compra, recetas favoritas, historial de consumo y ajustes.</li>
+<li><strong>No vendemos ni compartimos tus datos</strong> con fines publicitarios. La app <strong>no tiene anuncios</strong> ni sistemas de analítica o seguimiento.</li>
+<li>Algunas funciones <strong>opcionales</strong> envían información a servicios externos solo cuando tú las usas (ver apartado 3).</li>
+</ul>
+<h2>2. Datos que se guardan en tu dispositivo</h2>
+<table>
+<thead>
+<tr>
+<th>Dato</th>
+<th>Para qué</th>
+<th>Dónde</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Productos de la despensa (nombre, cantidad, categoría, ubicación, caducidad, precio del ticket)</td>
+<td>Mostrar tu inventario, avisos y estadísticas</td>
+<td>Base de datos local de la app</td>
+</tr>
+<tr>
+<td>Lista de la compra</td>
+<td>Gestionar lo que tienes que comprar</td>
+<td>Local</td>
+</tr>
+<tr>
+<td>Historial (consumido, tirado, comprado)</td>
+<td>Estadísticas de aprovechamiento y gasto</td>
+<td>Local</td>
+</tr>
+<tr>
+<td>Ajustes (incluida la clave de Gemini si la añades)</td>
+<td>Configuración de la app</td>
+<td>Almacenamiento local de la app</td>
+</tr>
+<tr>
+<td>Fotos de tickets</td>
+<td>Leer los productos del ticket</td>
+<td>Se procesan en el momento; la foto hecha con la cámara se guarda temporalmente en la caché de la app y el sistema puede borrarla</td>
+</tr>
+</tbody>
+</table>
+<p>Puedes borrar todos estos datos desinstalando la app o desde <em>Ajustes del sistema → Aplicaciones → DespensApp → Borrar datos</em>. También puedes <strong>exportarlos</strong> a un archivo desde <em>Ajustes → Copia de seguridad</em>; ese archivo lo guardas tú donde elijas.</p>
+<h2>3. Servicios externos (solo si los usas)</h2>
+<h3>3.1 Reconocimiento de texto del ticket (Google ML Kit)</h3>
+<p>La lectura del ticket se hace <strong>en tu dispositivo</strong> con Google ML Kit; la imagen no se envía a ningún servidor para esta función. ML Kit puede enviar a Google métricas técnicas anónimas de funcionamiento. Más información: https://developers.google.com/ml-kit/terms</p>
+<h3>3.2 Inteligencia artificial: Google Gemini (opcional)</h3>
+<p>Solo si <strong>añades tu propia clave de API</strong> de Google Gemini en Ajustes:
+- Al escanear un ticket con la IA activada, la <strong>foto del ticket</strong> se envía a la API de Google Gemini para extraer los productos.
+- Al pedir «Ideas con IA» en Recetas, se envía la <strong>lista de alimentos de tu despensa y sus días hasta caducar</strong>.</p>
+<p>Estos datos los trata Google según sus condiciones de la API de Gemini y su política de privacidad: https://ai.google.dev/gemini-api/terms y https://policies.google.com/privacy. Ten en cuenta que en el nivel gratuito Google puede usar el contenido enviado para mejorar sus productos. Si no añades una clave, la app nunca contacta con Gemini.</p>
+<h3>3.3 Código de barras: Open Food Facts (opcional)</h3>
+<p>Al escanear el código de barras de un producto, se envía <strong>solo el número del código</strong> a la base de datos abierta Open Food Facts para obtener su nombre. Más información: https://world.openfoodfacts.org/privacy</p>
+<p>El escáner de códigos lo proporciona Google Play Services (Google Code Scanner); la app no recibe las imágenes de la cámara, solo el código leído.</p>
+<h2>4. Permisos que usa la app</h2>
+<ul>
+<li><strong>Cámara</strong> (a través de la app de cámara del sistema y de Google Code Scanner): para fotografiar tickets y leer códigos de barras. La app no tiene acceso directo a la cámara.</li>
+<li><strong>Fotos</strong> (selector de fotos del sistema): solo a la imagen que tú elijas.</li>
+<li><strong>Notificaciones</strong>: para avisarte de los productos que caducan pronto. Puedes desactivarlas en Ajustes.</li>
+<li><strong>Internet</strong>: solo para las funciones opcionales del apartado 3.</li>
+</ul>
+<h2>5. Menores</h2>
+<p>La app no está dirigida a menores de 13 años y no recoge datos personales de nadie.</p>
+<h2>6. Seguridad</h2>
+<p>Los datos se guardan en el almacenamiento privado de la app, al que otras apps no pueden acceder. Las comunicaciones con los servicios externos se hacen siempre por HTTPS.</p>
+<h2>7. Tus derechos</h2>
+<p>Como no recogemos datos personales en nuestros servidores, no tenemos datos tuyos que consultar, corregir o borrar: todo está en tu dispositivo y bajo tu control. Para cualquier duda escríbenos a [CORREO DE CONTACTO].</p>
+<h2>8. Cambios en esta política</h2>
+<p>Si cambiamos esta política, publicaremos la nueva versión en esta misma dirección y actualizaremos la fecha de arriba.</p>
+</main></body>
+</html>
