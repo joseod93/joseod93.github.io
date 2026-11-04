@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CL Bridge</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header-left">
+                <h1>CLBridge</h1>
+                <span class="badge" id="status-badge">Disconnected</span>
+            </div>
+            <button id="btn-config" class="btn-icon" tabindex="1" aria-label="Settings">&#9881;</button>
+        </header>
+
+        <div id="config-panel" class="config-panel hidden">
+            <div class="config-inner">
+                <h2>Relay Configuration</h2>
+                <label for="input-endpoint">Endpoint URL (Raspberry Pi / ESP32)</label>
+                <input type="url" id="input-endpoint"
+                       placeholder="https://your-relay.ngrok-free.app"
+                       tabindex="10">
+                <label for="input-token">Auth Token</label>
+                <input type="password" id="input-token"
+                       placeholder="Shared secret for relay auth"
+                       tabindex="11">
+                <div class="config-actions">
+                    <button id="btn-save" class="btn btn-primary" tabindex="12">Save</button>
+                    <button id="btn-test" class="btn btn-outline" tabindex="13">Test Connection</button>
+                </div>
+                <p id="config-msg" class="config-msg"></p>
+            </div>
+        </div>
+
+        <main class="main">
+            <div id="messages" class="messages">
+                <div class="welcome">
+                    <p>Type a prompt and press Send.</p>
+                    <p class="small">Configure the relay endpoint first &#9881;</p>
+                </div>
+            </div>
+
+            <div class="input-bar">
+                <textarea id="input-prompt"
+                          rows="2"
+                          placeholder="Write a command for Claude..."
+                          tabindex="20"></textarea>
+                <button id="btn-send" class="btn btn-send" tabindex="21">Send</button>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <button id="btn-clear" class="btn btn-small btn-outline" tabindex="30">Clear History</button>
+            <span class="footer-text">CLBridge &middot; HO Research</span>
+        </footer>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
